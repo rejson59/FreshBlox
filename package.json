@@ -1,0 +1,39 @@
+{
+  "name": "freshblox",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173"
+  },
+  "dependencies": {
+    "@fontsource/bricolage-grotesque": "^5.2.5",
+    "@fontsource/chakra-petch": "^5.2.5",
+    "@fontsource/exo-2": "^5.2.5",
+    "@fontsource/inter": "^5.2.5",
+    "@fontsource/jetbrains-mono": "^5.2.5",
+    "@fontsource/outfit": "^5.2.5",
+    "@fontsource/oxanium": "^5.2.5",
+    "@fontsource/plus-jakarta-sans": "^5.2.5",
+    "@fontsource/sora": "^5.2.5",
+    "@fontsource/space-grotesk": "^5.2.5",
+    "@fontsource/syne": "^5.2.5",
+    "@supabase/supabase-js": "^2.119.0",
+    "lucide-react": "^0.511.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "three": "^0.176.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.7",
+    "@types/react": "^19.1.5",
+    "@types/react-dom": "^19.1.5",
+    "@types/three": "^0.176.0",
+    "@vitejs/plugin-react": "^4.5.0",
+    "tailwindcss": "^4.1.7",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}
