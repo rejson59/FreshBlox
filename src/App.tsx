@@ -69,6 +69,11 @@ export function App() {
   const [launcherInput, setLauncherInput] = useState<string>('')
   const [labFlags, setLabFlags] = useState<FreshLabFlags>(() => loadLabFlags())
   const [newFeedbackCount, setNewFeedbackCount] = useState<number>(0)
+  const [worldTransition, setWorldTransition] = useState<{
+    title: string
+    room: string
+    fading: boolean
+  } | null>(null)
 
   const updateLabFlags = (next: FreshLabFlags) => {
     setLabFlags(next)
@@ -151,6 +156,31 @@ export function App() {
       window.clearInterval(id)
     }
   }, [authUser, profile.role])
+
+  // Smooth 3D world loading overlay using the active loader preset (default: Arctic 3D Glass Cube)
+  useEffect(() => {
+    if (!authUser || (view !== 'world' && view !== 'obby')) {
+      setWorldTransition(null)
+      return
+    }
+    const title =
+      view === 'obby'
+        ? 'Test Obby 100'
+        : lang === 'pl'
+        ? 'Lobby Główne'
+        : 'Main Lobby'
+    setWorldTransition({ title, room: activeRoomId, fading: false })
+    const tFade = window.setTimeout(() => {
+      setWorldTransition((prev) => (prev ? { ...prev, fading: true } : null))
+    }, 520)
+    const tClear = window.setTimeout(() => {
+      setWorldTransition(null)
+    }, 820)
+    return () => {
+      window.clearTimeout(tFade)
+      window.clearTimeout(tClear)
+    }
+  }, [authUser, view, activeRoomId, lang])
 
   // Lock page scroll while inside 3D gameplay so mobile address bar / overscroll never clips HUD controls
   useEffect(() => {
@@ -405,6 +435,34 @@ export function App() {
             feedbackOpen={feedbackOpen}
             onOpenFeedback={openFeedback}
           />
+        )}
+
+        {worldTransition && (
+          <div
+            className={`fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 px-4 transition-opacity duration-300 ${
+              worldTransition.fading ? 'pointer-events-none opacity-0' : 'opacity-100'
+            }`}
+            style={{
+              background:
+                'radial-gradient(circle at 50% 42%, #0C2344 0%, #070D19 64%, #040812 100%)',
+            }}
+          >
+            <div className="flex items-center gap-2.5 opacity-95">
+              <FreshBloxLogo size={36} />
+              <FreshBloxWordmark mode="dark" size="md" />
+            </div>
+            <div className="flex h-24 w-24 items-center justify-center">
+              <FreshLoaderAnimation id={labFlags.loaderPreset} size="lg" mode="dark" />
+            </div>
+            <div className="flex flex-col items-center gap-1 text-center">
+              <span className="font-display text-base font-extrabold text-white">
+                {worldTransition.title}
+              </span>
+              <span className="rounded-md border border-sky-400/30 bg-sky-500/12 px-2 py-0.5 font-mono text-[11px] font-bold text-sky-300">
+                #{worldTransition.room}
+              </span>
+            </div>
+          </div>
         )}
 
         <FeedbackModal

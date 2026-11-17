@@ -2,6 +2,9 @@ import { RealtimeChannel } from '@supabase/supabase-js'
 import { R6AvatarConfig, WorldKind } from '../data/catalog'
 import { isSupabaseConfigured, supabase } from './supabase'
 
+/** Messages older than 20 minutes are automatically purged from live room chat */
+export const CHAT_MESSAGE_TTL_MS = 20 * 60 * 1000
+
 export type PlayerPose =
   | 'idle'
   | 'walk'
@@ -47,9 +50,11 @@ interface SyncPayload {
 }
 
 /**
- * Dual-transport realtime multiplayer sync for Main Lobby & Test Obby 100:
- * 1) Uses Supabase Realtime Broadcast + persistent room chat (fb_lobby_messages)
- * 2) Uses BroadcastChannel locally so 2+ browser tabs also stay synced instantly
+ * Ephemeral, zero-database-write realtime multiplayer sync for Main Lobby & Test Obby 100:
+ * - Uses lightweight Supabase Realtime Broadcast (no Postgres INSERT/SELECT per chat message)
+ * - Uses local BroadcastChannel so multiple tabs stay synced immediately
+ * - Joining players start with a clean empty chat and receive only live messages sent during their session
+ * - When all players leave a room, zero chat data remains anywhere on the server
  */
 export class LobbyMultiplayerClient {
   private roomId: string
@@ -61,7 +66,6 @@ export class LobbyMultiplayerClient {
   private onState: (p: RemotePlayerState) => void
   private onLeave: (id: string) => void
   private onChat: (msg: LobbyChatMessage) => void
-  private onHistory?: (msgs: LobbyChatMessage[]) => void
 
   constructor(opts: {
     roomId: string
@@ -70,7 +74,6 @@ export class LobbyMultiplayerClient {
     onState: (p: RemotePlayerState) => void
     onLeave: (id: string) => void
     onChat: (msg: LobbyChatMessage) => void
-    onHistory?: (msgs: LobbyChatMessage[]) => void
   }) {
     this.roomId = opts.roomId
     this.world = opts.world ?? 'lobby'
@@ -78,7 +81,6 @@ export class LobbyMultiplayerClient {
     this.onState = opts.onState
     this.onLeave = opts.onLeave
     this.onChat = opts.onChat
-    this.onHistory = opts.onHistory
   }
 
   private get channelKey() {
@@ -105,27 +107,6 @@ export class LobbyMultiplayerClient {
         .subscribe((status) => {
           this.sbReady = status === 'SUBSCRIBED'
         })
-
-      // Fetch recent persistent room chat messages from Supabase
-      if (this.onHistory) {
-        supabase
-          .from('fb_lobby_messages')
-          .select('id, user_id, username, content, created_at')
-          .eq('room_id', dbRoomKey)
-          .order('created_at', { ascending: false })
-          .limit(15)
-          .then(({ data }) => {
-            if (!data || data.length === 0 || !this.onHistory) return
-            const mapped: LobbyChatMessage[] = [...data].reverse().map((row) => ({
-              id: `db_${row.id}`,
-              senderId: row.user_id ?? `guest_${row.username}`,
-              username: row.username,
-              text: row.content,
-              timestamp: new Date(row.created_at).getTime(),
-            }))
-            this.onHistory(mapped)
-          })
-      }
     }
   }
 
@@ -148,24 +129,11 @@ export class LobbyMultiplayerClient {
     }
   }
 
-  broadcastChat(msg: LobbyChatMessage, authUserId?: string | null) {
+  broadcastChat(msg: LobbyChatMessage, _authUserId?: string | null) {
     const payload: SyncPayload = { type: 'chat', senderId: this.selfId, chat: msg }
     this.bc?.postMessage(payload)
     if (this.sbChannel && this.sbReady) {
       this.sbChannel.send({ type: 'broadcast', event: 'sync', payload }).catch(() => {})
-    }
-
-    // Persist chat in Postgres when signed into Supabase
-    if (isSupabaseConfigured && supabase && authUserId) {
-      void supabase
-        .from('fb_lobby_messages')
-        .insert({
-          room_id: this.channelKey,
-          user_id: authUserId,
-          username: msg.username,
-          content: msg.text.slice(0, 220),
-        })
-        .then(() => {})
     }
   }
 
@@ -183,4 +151,9 @@ export class LobbyMultiplayerClient {
       this.sbReady = false
     }
   }
+}
+
+/** Filter helper that removes any chat messages older than 20 minutes */
+export function pruneExpiredChatMessages(messages: LobbyChatMessage[], now = Date.now()): LobbyChatMessage[] {
+  return messages.filter((m) => now - m.timestamp < CHAT_MESSAGE_TTL_MS)
 }

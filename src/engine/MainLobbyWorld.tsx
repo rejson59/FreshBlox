@@ -13,7 +13,6 @@ import {
   PartyPopper,
   RefreshCw,
   RotateCw,
-  Send,
   Shirt,
   Sparkles,
   Users,
@@ -21,7 +20,13 @@ import {
 } from 'lucide-react'
 import { FaceId, getRankForXp, HatId, OutfitId, R6AvatarConfig } from '../data/catalog'
 import { Lang, LOCALES } from '../data/locales'
-import { LobbyChatMessage, LobbyMultiplayerClient, PlayerPose, RemotePlayerState } from '../lib/multiplayer'
+import {
+  LobbyChatMessage,
+  LobbyMultiplayerClient,
+  PlayerPose,
+  pruneExpiredChatMessages,
+  RemotePlayerState,
+} from '../lib/multiplayer'
 import {
   enterGameFullscreenLandscape,
   exitGameFullscreen,
@@ -37,6 +42,7 @@ import { MobileTouchControls } from '../components/hud/MobileTouchControls'
 import { InGameWardrobeDrawer } from '../components/hud/InGameWardrobeDrawer'
 import { InGameMenuDrawer, MenuDrawerTab } from '../components/hud/InGameMenuDrawer'
 import { ShortcutsOverlayModal } from '../components/hud/ShortcutsOverlayModal'
+import { GameChatBox } from '../components/hud/GameChatBox'
 import { createR6Rig, R6RigHandle } from './r6Builder'
 import { cloneFreshTexturesWithRepeat, FreshSurfaceKind } from './freshTextures'
 
@@ -179,16 +185,20 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   const [activeEmote, setActiveEmote] = useState<PlayerPose | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [chatInput, setChatInput] = useState('')
-  const [messages, setMessages] = useState<LobbyChatMessage[]>([
-    {
-      id: 'sys-welcome',
-      senderId: 'system',
-      username: 'FreshBlox',
-      text: t.welcomeChat,
-      timestamp: Date.now(),
-      system: true,
-    },
-  ])
+  const [messages, setMessages] = useState<LobbyChatMessage[]>([])
+
+  // Always start with an empty chat on room join & auto-purge messages older than 20 minutes
+  useEffect(() => {
+    setMessages([])
+    setUnreadCount(0)
+    const id = window.setInterval(() => {
+      setMessages((prev) => {
+        const next = pruneExpiredChatMessages(prev)
+        return next.length === prev.length ? prev : next
+      })
+    }, 15_000)
+    return () => window.clearInterval(id)
+  }, [roomCode])
 
   const qualityRef = useRef(quality)
   qualityRef.current = quality
@@ -235,6 +245,14 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   const toggleShiftLockRef = useRef<() => void>(() => {})
   const lockMouseRef = useRef<() => void>(() => {})
   const pointerLockReleasedAtRef = useRef<number>(0)
+  const programmaticUnlockRef = useRef<boolean>(false)
+
+  const exitPointerLockSilently = useCallback(() => {
+    if (document.pointerLockElement) {
+      programmaticUnlockRef.current = true
+      document.exitPointerLock?.()
+    }
+  }, [])
 
   const [shiftLockActive, setShiftLockActive] = useState(false)
   const shiftLockRef = useRef(false)
@@ -243,9 +261,9 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   // Release pointer lock cleanly whenever any menu/modal opens
   useEffect(() => {
     if ((hubOpen || wardrobeOpen || shortcutsOpen || feedbackOpen) && document.pointerLockElement) {
-      document.exitPointerLock?.()
+      exitPointerLockSilently()
     }
-  }, [hubOpen, wardrobeOpen, shortcutsOpen, feedbackOpen])
+  }, [hubOpen, wardrobeOpen, shortcutsOpen, feedbackOpen, exitPointerLockSilently])
 
   const touchMoveRef = useRef<{ x: number; y: number; autoSprint: boolean }>({
     x: 0,
@@ -464,18 +482,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     jumpHeldRef.current = held
   }, [])
 
-  const handleSendChat = useCallback(
-    (e?: React.FormEvent) => {
-      e?.preventDefault()
-      const clean = chatInput.trim().slice(0, 140)
-      if (!clean) {
-        chatInputRef.current?.blur()
-        if (wasLockedBeforeUiRef.current && clickToLockRef.current) {
-          wasLockedBeforeUiRef.current = false
-          lockMouseRef.current()
-        }
-        return
-      }
+  const pushOutgoingChat = useCallback(
+    (rawText: string) => {
+      const clean = rawText.trim().slice(0, 220)
+      if (!clean) return false
       const msg: LobbyChatMessage = {
         id: `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         senderId: playerId,
@@ -483,9 +493,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         text: clean,
         timestamp: Date.now(),
       }
-      setMessages((prev) => [...prev.slice(-34), msg])
-      setChatInput('')
-      chatInputRef.current?.blur()
+      setMessages((prev) => [...pruneExpiredChatMessages(prev).slice(-49), msg])
       sfx.playChatPop()
       mpRef.current?.broadcastChat(msg, authUserIdRef.current)
       callbacksRef.current.onChatSent()
@@ -495,13 +503,32 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       speechTimeoutRef.current = window.setTimeout(() => {
         localRigRef.current?.setSpeech(null)
       }, 5500)
+      return true
+    },
+    [playerId],
+  )
 
+  const handleSendChat = useCallback(
+    (e?: React.FormEvent) => {
+      e?.preventDefault()
+      const sent = pushOutgoingChat(chatInput)
+      if (sent) {
+        setChatInput('')
+      }
+      chatInputRef.current?.blur()
       if (wasLockedBeforeUiRef.current && clickToLockRef.current) {
         wasLockedBeforeUiRef.current = false
         lockMouseRef.current()
       }
     },
-    [chatInput, playerId],
+    [chatInput, pushOutgoingChat],
+  )
+
+  const handleQuickChat = useCallback(
+    (text: string) => {
+      pushOutgoingChat(text)
+    },
+    [pushOutgoingChat],
   )
 
   const handleCopyInvite = useCallback(() => {
@@ -537,7 +564,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     openChatAndFocus: () => {
       if (shiftLockRef.current) {
         wasLockedBeforeUiRef.current = true
-        document.exitPointerLock?.()
+        exitPointerLockSilently()
       }
       setHubOpen(false)
       setWardrobeOpen(false)
@@ -603,7 +630,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     openFeedback: () => {
       if (!callbacksRef.current.onOpenFeedback) return
       if (shiftLockRef.current) {
-        document.exitPointerLock?.()
+        exitPointerLockSilently()
       }
       setHubOpen(false)
       setShortcutsOpen(false)
@@ -1246,12 +1273,6 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       roomId: roomCode,
       world: 'lobby',
       selfId: playerId,
-      onHistory: (history) => {
-        setMessages((prev) => {
-          const seen = new Set(prev.map((m) => m.id))
-          return [...prev, ...history.filter((h) => !seen.has(h.id))].slice(-40)
-        })
-      },
       onState: (state) => {
         const existing = remotePlayers.get(state.id)
         if (!existing) {
@@ -1296,7 +1317,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         }
       },
       onChat: (msg) => {
-        setMessages((prev) => [...prev.slice(-34), msg])
+        setMessages((prev) => [...pruneExpiredChatMessages(prev).slice(-49), msg])
         if (!chatOpenRef.current) setUnreadCount((n) => n + 1)
         sfx.playChatPop()
         const entry = remotePlayers.get(msg.senderId)
@@ -1346,7 +1367,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
     toggleShiftLockRef.current = () => {
       if (document.pointerLockElement === renderer.domElement) {
-        document.exitPointerLock?.()
+        exitPointerLockSilently()
       } else {
         requestLockSafe()
       }
@@ -1355,13 +1376,31 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
     const onPointerLockChange = () => {
       const locked = document.pointerLockElement === renderer.domElement
-      if (!locked && shiftLockRef.current) {
-        pointerLockReleasedAtRef.current = performance.now()
-      }
+      const wasLocked = shiftLockRef.current
       shiftLockRef.current = locked
       setShiftLockActive(locked)
       if (locked) {
+        programmaticUnlockRef.current = false
         activePointers.clear()
+        return
+      }
+      if (wasLocked) {
+        pointerLockReleasedAtRef.current = performance.now()
+        if (programmaticUnlockRef.current) {
+          programmaticUnlockRef.current = false
+        } else if (
+          document.visibilityState === 'visible' &&
+          !hubOpenRef.current &&
+          !wardrobeOpenRef.current &&
+          !shortcutsOpenRef.current &&
+          !feedbackOpenRef.current
+        ) {
+          // Single ESC while Mouse Lock was active -> open mini menu immediately!
+          keys.clear()
+          wasLockedBeforeUiRef.current = false
+          setHubTab('overview')
+          setHubOpen(true)
+        }
       }
     }
 
@@ -1399,6 +1438,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       if (code === 'Escape') {
         e.preventDefault()
         wasLockedBeforeUiRef.current = false
+        // Ignore duplicate keydown fired by browsers (e.g. Firefox) right after pointerlockchange already handled the single ESC press
+        if (performance.now() - pointerLockReleasedAtRef.current < 240) {
+          return
+        }
         if (shortcutsOpenRef.current) {
           setShortcutsOpen(false)
           sfx.playClick()
@@ -1413,9 +1456,6 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         if (hubOpenRef.current) {
           setHubOpen(false)
           sfx.playClick()
-          return
-        }
-        if (performance.now() - pointerLockReleasedAtRef.current < 220) {
           return
         }
         setHubTab('overview')
@@ -2192,7 +2232,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       ro.disconnect()
       mp.disconnect()
       if (document.pointerLockElement === renderer.domElement) {
-        document.exitPointerLock?.()
+        exitPointerLockSilently()
       }
       document.removeEventListener('pointerlockchange', onPointerLockChange)
       document.removeEventListener('mousemove', onLockedMouseMove)
@@ -2622,71 +2662,30 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         </div>
       )}
 
-      {/* === CLEAN CHAT DRAWER (Only visible when opened via top bar button — never blocks controls!) === */}
-      {chatOpen && (
-        <div
-          onPointerDown={(e) => e.stopPropagation()}
-          className={`pointer-events-auto absolute z-25 w-[min(300px,calc(100vw-28px))] rounded-2xl bg-slate-950/82 border border-white/15 backdrop-blur-xl shadow-2xl overflow-hidden flex flex-col ${
-            touchMode ? 'top-14 max-h-[calc(100dvh-195px)]' : 'bottom-4 max-h-60'
-          }`}
-          style={{ left: 'max(0.75rem, env(safe-area-inset-left))' }}
-        >
-          <div className="flex shrink-0 items-center justify-between px-3 py-1.5 border-b border-white/10">
-            <div className="flex items-center gap-1.5 text-xs font-extrabold text-sky-100">
-              <MessageSquare className="h-3.5 w-3.5 text-sky-400" />
-              {t.chatTitle}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="hidden sm:inline text-[10px] font-semibold text-sky-300/75">
-                {isSupabaseConfigured ? t.multiplayerHintSupabase : t.multiplayerHintLocal}
-              </span>
-              <button
-                type="button"
-                onClick={() => setChatOpen(false)}
-                className="rounded-lg p-1 text-sky-200/75 hover:bg-white/10 hover:text-white cursor-pointer"
-                aria-label="Minimize chat"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-1 text-xs">
-            {messages.map((m) => (
-              <div key={m.id} className="leading-snug">
-                <span className={m.system ? 'font-bold text-sky-400' : 'font-extrabold text-sky-200'}>
-                  {m.username}:{' '}
-                </span>
-                <span className={m.system ? 'text-sky-100/80' : 'text-white/95'}>{m.text}</span>
-              </div>
-            ))}
-          </div>
-
-          <form onSubmit={handleSendChat} className="flex shrink-0 items-center gap-1.5 p-1.5 border-t border-white/10 bg-slate-950/55">
-            <input
-              ref={chatInputRef}
-              type="text"
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onFocus={() => {
-                chatInputFocusedRef.current = true
-              }}
-              onBlur={() => {
-                chatInputFocusedRef.current = false
-              }}
-              placeholder={t.chatPlaceholder}
-              className="min-w-0 flex-1 rounded-xl bg-slate-900/90 px-2.5 py-1.5 text-xs text-white placeholder-sky-200/45 border border-white/15 focus:outline-none focus:border-sky-400"
-            />
-            <button
-              type="submit"
-              className="flex shrink-0 items-center justify-center rounded-xl bg-sky-500 p-2 text-slate-950 hover:bg-sky-400 transition cursor-pointer"
-              aria-label={t.chatSend}
-            >
-              <Send className="h-3.5 w-3.5" />
-            </button>
-          </form>
-        </div>
-      )}
+      {/* === MODERN LIVE ROOM CHAT (Empty on join · Ephemeral · Auto-purge >20 min) === */}
+      <GameChatBox
+        open={chatOpen}
+        roomCode={roomCode}
+        onlineCount={onlineCount}
+        lang={lang}
+        touchMode={touchMode}
+        selfId={playerId}
+        messages={messages}
+        chatInput={chatInput}
+        chatInputRef={chatInputRef}
+        onChatInputChange={setChatInput}
+        onFocusChange={(focused) => {
+          chatInputFocusedRef.current = focused
+        }}
+        onSend={handleSendChat}
+        onSendQuickText={handleQuickChat}
+        onClose={() => setChatOpen(false)}
+        onOpen={() => {
+          setChatOpen(true)
+          setUnreadCount(0)
+        }}
+        worldKind="lobby"
+      />
 
       {/* DESKTOP MINIMALIST ICON EMOTE DOCK (hidden while Live Wardrobe is open) */}
       {!touchMode && !wardrobeOpen && (

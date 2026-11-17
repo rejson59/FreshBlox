@@ -58,7 +58,7 @@ export const ShortcutsOverlayModal: React.FC<ShortcutsOverlayModalProps> = ({
     { keys: ['O'], label: isPl ? 'Ustawienia (czułość, grafika)' : 'Settings (sensitivity, graphics)' },
     { keys: ['B'], label: isPl ? 'Zgłoś błąd lub pomysł' : 'Report Bug or Idea' },
     { keys: ['K', '?'], label: isPl ? 'Pokaż / ukryj tę ściągawkę' : 'Show / hide this overlay' },
-    { keys: ['Esc'], label: isPl ? 'Zwolnij mysz / Zamknij okno' : 'Release mouse / Close panel' },
+    { keys: ['Esc'], label: isPl ? 'Otwórz / zamknij mini-menu gry' : 'Open / close in-game menu' },
   ]
 
   const quickToggleRows: ShortcutRow[] = [
