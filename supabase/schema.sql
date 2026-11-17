@@ -49,9 +49,24 @@ CREATE INDEX IF NOT EXISTS idx_fb_profiles_obby_best
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fb_profiles_username_lower
   ON public.fb_profiles (lower(username));
 
+CREATE TABLE IF NOT EXISTS public.fb_device_registrations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+  device_token_hash TEXT NOT NULL UNIQUE,
+  fp_ip_hash TEXT NOT NULL UNIQUE,
+  core_hw_ip_hash TEXT NOT NULL UNIQUE,
+  ip_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_fb_device_reg_ip_created
+  ON public.fb_device_registrations (ip_hash, created_at DESC);
+
 ALTER TABLE public.fb_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fb_friendships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fb_lobby_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.fb_device_registrations ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.fb_device_registrations FROM anon, authenticated;
 
 DROP POLICY IF EXISTS "Profiles are viewable by everyone" ON public.fb_profiles;
 CREATE POLICY "Profiles are viewable by everyone" ON public.fb_profiles FOR SELECT USING (true);

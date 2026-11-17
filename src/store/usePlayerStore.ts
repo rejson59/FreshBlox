@@ -12,7 +12,12 @@ import {
   R6AvatarConfig,
   WorldKind,
 } from '../data/catalog'
-import { isSupabaseConfigured, supabase } from '../lib/supabase'
+import { isSupabaseConfigured, supabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase'
+import {
+  collectDeviceRegistrationProof,
+  hasLocalDeviceRegisteredFlag,
+  markDeviceRegisteredLocally,
+} from '../lib/deviceGuard'
 
 export interface FriendEntry {
   id: string
@@ -71,12 +76,6 @@ export const USERNAME_REGEX = /^[a-zA-Z0-9_-]{3,20}$/
 export function validateFreshBloxUsername(raw: string): { valid: boolean; clean: string } {
   const clean = raw.trim()
   return { valid: USERNAME_REGEX.test(clean), clean }
-}
-
-function makeSyntheticAuthEmail(cleanUsername: string): string {
-  const slug = cleanUsername.toLowerCase().replace(/[^a-z0-9_-]/g, '')
-  const rand = Math.random().toString(36).slice(2, 8)
-  return `u_${slug}_${rand}@accounts.freshblox.app`
 }
 
 const STORAGE_KEY = 'freshblox_player_profile_v2'
@@ -450,33 +449,104 @@ export function usePlayerStore() {
     profile.obbyBestTimeMs,
   ])
 
+  const checkDeviceRegistrationAllowed = useCallback(async (): Promise<boolean> => {
+    const localBlocked = await hasLocalDeviceRegisteredFlag()
+    if (localBlocked) return false
+    if (!supabaseUrl || !supabaseAnonKey) return true
+
+    try {
+      const proof = await collectDeviceRegistrationProof()
+      const res = await fetch(`${supabaseUrl}/functions/v1/register-account`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify({
+          action: 'check',
+          deviceToken: proof.deviceToken,
+          browserFp: proof.browserFp,
+          coreHw: proof.coreHw,
+        }),
+      })
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; allowed?: boolean } | null
+      if (json && json.allowed === false) {
+        await markDeviceRegisteredLocally()
+        return false
+      }
+      return true
+    } catch {
+      return true
+    }
+  }, [])
+
   const signUp = useCallback(
     async (username: string, password: string): Promise<{ ok: boolean; error?: string }> => {
-      if (!supabase) return { ok: false, error: 'SUPABASE_NOT_CONFIGURED' }
+      if (!supabase || !supabaseUrl || !supabaseAnonKey) {
+        return { ok: false, error: 'SUPABASE_NOT_CONFIGURED' }
+      }
       const { valid, clean } = validateFreshBloxUsername(username)
       if (!valid) return { ok: false, error: 'INVALID_USERNAME' }
       if (password.length < 6) return { ok: false, error: 'SHORT_PASSWORD' }
 
-      // Check case-insensitive username availability in Postgres first
-      const { data: isAvailable, error: rpcErr } = await supabase.rpc('is_freshblox_username_available', {
-        p_username: clean,
-      })
-      if (!rpcErr && isAvailable === false) {
-        return { ok: false, error: 'USERNAME_TAKEN' }
+      // Fast local check before network roundtrip
+      if (await hasLocalDeviceRegisteredFlag()) {
+        return { ok: false, error: 'DEVICE_LIMIT_REACHED' }
       }
 
-      const syntheticEmail = makeSyntheticAuthEmail(clean)
-      const { data, error } = await supabase.auth.signUp({
-        email: syntheticEmail,
+      const proof = await collectDeviceRegistrationProof()
+
+      let resp: Response
+      try {
+        resp = await fetch(`${supabaseUrl}/functions/v1/register-account`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${supabaseAnonKey}`,
+          },
+          body: JSON.stringify({
+            action: 'register',
+            username: clean,
+            password,
+            deviceToken: proof.deviceToken,
+            browserFp: proof.browserFp,
+            coreHw: proof.coreHw,
+          }),
+        })
+      } catch {
+        return { ok: false, error: 'NETWORK_ERROR' }
+      }
+
+      const json = (await resp.json().catch(() => null)) as {
+        ok?: boolean
+        error?: string
+        loginEmail?: string
+      } | null
+
+      if (!resp.ok || !json?.ok || !json.loginEmail) {
+        const errCode = json?.error || 'SERVER_ERROR'
+        if (errCode === 'DEVICE_LIMIT_REACHED') {
+          await markDeviceRegisteredLocally()
+        }
+        return { ok: false, error: errCode }
+      }
+
+      // Lock device locally across all 4 storage layers right after server confirmation
+      await markDeviceRegisteredLocally()
+
+      // Immediately sign into the newly created account
+      const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+        email: json.loginEmail,
         password,
-        options: {
-          data: { username: clean },
-        },
       })
-      if (error) return { ok: false, error: error.message }
-      if (data.user) {
-        await hydrateCloudProfile(data.user.id, data.user.email ?? null)
-        setAuthUser({ id: data.user.id, email: data.user.email ?? null })
+      if (signInErr) {
+        return { ok: false, error: signInErr.message }
+      }
+      if (signInData.user) {
+        await hydrateCloudProfile(signInData.user.id, signInData.user.email ?? null)
+        setAuthUser({ id: signInData.user.id, email: signInData.user.email ?? null })
       }
       return { ok: true }
     },
@@ -873,6 +943,7 @@ export function usePlayerStore() {
     authUser,
     authLoading,
     cloudStatus,
+    checkDeviceRegistrationAllowed,
     signUp,
     signIn,
     signOut,

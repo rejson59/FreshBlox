@@ -47,6 +47,7 @@ export function App() {
     authUser,
     authLoading,
     cloudStatus,
+    checkDeviceRegistrationAllowed,
     signUp,
     signIn,
     signOut,
@@ -135,6 +136,7 @@ export function App() {
         pendingInviteRoom={initialLaunch.hasInvite ? activeRoomId : null}
         onChangeMode={setMode}
         onToggleLang={() => setLang((l) => (l === 'pl' ? 'en' : 'pl'))}
+        onCheckDeviceAllowed={checkDeviceRegistrationAllowed}
         onSignIn={signIn}
         onSignUp={signUp}
       />

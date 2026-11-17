@@ -50,6 +50,11 @@ export const LOCALES = {
       noAccountYet: 'Nie masz jeszcze konta?',
       haveAccountAlready: 'Masz już konto?',
       loginNameNote: 'Ta nazwa jest wyświetlana nad Twoją postacią R6 i służy do logowania.',
+      devicePolicyNote: 'Ochrona anty-multikonto: 1 nowe konto na urządzenie • Logowanie na inne konta bez limitów.',
+      deviceLockedTitle: 'Na tym urządzeniu utworzono już konto',
+      deviceLockedDesc:
+        'Aby chronić FreshBlox przed multikontami, na jednym urządzeniu można założyć maksymalnie 1 nowe konto. Logowanie na inne istniejące konta działa bez żadnych limitów — każda osoba korzystająca z tego urządzenia może swobodnie zalogować się na swoje konto.',
+      goToLoginBtn: 'Przejdź do logowania',
     },
     home: {
       liveBadge: 'ONLINE • KONTA, SPOTKANIA & TEST OBBY 100',
@@ -251,6 +256,11 @@ export const LOCALES = {
       noAccountYet: 'New to FreshBlox?',
       haveAccountAlready: 'Already have an account?',
       loginNameNote: 'This name appears above your R6 avatar and is used to sign in.',
+      devicePolicyNote: 'Anti-alt protection: 1 new account per device • Signing into other accounts is unlimited.',
+      deviceLockedTitle: 'An account was already created on this device',
+      deviceLockedDesc:
+        'To protect FreshBlox against alt accounts, only 1 new account can be registered per device. Signing into other existing accounts is completely unlimited — anyone sharing this device can freely log into their own account.',
+      goToLoginBtn: 'Go to Sign In',
     },
     home: {
       liveBadge: 'ONLINE • ACCOUNTS, HANGOUT & 100-STAGE OBBY',
