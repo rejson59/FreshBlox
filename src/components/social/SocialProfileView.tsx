@@ -103,15 +103,13 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-5 sm:space-y-6 px-3 py-5 sm:px-6 sm:py-8 overflow-x-clip">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-display text-2xl font-extrabold sm:text-3xl" style={{ color: tokens.textPrimary }}>
+    <div className="w-full space-y-4 p-4 sm:p-5 lg:p-6 overflow-x-clip">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <Users className="h-5 w-5" style={{ color: ARCTIC_SKY.skyMain }} />
+          <h1 className="font-display text-lg font-extrabold sm:text-xl" style={{ color: tokens.textPrimary }}>
             {t.title}
           </h1>
-          <p className="mt-1 text-xs sm:text-sm" style={{ color: tokens.textSecondary }}>
-            {t.subtitle}
-          </p>
         </div>
 
         <button
@@ -120,7 +118,7 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
             sfx.playClick()
             void onSignOut()
           }}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-rose-400/35 bg-rose-500/15 px-3.5 py-2 text-xs font-extrabold text-rose-400 hover:bg-rose-500/25 cursor-pointer"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-rose-400/35 bg-rose-500/15 px-3 py-1.5 text-xs font-extrabold text-rose-400 hover:bg-rose-500/25 cursor-pointer"
         >
           <LogOut className="h-3.5 w-3.5" />
           <span>{ta.logout}</span>

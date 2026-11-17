@@ -647,23 +647,23 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
   )
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:px-6 sm:py-6 overflow-x-clip">
+    <div className="w-full space-y-4 p-4 sm:p-5 lg:p-6 overflow-x-clip">
       {/* Compact Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <Shirt className="h-5 w-5" style={{ color: ARCTIC_SKY.skyMain }} />
-          <h1 className="font-display text-xl font-black sm:text-2xl" style={{ color: tokens.textPrimary }}>
+          <h1 className="font-display text-lg font-extrabold sm:text-xl" style={{ color: tokens.textPrimary }}>
             {lang === 'pl' ? 'Szatnia R6' : 'R6 Wardrobe'}
           </h1>
         </div>
 
         <button
           onClick={onEnterLobby}
-          className="inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs sm:text-sm font-extrabold text-white shadow-lg transition hover:brightness-110 cursor-pointer"
+          className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold text-white shadow-lg transition hover:brightness-110 cursor-pointer"
           style={{ background: tokens.buttonGradient }}
         >
           <Play className="h-3.5 w-3.5 fill-current shrink-0" />
-          <span>{lang === 'pl' ? 'Wejdź do Lobby' : 'Enter Lobby'}</span>
+          <span>{lang === 'pl' ? 'GRAJ' : 'PLAY'}</span>
         </button>
       </div>
 
