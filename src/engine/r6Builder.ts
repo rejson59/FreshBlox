@@ -1171,7 +1171,8 @@ export function createR6Rig(opts: {
     }
 
     evaluateR6Pose(pose, elapsed, poseTime, landingImpact, target)
-    const a = Math.min(1, dt * target.snappiness)
+    // Frame-rate independent exponential pose smoothing (butter-smooth at 60/120/144 FPS!)
+    const a = 1 - Math.exp(-target.snappiness * dt)
 
     comPivot.position.x = lerp(comPivot.position.x, target.comPos.x, a)
     comPivot.position.y = lerp(comPivot.position.y, REST_COM_Y + target.comPos.y, a)

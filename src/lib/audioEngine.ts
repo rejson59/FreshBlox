@@ -497,31 +497,19 @@ class FreshAudioEngine {
   }
 
   private initAmbientLoops() {
-    if (this.loopsInitialized || !this.ctx || !this.sfxGain || !this.noiseBuffer) return
+    if (this.loopsInitialized || !this.ctx || !this.sfxGain) return
     this.loopsInitialized = true
 
-    // 1. Fountain water soft stream
-    const fSrc = this.ctx.createBufferSource()
-    fSrc.buffer = this.noiseBuffer
-    fSrc.loop = true
-    const fFilt = this.ctx.createBiquadFilter()
-    fFilt.type = 'bandpass'
-    fFilt.frequency.value = 1150
-    fFilt.Q.value = 0.75
-    this.fountainGain = this.ctx.createGain()
-    this.fountainGain.gain.value = 0
-    fSrc.connect(fFilt)
-    fFilt.connect(this.fountainGain)
-    this.fountainGain.connect(this.sfxGain)
-    fSrc.start()
+    // Fountain noise completely removed — crisp silence around the 3D FreshBlox Statue!
+    this.fountainGain = null
 
-    // 2. Portal harmonic hum
+    // 1. Subtle low-volume Portal harmonic hum (only audible right next to a portal)
     const pOsc = this.ctx.createOscillator()
     pOsc.type = 'sine'
     pOsc.frequency.value = 112
     const pFilt = this.ctx.createBiquadFilter()
     pFilt.type = 'lowpass'
-    pFilt.frequency.value = 320
+    pFilt.frequency.value = 260
     this.portalHumGain = this.ctx.createGain()
     this.portalHumGain.gain.value = 0
     pOsc.connect(pFilt)
@@ -529,13 +517,13 @@ class FreshAudioEngine {
     this.portalHumGain.connect(this.sfxGain)
     pOsc.start()
 
-    // 3. Central Laser beam energy hum
+    // 2. Central Laser beam subtle energy hum (Portal Arena only)
     const lOsc = this.ctx.createOscillator()
     lOsc.type = 'triangle'
     lOsc.frequency.value = 82
     const lFilt = this.ctx.createBiquadFilter()
     lFilt.type = 'lowpass'
-    lFilt.frequency.value = 260
+    lFilt.frequency.value = 220
     this.laserHumGain = this.ctx.createGain()
     this.laserHumGain.gain.value = 0
     lOsc.connect(lFilt)
@@ -546,19 +534,26 @@ class FreshAudioEngine {
 
   /** Smoothly adjusts distance-based continuous world ambience (0 = silent) */
   setSpatialLoopLevel(kind: 'fountain' | 'portal' | 'laser', level01: number) {
+    if (kind === 'fountain') return // Permanently silenced!
     if (!this.unlocked) return
     const ctx = this.ensureContext()
     if (!ctx) return
     this.initAmbientLoops()
     const target = Math.max(0, Math.min(1, level01))
     const now = ctx.currentTime
-    if (kind === 'fountain' && this.fountainGain) {
-      this.fountainGain.gain.setTargetAtTime(target * 0.14, now, 0.12)
-    } else if (kind === 'portal' && this.portalHumGain) {
-      this.portalHumGain.gain.setTargetAtTime(target * 0.12, now, 0.12)
+    if (kind === 'portal' && this.portalHumGain) {
+      this.portalHumGain.gain.setTargetAtTime(target * 0.045, now, 0.14)
     } else if (kind === 'laser' && this.laserHumGain) {
-      this.laserHumGain.gain.setTargetAtTime(target * 0.14, now, 0.12)
+      this.laserHumGain.gain.setTargetAtTime(target * 0.075, now, 0.14)
     }
+  }
+
+  /** Soft tactile landing thud scaled by vertical impact velocity */
+  playLand(impact01 = 0.5) {
+    if (!this.canPlay('sfx')) return
+    const k = Math.min(1, Math.max(0.15, impact01))
+    this.playTone({ channel: 'sfx', type: 'sine', freq: 118 - k * 24, endFreq: 48, duration: 0.09, gain: 0.11 * k })
+    this.playNoise({ channel: 'sfx', duration: 0.055, gain: 0.07 * k, filterType: 'lowpass', filterFreq: 550 })
   }
 
   stopAllSpatialLoops() {

@@ -2667,6 +2667,9 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
             sfx.playJumpPad()
             callbacksRef.current.onJumpPadUsed()
           } else if (groundedNow && landedBlock) {
+            if (!player.grounded && player.vy < -5) {
+              audioEngine.playLand(Math.min(1, -player.vy / 22))
+            }
             player.vy = 0
             player.grounded = true
             player.coyoteTimer = 0.15
@@ -2730,14 +2733,24 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       daySkyGroup.position.set(player.x, player.y, player.z)
       nightSkyGroup.position.set(player.x, player.y, player.z)
 
-      // Smooth third-person camera + dressing-room framing when Live Wardrobe is open
+      // Smooth third-person camera + subtle sprint/parkour FOV boost + dressing-room framing when Live Wardrobe is open
       const inWardrobe = wardrobeOpenRef.current
+      const targetObbyFov = THREE.MathUtils.clamp(
+        fovRef.current + (!inWardrobe && hSpeed > 11.5 ? 4.2 : 0) + (!player.grounded && player.vy < -10 ? 2.8 : 0),
+        58,
+        96,
+      )
+      if (Math.abs(camera.fov - targetObbyFov) > 0.08) {
+        camera.fov = THREE.MathUtils.lerp(camera.fov, targetObbyFov, Math.min(1, dt * 8))
+        camera.updateProjectionMatrix()
+      }
       camState.wardrobeOffset += ((inWardrobe ? 1.15 : 0) - camState.wardrobeOffset) * Math.min(1, dt * 9)
       const effectiveDist = inWardrobe ? 5.85 : camState.dist
       const targetLookX = player.x + Math.cos(camState.yaw) * camState.wardrobeOffset
       const targetLookZ = player.z - Math.sin(camState.yaw) * camState.wardrobeOffset
-      const desiredLook = new THREE.Vector3(targetLookX, player.y + (inWardrobe ? 1.85 : 2.1), targetLookZ)
-      camState.lookTarget.lerp(desiredLook, Math.min(1, dt * 13))
+      camState.lookTarget.x += (targetLookX - camState.lookTarget.x) * Math.min(1, dt * 13)
+      camState.lookTarget.y += (player.y + (inWardrobe ? 1.85 : 2.1) - camState.lookTarget.y) * Math.min(1, dt * 13)
+      camState.lookTarget.z += (targetLookZ - camState.lookTarget.z) * Math.min(1, dt * 13)
 
       const camX = camState.lookTarget.x + Math.sin(camState.yaw) * Math.cos(camState.pitch) * effectiveDist
       const camY = camState.lookTarget.y + Math.sin(camState.pitch) * effectiveDist
@@ -2825,11 +2838,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         }
       }
 
-      // U-11: Live camera FOV update
-      if (Math.abs(camera.fov - fovRef.current) > 0.1) {
-        camera.fov = fovRef.current
-        camera.updateProjectionMatrix()
-      }
+      // Dynamic camera FOV is smoothly updated in camera block above (incorporating fovRef.current + parkour sprint boost)
 
       renderer.render(scene, camera)
     }

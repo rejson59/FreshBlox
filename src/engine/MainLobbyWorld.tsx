@@ -58,6 +58,7 @@ import { EmoteRadialWheel } from '../components/hud/EmoteRadialWheel'
 import { GameChatBox } from '../components/hud/GameChatBox'
 import { createR6Rig, R6RigHandle } from './r6Builder'
 import { cloneFreshTexturesWithRepeat, FreshSurfaceKind } from './freshTextures'
+import { createFreshBloxMonument } from './freshLogo3D'
 
 export type GraphicsQuality = 'low' | 'medium' | 'high'
 type WorldTimeMode = 'day' | 'night'
@@ -893,42 +894,15 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     addBlock(18, 0.055, 0, 22, 0.2, 6.2, '#F4F9FE', { surface: 'marble', tileUnit: 3.1, radius: 0.08, roughness: 0.3, castShadow: false })
     addBlock(-18, 0.055, 0, 22, 0.2, 6.2, '#F4F9FE', { surface: 'marble', tileUnit: 3.1, radius: 0.08, roughness: 0.3, castShadow: false })
 
-    // Central FreshBlox Crystal Fountain Monument (Marble basin + sunlit stylized water + natural crystal)
-    addBlock(0, 0.45, 0, 6.4, 0.9, 6.4, '#F8FAFC', { surface: 'marble', tileUnit: 2.4, radius: 0.16, roughness: 0.28 })
-    const waterPair = cloneFreshTexturesWithRepeat('water', 2, 2, trackTex)
-    const waterPoolMat = trackMat(
-      new THREE.MeshStandardMaterial({
-        color: '#38BDF8',
-        map: waterPair.map,
-        bumpMap: waterPair.bumpMap,
-        bumpScale: waterPair.bumpScale,
-        roughness: 0.14,
-        metalness: 0.12,
-      }),
-    )
-    const waterPool = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(5.2, 0.28, 5.2, 2, 0.08)), waterPoolMat)
-    waterPool.position.set(0, 0.88, 0)
-    waterPool.receiveShadow = true
-    scene.add(waterPool)
+    // Central FreshBlox 3D Sculpted Logo Statue Monument (Tiered Marble & Titanium Plinth — ZERO fountain noise!)
+    const freshMonument = createFreshBloxMonument({ castShadow: true, includePlinth: true, logoScale: 0.058 })
+    scene.add(freshMonument.group)
+    // Solid colliders matching the tiered marble steps & pedestal column so players can climb onto the base!
+    colliders.push({ minX: -4.1, maxX: 4.1, minY: 0, maxY: 0.42, minZ: -4.1, maxZ: 4.1 })
+    colliders.push({ minX: -2.95, maxX: 2.95, minY: 0.42, maxY: 0.98, minZ: -2.95, maxZ: 2.95 })
+    colliders.push({ minX: -1.35, maxX: 1.35, minY: 0.98, maxY: 2.08, minZ: -1.35, maxZ: 1.35 })
 
-    addBlock(0, 1.55, 0, 1.8, 1.4, 1.8, '#0284C7', { surface: 'fluted', tileUnit: 1.8, radius: 0.14, roughness: 0.28 })
     const crystalPair = cloneFreshTexturesWithRepeat('ice', 1, 1, trackTex)
-    const centerCrystal = new THREE.Mesh(
-      trackGeo(new THREE.OctahedronGeometry(1.15, 0)),
-      trackMat(
-        new THREE.MeshStandardMaterial({
-          color: '#7DD3FC',
-          map: crystalPair.map,
-          bumpMap: crystalPair.bumpMap,
-          bumpScale: 0.04,
-          roughness: 0.12,
-          metalness: 0.22,
-        }),
-      ),
-    )
-    centerCrystal.position.set(0, 3.85, 0)
-    centerCrystal.castShadow = true
-    scene.add(centerCrystal)
 
     // === INTERACTIVE HANGOUT BENCHES (5 sculpted timber-and-stone benches with backrests!) ===
     const benchSeatMat = getSurfaceMat('wood', '#C28A5B', 2, 1, 0.56, 0.02)
@@ -2343,14 +2317,13 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         }
       }
 
-      // Audio 2.0: Spatial Fountain & Portals + dynamic footsteps
-      const distFountain = Math.hypot(player.x, player.z)
-      audioEngine.setSpatialLoopLevel('fountain', Math.max(0, 1 - distFountain / 22))
+      // Audio 2.0: Subtle portal proximity hum + dynamic footsteps (NO fountain noise!)
       const distNearestPortal = Math.min(
         Math.hypot(player.x + 11, player.z + 26),
+        Math.hypot(player.x, player.z + 28),
         Math.hypot(player.x - 11, player.z + 26),
       )
-      audioEngine.setSpatialLoopLevel('portal', Math.max(0, 1 - distNearestPortal / 16))
+      audioEngine.setSpatialLoopLevel('portal', Math.max(0, 1 - distNearestPortal / 11))
       const horizSpeedLobby = Math.hypot(player.vx, player.vz)
       if (player.grounded && horizSpeedLobby > 1.8 && !seatedBenchRef.current) {
         const stepInterval = horizSpeedLobby > 10 ? 0.25 : 0.36
@@ -2371,13 +2344,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         showToast(t.terraceUnlocked)
       }
 
-      // Animate monument crystals, fountain water ripples & clouds
-      waterPair.map.offset.x = (elapsed * 0.06) % 1
-      waterPair.map.offset.y = (elapsed * 0.045) % 1
-      waterPair.bumpMap.offset.x = waterPair.map.offset.x
-      waterPair.bumpMap.offset.y = waterPair.map.offset.y
-      centerCrystal.rotation.y = elapsed * 0.9
-      centerCrystal.position.y = 3.85 + Math.sin(elapsed * 2.1) * 0.28
+      // Animate 3D FreshBlox Logo Statue, terrace beacon & clouds
+      freshMonument.update(elapsed)
       terraceBeacon.rotation.y = -elapsed * 1.4
       if (cloudsGroup.visible) {
         cloudsGroup.children.forEach((c, idx) => {
@@ -2461,19 +2429,32 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         setOnlineCount(nextRoster.length)
       }
 
-      // Smooth 3rd-person orbit camera (frames avatar neatly on the left when Live Wardrobe is open!)
+      // Smooth 3rd-person orbit camera (frames avatar neatly on the left when Live Wardrobe is open + avoids clipping inside central statue plinth!)
       const targetVisualY = player.y + player.visualStepOffset
       const inWardrobe = wardrobeOpenRef.current
+      const lobbySpeed = Math.hypot(player.vx, player.vz)
+      const targetLobbyFov = THREE.MathUtils.clamp(fovRef.current + (!inWardrobe && lobbySpeed > 11.5 ? 3.8 : 0), 58, 94)
+      if (Math.abs(camera.fov - targetLobbyFov) > 0.08) {
+        camera.fov = THREE.MathUtils.lerp(camera.fov, targetLobbyFov, Math.min(1, dt * 8))
+        camera.updateProjectionMatrix()
+      }
       const effectiveDist = inWardrobe ? 5.85 : camDist
       const rightX = Math.cos(camYaw)
       const rightZ = -Math.sin(camYaw)
       const sideOffset = inWardrobe ? 1.15 : 0
 
-      const camX = player.x + rightX * sideOffset + Math.sin(camYaw) * Math.cos(camPitch) * effectiveDist
-      const camY = targetVisualY + (inWardrobe ? 2.15 : 2.45) + Math.sin(camPitch) * effectiveDist
-      const camZ = player.z + rightZ * sideOffset + Math.cos(camYaw) * Math.cos(camPitch) * effectiveDist
-      desiredCamPos.set(camX, Math.max(1.2, camY), camZ)
-      camera.position.lerp(desiredCamPos, Math.min(1, dt * 10))
+      let camX = player.x + rightX * sideOffset + Math.sin(camYaw) * Math.cos(camPitch) * effectiveDist
+      let camY = Math.max(1.2, targetVisualY + (inWardrobe ? 2.15 : 2.45) + Math.sin(camPitch) * effectiveDist)
+      let camZ = player.z + rightZ * sideOffset + Math.cos(camYaw) * Math.cos(camPitch) * effectiveDist
+      // Keep camera from clipping inside the central 3D FreshBlox Monument plinth
+      const monRad = Math.hypot(camX, camZ)
+      if (monRad < 4.6 && camY < 4.0) {
+        const pushScale = 4.65 / Math.max(0.01, monRad)
+        camX *= pushScale
+        camZ *= pushScale
+      }
+      desiredCamPos.set(camX, camY, camZ)
+      camera.position.lerp(desiredCamPos, 1 - Math.exp(-12 * dt))
       lookTarget.set(
         player.x + rightX * sideOffset,
         targetVisualY + (inWardrobe ? 1.95 : 2.2),
@@ -2540,11 +2521,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         if (nightSkyGroupRef.current) nightSkyGroupRef.current.visible = sunElev < 0.08
       }
 
-      // U-11: Live camera FOV update
-      if (Math.abs(camera.fov - fovRef.current) > 0.1) {
-        camera.fov = fovRef.current
-        camera.updateProjectionMatrix()
-      }
+      // Dynamic camera FOV is smoothly updated in camera block above (incorporating fovRef.current + sprint boost)
 
       renderer.render(scene, camera)
     }
@@ -2578,6 +2555,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
       localRigRef.current?.dispose()
       localRigRef.current = null
+      freshMonument.dispose()
       for (const entry of remotePlayers.values()) entry.rig.dispose()
       for (const d of disposables) d.dispose()
       renderer.dispose()

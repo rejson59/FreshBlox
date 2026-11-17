@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { cloneFreshTexturesWithRepeat, FreshSurfaceKind } from './freshTextures'
+import { createFreshBloxMonument } from './freshLogo3D'
 import { generateTestObbyCourse, OBBY_ZONES } from './obbyCourse'
 
 export type WorldPreviewKey = 'lobby' | 'obby' | 'arena' | 'frisbee'
@@ -190,55 +191,10 @@ function renderLobbyThumbnail(renderer: THREE.WebGLRenderer, width: number, heig
     scene.add(w)
   }
 
-  // Central FreshBlox Crystal Fountain
-  const rim = new THREE.Mesh(
-    tr.trackGeo(new THREE.CylinderGeometry(4.1, 4.4, 0.72, 24)),
-    tr.getSurfaceMat('marble', '#F8FAFC', 6, 1, 0.28, 0.06),
-  )
-  rim.position.set(0, 0.36, 0)
-  rim.castShadow = true
-  rim.receiveShadow = true
-  scene.add(rim)
-
-  const water = new THREE.Mesh(
-    tr.trackGeo(new THREE.CylinderGeometry(3.6, 3.6, 0.48, 24)),
-    tr.trackMat(
-      new THREE.MeshStandardMaterial({
-        color: '#38BDF8',
-        map: cloneFreshTexturesWithRepeat('water', 3, 3, tr.trackTex).map,
-        roughness: 0.14,
-        metalness: 0.12,
-        transparent: true,
-        opacity: 0.88,
-      }),
-    ),
-  )
-  water.position.set(0, 0.42, 0)
-  scene.add(water)
-
-  const spire = new THREE.Mesh(
-    tr.trackGeo(new THREE.CylinderGeometry(0.45, 0.85, 3.2, 12)),
-    tr.getSurfaceMat('fluted', '#CBD5E1', 2, 2, 0.26, 0.18),
-  )
-  spire.position.set(0, 1.6, 0)
-  spire.castShadow = true
-  scene.add(spire)
-
-  const crystal = new THREE.Mesh(
-    tr.trackGeo(new THREE.OctahedronGeometry(1.15, 0)),
-    tr.trackMat(
-      new THREE.MeshStandardMaterial({
-        color: '#22D3EE',
-        roughness: 0.12,
-        metalness: 0.28,
-        flatShading: true,
-      }),
-    ),
-  )
-  crystal.position.set(0, 4.4, 0)
-  crystal.rotation.set(0.15, 0.6, 0.1)
-  crystal.castShadow = true
-  scene.add(crystal)
+  // Central FreshBlox Sculpted 3D Logo Monument Statue (replaces old fountain!)
+  const lobbyMonument = createFreshBloxMonument({ castShadow: true, includePlinth: true, logoScale: 0.06 })
+  lobbyMonument.logoPivot.rotation.y = 0.48
+  scene.add(lobbyMonument.group)
 
   // South Social Dance Stage
   const stageDeck = new THREE.Mesh(
@@ -443,6 +399,7 @@ function renderLobbyThumbnail(renderer: THREE.WebGLRenderer, width: number, heig
 
   renderer.render(scene, camera)
   const url = renderer.domElement.toDataURL('image/webp', 0.9)
+  lobbyMonument.dispose()
   tr.disposeAll()
   return url
 }

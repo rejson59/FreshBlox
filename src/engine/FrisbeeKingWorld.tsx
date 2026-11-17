@@ -115,6 +115,17 @@ interface AngledPlaneWall {
   maxY: number
 }
 
+interface AngledObbWall {
+  cx: number
+  cz: number
+  halfW: number
+  halfD: number
+  minY: number
+  maxY: number
+  cosR: number
+  sinR: number
+}
+
 interface RampDef {
   minX: number
   maxX: number
@@ -298,6 +309,7 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
   const [discBlazing, setDiscBlazing] = useState(false)
   const [discBounces, setDiscBounces] = useState(0)
   const [canCatchNow, setCanCatchNow] = useState(false)
+  const [blazingDanger, setBlazingDanger] = useState(false)
   const [catchWindowActive, setCatchWindowActive] = useState(false)
   const [chargePct, setChargePct] = useState(0)
   const [holdTimeoutSec, setHoldTimeoutSec] = useState<number | null>(null)
@@ -525,7 +537,9 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
     // === SEALED WINDING TRICK-SHOT ARENA (100% ENCLOSED BOX — ZERO ABYSS!) ===
     const boxes: BoxWall[] = []
     const angledWalls: AngledPlaneWall[] = []
+    const angledObbs: AngledObbWall[] = []
     const ramps: RampDef[] = []
+    const camSurfaces: THREE.Object3D[] = []
 
     const addOuterPlane = (
       w: number,
@@ -539,6 +553,7 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
       m.rotation.set(rot[0], rot[1], rot[2])
       m.receiveShadow = true
       scene.add(m)
+      camSurfaces.push(m)
     }
 
     // Floor, Ceiling, 4 Outer Box Walls
@@ -577,6 +592,7 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
       mesh.castShadow = qualityRef.current !== 'low'
       mesh.receiveShadow = true
       scene.add(mesh)
+      camSurfaces.push(mesh)
       if (accent) {
         const trim = new THREE.Mesh(
           new THREE.BoxGeometry(sx + 0.08, 0.18, sz + 0.08),
@@ -588,7 +604,7 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
       boxes.push({ cx, cy, cz, hx: sx / 2, hy: sy / 2, hz: sz / 2 })
     }
 
-    // Helper: 45-Degree Bank-Shot Corner & Deflector Walls (for killer ricochet tricks!)
+    // Helper: 45-Degree Bank-Shot Corner & Deflector Walls (solid OBB for players + exact planes for frisbee!)
     const addAngledBankWall = (cx: number, cz: number, rotY: number, width: number, height: number) => {
       const mesh = new THREE.Mesh(new RoundedBoxGeometry(width, height, 1.0, 2, 0.12), bankWallMat)
       mesh.position.set(cx, height / 2, cz)
@@ -596,6 +612,7 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
       mesh.castShadow = qualityRef.current !== 'low'
       mesh.receiveShadow = true
       scene.add(mesh)
+      camSurfaces.push(mesh)
 
       const neon = new THREE.Mesh(
         new THREE.BoxGeometry(width - 0.6, 0.24, 1.08),
@@ -604,6 +621,18 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
       neon.position.set(cx, 2.2, cz)
       neon.rotation.y = rotY
       scene.add(neon)
+
+      // Solid OBB collider for smooth, glitch-free player & bot sliding on BOTH sides & edges!
+      angledObbs.push({
+        cx,
+        cz,
+        halfW: width / 2,
+        halfD: 0.54,
+        minY: 0,
+        maxY: height,
+        cosR: Math.cos(rotY),
+        sinR: Math.sin(rotY),
+      })
 
       const normal = new THREE.Vector3(Math.sin(rotY), 0, Math.cos(rotY)).normalize()
       // Add both front and back plane colliders for frisbee reflection
@@ -623,7 +652,7 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
       })
     }
 
-    // Helper: Walkable Ramp
+    // Helper: Walkable Ramp (with glowing side guide rails!)
     const addRamp = (minX: number, maxX: number, minZ: number, maxZ: number, axis: 'x' | 'z', yStart: number, yEnd: number) => {
       ramps.push({ minX, maxX, minZ, maxZ, axis, yStart, yEnd })
       const w = maxX - minX
@@ -632,16 +661,30 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
       const run = axis === 'x' ? w : d
       const len = Math.hypot(run, dy)
       const ang = Math.atan2(dy, run)
+      const rampGroup = new THREE.Group()
+      rampGroup.position.set((minX + maxX) / 2, (yStart + yEnd) / 2 - 0.22, (minZ + maxZ) / 2)
+      if (axis === 'z') rampGroup.rotation.x = -ang
+      else rampGroup.rotation.z = ang
+
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(axis === 'x' ? len : w, 0.5, axis === 'z' ? len : d),
         rampMat,
       )
-      mesh.position.set((minX + maxX) / 2, (yStart + yEnd) / 2 - 0.22, (minZ + maxZ) / 2)
-      if (axis === 'z') mesh.rotation.x = -ang
-      else mesh.rotation.z = ang
       mesh.receiveShadow = true
       mesh.castShadow = qualityRef.current !== 'low'
-      scene.add(mesh)
+      rampGroup.add(mesh)
+
+      const railMat = new THREE.MeshBasicMaterial({ color: '#F97316' })
+      for (const side of [-1, 1]) {
+        const rail = new THREE.Mesh(
+          new THREE.BoxGeometry(axis === 'x' ? len : 0.14, 0.14, axis === 'z' ? len : 0.14),
+          railMat,
+        )
+        rail.position.set(axis === 'z' ? side * (w / 2 - 0.08) : 0, 0.28, axis === 'x' ? side * (d / 2 - 0.08) : 0)
+        rampGroup.add(rail)
+      }
+      scene.add(rampGroup)
+      camSurfaces.push(mesh)
     }
 
     // --- WINDING LABYRINTH & TRICK-SHOT LAYOUT ---
@@ -879,6 +922,12 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
       yaw: 0,
       pitch: 0,
       grounded: false,
+      prevGrounded: false,
+      coyoteTimer: 0,
+      jumpBuffer: 0,
+      landDip: 0,
+      camShake: 0,
+      camRoll: 0,
       alive: true,
       roundWins: 0,
       slices: 0,
@@ -892,6 +941,28 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
       footstepTimer: 0,
       targetHits: 0,
     }
+
+    // === LIVE 3D AIM RICOCHET TRAJECTORY PREVIEW (shows 1st wall bounce when holding Frisbee!) ===
+    const aimPreviewGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(),
+      new THREE.Vector3(),
+      new THREE.Vector3(),
+    ])
+    const aimPreviewMat = new THREE.LineBasicMaterial({
+      color: '#38BDF8',
+      transparent: true,
+      opacity: 0.72,
+    })
+    const aimPreviewLine = new THREE.Line(aimPreviewGeo, aimPreviewMat)
+    aimPreviewLine.visible = false
+    scene.add(aimPreviewLine)
+
+    const aimBounceMarker = new THREE.Mesh(
+      new THREE.RingGeometry(0.24, 0.42, 24),
+      new THREE.MeshBasicMaterial({ color: '#FACC15', side: THREE.DoubleSide, transparent: true, opacity: 0.85 }),
+    )
+    aimBounceMarker.visible = false
+    scene.add(aimBounceMarker)
 
     const bots: FrisbeeBot[] = FRISBEE_BOTS.map((cfg, idx) => {
       const rig = createR6Rig({
@@ -1169,115 +1240,208 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
       const dir = new THREE.Vector3()
       camera.getWorldDirection(dir)
       const origin = player.pos.clone().add(new THREE.Vector3(0, 2.05, 0)).addScaledVector(dir, 1.3)
+      player.camShake = Math.max(player.camShake, 0.1 + charge01 * 0.14)
       performThrow(playerId, usernameRef.current, origin, dir, curveDir, charge01, true)
     }
 
     const triggerLocalCatch = () => {
       if (!player.alive || frisbee.holderId === playerId) return
       if (player.catchCooldown > 0) return
-      player.catchWindow = 0.44
-      player.catchCooldown = 0.72
+      player.catchWindow = 0.52
+      player.catchCooldown = 0.68
       setCatchWindowActive(true)
-      window.setTimeout(() => setCatchWindowActive(false), 440)
+      window.setTimeout(() => setCatchWindowActive(false), 520)
     }
 
-    // === SEALED ARENA COLLISION FOR ENTITIES ===
-    const resolvePlayerPhysics = (pos: THREE.Vector3, vel: THREE.Vector3, dt: number): boolean => {
-      vel.y -= GRAVITY * dt
-      pos.addScaledVector(vel, dt)
+    // === BULLETPROOF SUB-STEPPED SEALED ARENA COLLISION (AXIAL X -> Z -> SOLID OBB -> Y + AUTO-STEP!) ===
+    const resolvePlayerPhysics = (
+      pos: THREE.Vector3,
+      vel: THREE.Vector3,
+      dt: number,
+    ): { grounded: boolean; landedImpact: number } => {
+      const subSteps = Math.max(1, Math.min(5, Math.ceil(dt / 0.0085)))
+      const sdt = dt / subSteps
       let grounded = false
-
-      // 1. Walkable Ramps
-      for (const r of ramps) {
-        if (pos.x >= r.minX - 0.3 && pos.x <= r.maxX + 0.3 && pos.z >= r.minZ - 0.3 && pos.z <= r.maxZ + 0.3) {
-          const t =
-            r.axis === 'z'
-              ? THREE.MathUtils.clamp((pos.z - r.minZ) / Math.max(0.01, r.maxZ - r.minZ), 0, 1)
-              : THREE.MathUtils.clamp((pos.x - r.minX) / Math.max(0.01, r.maxX - r.minX), 0, 1)
-          const rampY = THREE.MathUtils.lerp(r.yStart, r.yEnd, t)
-          if (pos.y <= rampY + 0.6 && pos.y >= rampY - 1.25 && vel.y <= 2) {
-            pos.y = rampY
-            vel.y = 0
-            grounded = true
-          }
-        }
-      }
-
-      // 2. Solid Box Walls & Upper Decks
-      for (const b of boxes) {
-        const minX = b.cx - b.hx - PLAYER_RADIUS
-        const maxX = b.cx + b.hx + PLAYER_RADIUS
-        const minZ = b.cz - b.hz - PLAYER_RADIUS
-        const maxZ = b.cz + b.hz + PLAYER_RADIUS
-        const minY = b.cy - b.hy
-        const maxY = b.cy + b.hy
-        if (pos.x > minX && pos.x < maxX && pos.z > minZ && pos.z < maxZ && pos.y < maxY && pos.y + PLAYER_HEIGHT > minY) {
-          const penTop = maxY - pos.y
-          const penBot = pos.y + PLAYER_HEIGHT - minY
-          const penL = pos.x - minX
-          const penR = maxX - pos.x
-          const penF = pos.z - minZ
-          const penB = maxZ - pos.z
-          const m = Math.min(penTop, penBot, penL, penR, penF, penB)
-          if (m === penTop && vel.y <= 0.5) {
-            pos.y = maxY
-            vel.y = 0
-            grounded = true
-          } else if (m === penBot && vel.y > 0) {
-            pos.y = minY - PLAYER_HEIGHT
-            vel.y = 0
-          } else if (m === penL) {
-            pos.x = minX
-            vel.x = 0
-          } else if (m === penR) {
-            pos.x = maxX
-            vel.x = 0
-          } else if (m === penF) {
-            pos.z = minZ
-            vel.z = 0
-          } else {
-            pos.z = maxZ
-            vel.z = 0
-          }
-        }
-      }
-
-      // 3. 45° Corner Bank Walls pushout
-      for (const aw of angledWalls) {
-        const rel = pos.clone().sub(aw.point)
-        const dist = rel.dot(aw.normal)
-        if (dist < PLAYER_RADIUS && dist > -1.4) {
-          const tangent = new THREE.Vector3(-aw.normal.z, 0, aw.normal.x)
-          if (Math.abs(rel.dot(tangent)) < aw.halfWidth + 0.4) {
-            pos.addScaledVector(aw.normal, PLAYER_RADIUS - dist)
-          }
-        }
-      }
-
-      // 4. Outer Enclosed Box (ZERO ABYSS!)
+      let landedImpact = 0
+      const STEP_HEIGHT = 0.54
       const lim = ARENA_HALF - PLAYER_RADIUS
-      if (pos.y <= 0) {
-        pos.y = 0
-        if (vel.y < 0) vel.y = 0
-        grounded = true
-      }
-      if (pos.y + PLAYER_HEIGHT >= ARENA_HEIGHT) {
-        pos.y = ARENA_HEIGHT - PLAYER_HEIGHT
-        if (vel.y > 0) vel.y = 0
-      }
-      pos.x = THREE.MathUtils.clamp(pos.x, -lim, lim)
-      pos.z = THREE.MathUtils.clamp(pos.z, -lim, lim)
 
-      // 5. Corner Jump Pads
-      for (const jp of jumpPads) {
-        if (pos.y < 1.1 && Math.hypot(pos.x - jp.x, pos.z - jp.z) < 1.85) {
-          vel.y = 20.5
-          grounded = false
-          audioEngine.playJumpPad()
+      for (let step = 0; step < subSteps; step++) {
+        vel.y -= GRAVITY * sdt
+
+        // --- AXIS 1: X (smooth wall-slide + auto step-up) ---
+        const prevX = pos.x
+        pos.x += vel.x * sdt
+        for (const b of boxes) {
+          const minX = b.cx - b.hx - PLAYER_RADIUS
+          const maxX = b.cx + b.hx + PLAYER_RADIUS
+          const minZ = b.cz - b.hz - PLAYER_RADIUS + 0.02
+          const maxZ = b.cz + b.hz + PLAYER_RADIUS - 0.02
+          const minY = b.cy - b.hy
+          const maxY = b.cy + b.hy
+          if (pos.x > minX && pos.x < maxX && pos.z > minZ && pos.z < maxZ && pos.y < maxY - 0.02 && pos.y + PLAYER_HEIGHT > minY + 0.02) {
+            if (maxY - pos.y <= STEP_HEIGHT && vel.y <= 1.0) {
+              pos.y = maxY
+              vel.y = Math.max(0, vel.y)
+              grounded = true
+            } else {
+              pos.x = prevX <= b.cx ? minX : maxX
+              vel.x = 0
+            }
+          }
+        }
+        if (pos.x < -lim) {
+          pos.x = -lim
+          vel.x = 0
+        } else if (pos.x > lim) {
+          pos.x = lim
+          vel.x = 0
+        }
+
+        // --- AXIS 2: Z (smooth wall-slide + auto step-up) ---
+        const prevZ = pos.z
+        pos.z += vel.z * sdt
+        for (const b of boxes) {
+          const minX = b.cx - b.hx - PLAYER_RADIUS + 0.02
+          const maxX = b.cx + b.hx + PLAYER_RADIUS - 0.02
+          const minZ = b.cz - b.hz - PLAYER_RADIUS
+          const maxZ = b.cz + b.hz + PLAYER_RADIUS
+          const minY = b.cy - b.hy
+          const maxY = b.cy + b.hy
+          if (pos.x > minX && pos.x < maxX && pos.z > minZ && pos.z < maxZ && pos.y < maxY - 0.02 && pos.y + PLAYER_HEIGHT > minY + 0.02) {
+            if (maxY - pos.y <= STEP_HEIGHT && vel.y <= 1.0) {
+              pos.y = maxY
+              vel.y = Math.max(0, vel.y)
+              grounded = true
+            } else {
+              pos.z = prevZ <= b.cz ? minZ : maxZ
+              vel.z = 0
+            }
+          }
+        }
+        if (pos.z < -lim) {
+          pos.z = -lim
+          vel.z = 0
+        } else if (pos.z > lim) {
+          pos.z = lim
+          vel.z = 0
+        }
+
+        // --- AXIS 2.5: TRUE SOLID CIRCLE-VS-OBB FOR 45° CORNER & BANK WALLS (ZERO GLITCHING!) ---
+        for (const obb of angledObbs) {
+          if (pos.y >= obb.maxY || pos.y + PLAYER_HEIGHT <= obb.minY) continue
+          const dx = pos.x - obb.cx
+          const dz = pos.z - obb.cz
+          // Transform player center into OBB local frame (inverse of Three.js Y-rotation)
+          const lx = dx * obb.cosR - dz * obb.sinR
+          const lz = dx * obb.sinR + dz * obb.cosR
+          const clx = THREE.MathUtils.clamp(lx, -obb.halfW, obb.halfW)
+          const clz = THREE.MathUtils.clamp(lz, -obb.halfD, obb.halfD)
+          let ox = lx - clx
+          let oz = lz - clz
+          const distSq = ox * ox + oz * oz
+          if (distSq < PLAYER_RADIUS * PLAYER_RADIUS) {
+            let pushLocalX = 0
+            let pushLocalZ = 0
+            if (distSq > 1e-6) {
+              const dist = Math.sqrt(distSq)
+              const pen = PLAYER_RADIUS - dist
+              pushLocalX = (ox / dist) * pen
+              pushLocalZ = (oz / dist) * pen
+            } else {
+              // Deep inside fallback: eject out nearest face
+              const penX = obb.halfW - Math.abs(lx)
+              const penZ = obb.halfD - Math.abs(lz)
+              if (penZ <= penX) {
+                pushLocalZ = (lz >= 0 ? 1 : -1) * (penZ + PLAYER_RADIUS)
+              } else {
+                pushLocalX = (lx >= 0 ? 1 : -1) * (penX + PLAYER_RADIUS)
+              }
+            }
+            // Rotate push normal back into world space
+            const pushWx = pushLocalX * obb.cosR + pushLocalZ * obb.sinR
+            const pushWz = -pushLocalX * obb.sinR + pushLocalZ * obb.cosR
+            pos.x += pushWx
+            pos.z += pushWz
+            // Cancel inward velocity component so player slides smoothly along the 45° wall!
+            const pLen = Math.hypot(pushWx, pushWz)
+            if (pLen > 1e-5) {
+              const nx = pushWx / pLen
+              const nz = pushWz / pLen
+              const vn = vel.x * nx + vel.z * nz
+              if (vn < 0) {
+                vel.x -= vn * nx
+                vel.z -= vn * nz
+              }
+            }
+          }
+        }
+
+        // --- AXIS 3: Y (floor, ceiling, box decks & smooth walkable ramps!) ---
+        const prevY = pos.y
+        pos.y += vel.y * sdt
+        let stepGrounded = false
+
+        for (const r of ramps) {
+          if (pos.x >= r.minX - 0.32 && pos.x <= r.maxX + 0.32 && pos.z >= r.minZ - 0.32 && pos.z <= r.maxZ + 0.32) {
+            const t =
+              r.axis === 'z'
+                ? THREE.MathUtils.clamp((pos.z - r.minZ) / Math.max(0.01, r.maxZ - r.minZ), 0, 1)
+                : THREE.MathUtils.clamp((pos.x - r.minX) / Math.max(0.01, r.maxX - r.minX), 0, 1)
+            const rampY = THREE.MathUtils.lerp(r.yStart, r.yEnd, t)
+            if (pos.y <= rampY + 0.54 && prevY >= rampY - 0.85 && vel.y <= 3.5) {
+              if (vel.y < -4) landedImpact = Math.max(landedImpact, Math.min(1, -vel.y / 22))
+              pos.y = rampY
+              vel.y = 0
+              stepGrounded = true
+            }
+          }
+        }
+
+        for (const b of boxes) {
+          const minX = b.cx - b.hx - PLAYER_RADIUS + 0.03
+          const maxX = b.cx + b.hx + PLAYER_RADIUS - 0.03
+          const minZ = b.cz - b.hz - PLAYER_RADIUS + 0.03
+          const maxZ = b.cz + b.hz + PLAYER_RADIUS - 0.03
+          const minY = b.cy - b.hy
+          const maxY = b.cy + b.hy
+          if (pos.x > minX && pos.x < maxX && pos.z > minZ && pos.z < maxZ && pos.y < maxY && pos.y + PLAYER_HEIGHT > minY) {
+            if (vel.y <= 0 && prevY >= maxY - 0.45) {
+              if (vel.y < -4) landedImpact = Math.max(landedImpact, Math.min(1, -vel.y / 22))
+              pos.y = maxY
+              vel.y = 0
+              stepGrounded = true
+            } else if (vel.y > 0 && prevY + PLAYER_HEIGHT <= minY + 0.45) {
+              pos.y = minY - PLAYER_HEIGHT
+              vel.y = 0
+            }
+          }
+        }
+
+        if (pos.y <= 0) {
+          if (vel.y < -4) landedImpact = Math.max(landedImpact, Math.min(1, -vel.y / 22))
+          pos.y = 0
+          if (vel.y < 0) vel.y = 0
+          stepGrounded = true
+        }
+        if (pos.y + PLAYER_HEIGHT >= ARENA_HEIGHT) {
+          pos.y = ARENA_HEIGHT - PLAYER_HEIGHT
+          if (vel.y > 0) vel.y = 0
+        }
+
+        if (stepGrounded) grounded = true
+
+        // Corner Jump Pads
+        for (const jp of jumpPads) {
+          if (pos.y < 1.15 && Math.hypot(pos.x - jp.x, pos.z - jp.z) < 1.9) {
+            vel.y = 20.8
+            grounded = false
+            audioEngine.playJumpPad()
+          }
         }
       }
 
-      return grounded
+      return { grounded, landedImpact }
     }
 
     // === INPUT LISTENERS ===
@@ -1454,6 +1618,20 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
     let lastHudSync = 0
     let fpsFrames = 0
     let fpsTimer = performance.now()
+    const camRaycaster = new THREE.Raycaster()
+    const aimRaycaster = new THREE.Raycaster()
+    const tmpAimOrigin = new THREE.Vector3()
+    const tmpAimDir = new THREE.Vector3()
+    const tmpAimHit = new THREE.Vector3()
+    const tmpAimNormal = new THREE.Vector3()
+    const tmpAimRefl = new THREE.Vector3()
+    const tmpAimEnd = new THREE.Vector3()
+    const tmpCamOrigin = new THREE.Vector3()
+    const tmpCamDir = new THREE.Vector3()
+    const tmpDesiredCam = new THREE.Vector3()
+    const tmpEyePos = new THREE.Vector3()
+    const tmpCamEuler = new THREE.Euler(0, 0, 0, 'YXZ')
+    let smoothCamDist = 6.2
 
     const applyFrisbeeBounce = (normal: THREE.Vector3, contactPt: THREE.Vector3) => {
       const dot = frisbee.vel.dot(normal)
@@ -1533,10 +1711,7 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
         fpsTimer = now
       }
 
-      if (Math.abs(camera.fov - fovRef.current) > 0.2) {
-        camera.fov = fovRef.current
-        camera.updateProjectionMatrix()
-      }
+      // Dynamic FOV handled smoothly in camera section below
       const isNight = worldTimeRef.current === 'night'
       hemi.intensity = isNight ? 0.6 : 1.05
       dirLight.intensity = isNight ? 0.68 : 1.2
@@ -1595,19 +1770,42 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
         wx /= wLen
         wz /= wLen
       }
-      if (player.grounded) {
-        player.vel.x += (wx * maxSpd - player.vel.x) * Math.min(1, dt * 11)
-        player.vel.z += (wz * maxSpd - player.vel.z) * Math.min(1, dt * 11)
-        if (!uiBlocked && (keys.has('Space') || touchJump)) {
-          player.vel.y = JUMP_VEL
-          player.grounded = false
-          audioEngine.playJump()
-        }
+      if (!uiBlocked && (keys.has('Space') || touchJump)) {
+        player.jumpBuffer = 0.15
       } else {
-        player.vel.x += wx * 18 * dt
-        player.vel.z += wz * 18 * dt
+        player.jumpBuffer = Math.max(0, player.jumpBuffer - dt)
       }
-      player.grounded = resolvePlayerPhysics(player.pos, player.vel, dt)
+      if (player.grounded) {
+        player.coyoteTimer = 0.14
+      } else {
+        player.coyoteTimer = Math.max(0, player.coyoteTimer - dt)
+      }
+
+      if (player.grounded) {
+        player.vel.x += (wx * maxSpd - player.vel.x) * Math.min(1, dt * 12.5)
+        player.vel.z += (wz * maxSpd - player.vel.z) * Math.min(1, dt * 12.5)
+      } else {
+        player.vel.x += wx * 24 * dt
+        player.vel.z += wz * 24 * dt
+      }
+      if (player.jumpBuffer > 0 && player.coyoteTimer > 0) {
+        player.vel.y = JUMP_VEL
+        player.grounded = false
+        player.coyoteTimer = 0
+        player.jumpBuffer = 0
+        audioEngine.playJump()
+      }
+
+      player.prevGrounded = player.grounded
+      const pPhys = resolvePlayerPhysics(player.pos, player.vel, dt)
+      player.grounded = pPhys.grounded
+      if (!player.prevGrounded && player.grounded && pPhys.landedImpact > 0.08) {
+        audioEngine.playLand(pPhys.landedImpact)
+        player.landDip = Math.max(player.landDip, pPhys.landedImpact * 0.24)
+      }
+      player.landDip = THREE.MathUtils.lerp(player.landDip, 0, Math.min(1, dt * 13))
+      player.camShake = Math.max(0, player.camShake - dt * 1.6)
+      player.camRoll = THREE.MathUtils.lerp(player.camRoll, -moveRight * 0.022, Math.min(1, dt * 10))
 
       const horizSpd = Math.hypot(player.vel.x, player.vel.z)
       if (player.grounded && horizSpd > 2.2) {
@@ -1788,11 +1986,12 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
           const distToMe = pChest.distanceTo(frisbee.pos)
           const selfSafe = frisbee.throwerId === playerId && frisbee.safeSelfTimer > 0
 
-          // 1) CATCH BEFORE IT IGNITES! (PPM or E when blue/cool & within 4.7m!)
-          if (!frisbee.blazing && !selfSafe && player.catchWindow > 0 && distToMe < 4.7) {
+          // 1) CATCH BEFORE IT IGNITES! (PPM or E when blue/cool & within 5.4m!)
+          if (!frisbee.blazing && !selfSafe && player.catchWindow > 0 && distToMe < 5.4) {
             const bonus = Math.min(13, Math.max(4, (frisbee.vel.length() - FRISBEE_BASE_SPEED) * 0.65 + 5))
             giveFrisbeeTo(playerId, usernameRef.current, bonus)
             player.catches += 1
+            player.camShake = Math.max(player.camShake, 0.14)
             setMyCatches(player.catches)
             onFrisbeeProgressRef.current({ catchesDelta: 1 })
             audioEngine.playFrisbeeCatch()
@@ -1957,7 +2156,7 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
           bot.vel.x += (bot.moveDir.x * 10.6 - bot.vel.x) * Math.min(1, dt * 6)
           bot.vel.z += (bot.moveDir.z * 10.6 - bot.vel.z) * Math.min(1, dt * 6)
         }
-        bot.grounded = resolvePlayerPhysics(bot.pos, bot.vel, dt)
+        bot.grounded = resolvePlayerPhysics(bot.pos, bot.vel, dt).grounded
         bot.rotY = Math.atan2(bot.vel.x, bot.vel.z)
         bot.rig.root.position.copy(bot.pos)
         bot.rig.root.rotation.y = bot.rotY
@@ -2100,30 +2299,101 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
         ;(bfx.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - bfx.age / 0.38)
       }
 
-      // === 8. CAMERA (FPP / TPP) & LOCAL RIG ===
-      const eyePos = player.pos.clone().add(new THREE.Vector3(0, 2.28, 0))
-      const euler = new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ')
+      // === 8. CAMERA (FPP / TPP + Wall Raycast + Dynamic FOV) & LOCAL RIG ===
+      const shakeX = player.camShake > 0.005 ? (Math.random() - 0.5) * player.camShake : 0
+      const shakeY = player.camShake > 0.005 ? (Math.random() - 0.5) * player.camShake : 0
+      tmpEyePos.set(player.pos.x + shakeX, player.pos.y + 2.28 - player.landDip + shakeY, player.pos.z)
       const isFpp = cameraViewRef.current === 'fpp'
+      tmpCamEuler.set(player.pitch, player.yaw, isFpp ? player.camRoll : 0, 'YXZ')
+
+      const baseFov = fovRef.current
+      const chargeBoost = player.chargingThrow ? (player.chargeTime / 0.65) * 6 : 0
+      const sprintBoost = sprint && horizSpd > 8 ? 5.5 : 0
+      const targetFov = THREE.MathUtils.clamp(baseFov + sprintBoost + chargeBoost, 62, 102)
+      if (Math.abs(camera.fov - targetFov) > 0.08) {
+        camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, Math.min(1, dt * 9))
+        camera.updateProjectionMatrix()
+      }
 
       if (isFpp) {
-        camera.position.copy(eyePos)
-        camera.quaternion.setFromEuler(euler)
+        camera.position.copy(tmpEyePos)
+        camera.quaternion.setFromEuler(tmpCamEuler)
         localRig.root.visible = false
         fppFrisbee.visible = frisbee.holderId === playerId && player.alive
         if (fppFrisbee.visible) {
           fppFrisbee.rotation.y += dt * (8 + player.chargeTime * 22)
-          fppFrisbee.position.set(0.38 - player.chargeTime * 0.16, -0.28, -0.62 + player.chargeTime * 0.14)
+          fppFrisbee.position.set(
+            0.38 - player.chargeTime * 0.16 + player.camRoll * 0.35,
+            -0.28 - player.landDip * 0.25,
+            -0.62 + player.chargeTime * 0.14,
+          )
         }
       } else {
-        const back = new THREE.Vector3(0, 0, 1).applyEuler(euler)
-        const camPos = eyePos.clone().addScaledVector(back, 6.2).add(new THREE.Vector3(0, 0.85, 0))
-        camPos.x = THREE.MathUtils.clamp(camPos.x, -ARENA_HALF + 0.6, ARENA_HALF - 0.6)
-        camPos.z = THREE.MathUtils.clamp(camPos.z, -ARENA_HALF + 0.6, ARENA_HALF - 0.6)
-        camPos.y = THREE.MathUtils.clamp(camPos.y, 0.6, ARENA_HEIGHT - 0.6)
-        camera.position.copy(camPos)
-        camera.lookAt(eyePos)
+        tmpCamDir.set(0, 0, 1).applyEuler(tmpCamEuler)
+        tmpCamOrigin.set(tmpEyePos.x, tmpEyePos.y + 0.35, tmpEyePos.z)
+        tmpDesiredCam.copy(tmpCamOrigin).addScaledVector(tmpCamDir, 6.2)
+        tmpDesiredCam.y += 0.5
+        const rayVec = tmpDesiredCam.clone().sub(tmpCamOrigin)
+        const rayLen = rayVec.length()
+        let allowedDist = rayLen
+        if (rayLen > 0.1) {
+          camRaycaster.set(tmpCamOrigin, rayVec.divideScalar(rayLen))
+          camRaycaster.far = rayLen + 0.35
+          const camHits = camRaycaster.intersectObjects(camSurfaces, false)
+          if (camHits.length > 0) {
+            allowedDist = Math.max(1.35, camHits[0].distance - 0.55)
+          }
+        }
+        smoothCamDist = THREE.MathUtils.lerp(
+          smoothCamDist,
+          allowedDist,
+          Math.min(1, dt * (allowedDist < smoothCamDist ? 26 : 10)),
+        )
+        camera.position.copy(tmpCamOrigin).addScaledVector(rayVec, smoothCamDist)
+        camera.position.x = THREE.MathUtils.clamp(camera.position.x, -ARENA_HALF + 0.55, ARENA_HALF - 0.55)
+        camera.position.z = THREE.MathUtils.clamp(camera.position.z, -ARENA_HALF + 0.55, ARENA_HALF - 0.55)
+        camera.position.y = THREE.MathUtils.clamp(camera.position.y, 0.55, ARENA_HEIGHT - 0.55)
+        camera.lookAt(tmpEyePos)
         localRig.root.visible = player.alive
         fppFrisbee.visible = false
+      }
+
+      // === 8.5 LIVE 3D AIM & 1ST-WALL RICOCHET TRAJECTORY PREVIEW (when holding Frisbee!) ===
+      if (frisbee.holderId === playerId && player.alive && !uiBlocked) {
+        camera.getWorldDirection(tmpAimDir)
+        tmpAimOrigin.set(player.pos.x, player.pos.y + 2.02, player.pos.z).addScaledVector(tmpAimDir, 1.35)
+        aimRaycaster.set(tmpAimOrigin, tmpAimDir)
+        aimRaycaster.far = 42
+        const aimHits = aimRaycaster.intersectObjects(camSurfaces, false)
+        if (aimHits.length > 0) {
+          const h = aimHits[0]
+          tmpAimHit.copy(h.point)
+          if (h.face) {
+            tmpAimNormal.copy(h.face.normal).transformDirection(h.object.matrixWorld).normalize()
+            if (tmpAimNormal.dot(tmpAimDir) > 0) tmpAimNormal.negate()
+          } else {
+            tmpAimNormal.copy(tmpAimDir).negate()
+          }
+          // Reflected bounce vector for killer trick-shot aiming!
+          tmpAimRefl.copy(tmpAimDir).addScaledVector(tmpAimNormal, -2 * tmpAimDir.dot(tmpAimNormal)).normalize()
+          tmpAimEnd.copy(tmpAimHit).addScaledVector(tmpAimRefl, 11.5)
+          aimPreviewGeo.setFromPoints([tmpAimOrigin, tmpAimHit, tmpAimEnd])
+          aimPreviewMat.color.set(player.chargeTime > 0.35 ? '#F97316' : '#38BDF8')
+          aimPreviewLine.visible = true
+
+          aimBounceMarker.visible = true
+          aimBounceMarker.position.copy(tmpAimHit).addScaledVector(tmpAimNormal, 0.08)
+          aimBounceMarker.lookAt(tmpAimHit.clone().add(tmpAimNormal))
+          aimBounceMarker.scale.setScalar(0.9 + Math.sin(elapsed * 12) * 0.14)
+        } else {
+          tmpAimEnd.copy(tmpAimOrigin).addScaledVector(tmpAimDir, 24)
+          aimPreviewGeo.setFromPoints([tmpAimOrigin, tmpAimEnd, tmpAimEnd])
+          aimPreviewLine.visible = true
+          aimBounceMarker.visible = false
+        }
+      } else {
+        aimPreviewLine.visible = false
+        aimBounceMarker.visible = false
       }
 
       const pose: PlayerPose = player.emote
@@ -2174,7 +2444,15 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
           !frisbee.holderId &&
             !frisbee.blazing &&
             player.alive &&
-            distF < 6.8 &&
+            distF < 8.5 &&
+            !(frisbee.throwerId === playerId && frisbee.safeSelfTimer > 0),
+        )
+        setBlazingDanger(
+          !frisbee.holderId &&
+            frisbee.blazing &&
+            player.alive &&
+            modeNow !== 'solo_trick' &&
+            distF < 12.5 &&
             !(frisbee.throwerId === playerId && frisbee.safeSelfTimer > 0),
         )
         setHoldTimeoutSec(
@@ -2214,6 +2492,10 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
       renderer.domElement.removeEventListener('contextmenu', onContextMenu)
       mp.disconnect()
       localRig.dispose()
+      aimPreviewGeo.dispose()
+      aimPreviewMat.dispose()
+      aimBounceMarker.geometry.dispose()
+      ;(aimBounceMarker.material as THREE.Material).dispose()
       bots.forEach((b) => b.rig.dispose())
       remotePeers.forEach((p) => p.rig.dispose())
       renderer.dispose()
@@ -2457,6 +2739,12 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
           {canCatchNow && (
             <div className="animate-pulse rounded-full border border-emerald-300 bg-emerald-500/25 px-3 py-1 text-xs font-black text-emerald-200 shadow-lg backdrop-blur">
               {lang === 'pl' ? '🧤 ZŁAP TERAZ! [PPM / E]' : '🧤 CATCH NOW! [RMB / E]'}
+            </div>
+          )}
+
+          {blazingDanger && (
+            <div className="animate-bounce rounded-full border border-rose-400 bg-rose-600/35 px-3.5 py-1 text-xs font-black text-rose-100 shadow-lg backdrop-blur">
+              {lang === 'pl' ? '🔥 UNIK! PŁONĄCE FRISBEE NADLATUJE!' : '🔥 DODGE! BLAZING FRISBEE INCOMING!'}
             </div>
           )}
 

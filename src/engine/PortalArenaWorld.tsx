@@ -717,7 +717,7 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
       return mesh
     }
 
-    // Helper to add smooth walkable ramps up to upper balconies
+    // Helper to add smooth walkable ramps up to upper balconies (with glowing chevron rails!)
     const addRamp = (minX: number, maxX: number, minZ: number, maxZ: number, axis: 'x' | 'z', yStart: number, yEnd: number) => {
       ramps.push({ minX, maxX, minZ, maxZ, axis, yStart, yEnd })
       const w = maxX - minX
@@ -726,16 +726,30 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
       const run = axis === 'x' ? w : d
       const len = Math.hypot(run, dy)
       const angle = Math.atan2(dy, run)
+      const rampGroup = new THREE.Group()
+      rampGroup.position.set((minX + maxX) / 2, (yStart + yEnd) / 2 - 0.25, (minZ + maxZ) / 2)
+      if (axis === 'z') rampGroup.rotation.x = -angle
+      else rampGroup.rotation.z = angle
+
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(axis === 'x' ? len : w, 0.55, axis === 'z' ? len : d),
         rampMat,
       )
-      mesh.position.set((minX + maxX) / 2, (yStart + yEnd) / 2 - 0.25, (minZ + maxZ) / 2)
-      if (axis === 'z') mesh.rotation.x = -angle
-      else mesh.rotation.z = angle
       mesh.receiveShadow = true
       mesh.castShadow = qualityRef.current !== 'low'
-      scene.add(mesh)
+      rampGroup.add(mesh)
+
+      // Glowing side edge guide strips for crisp visual readability
+      const railMat = new THREE.MeshBasicMaterial({ color: '#38BDF8' })
+      for (const side of [-1, 1]) {
+        const rail = new THREE.Mesh(
+          new THREE.BoxGeometry(axis === 'x' ? len : 0.14, 0.14, axis === 'z' ? len : 0.14),
+          railMat,
+        )
+        rail.position.set(axis === 'z' ? side * (w / 2 - 0.08) : 0, 0.3, axis === 'x' ? side * (d / 2 - 0.08) : 0)
+        rampGroup.add(rail)
+      }
+      scene.add(rampGroup)
       raycastSurfaces.push(mesh)
     }
 
@@ -862,8 +876,8 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
     previewRing.visible = false
     scene.add(previewRing)
 
-    // === SHARED PORTALS WITH LIVE RENDER-TO-TEXTURE WINDOWS ===
-    const rtSize = qualityRef.current === 'high' ? 512 : qualityRef.current === 'medium' ? 420 : 280
+    // === SHARED PORTALS WITH LIVE RENDER-TO-TEXTURE WINDOWS (OPTIMIZED FOR 60+ FPS) ===
+    const rtSize = qualityRef.current === 'high' ? 420 : qualityRef.current === 'medium' ? 320 : 224
     const buildPortalSlot = (slot: 'cyan' | 'orange'): PortalSlot => {
       const hex = slot === 'cyan' ? 0x22d3ee : 0xf97316
       const rt = new THREE.WebGLRenderTarget(rtSize, rtSize, {
@@ -886,12 +900,21 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
         new THREE.MeshStandardMaterial({
           color: hex,
           emissive: hex,
-          emissiveIntensity: 1.75,
+          emissiveIntensity: 1.85,
           roughness: 0.15,
         }),
       )
       frameMesh.scale.set(PORTAL_RX * 1.03, PORTAL_RY * 1.03, 0.85)
       group.add(frameMesh)
+
+      // Outer halo plasma rim for dramatic sci-fi clarity
+      const outerHalo = new THREE.Mesh(
+        new THREE.TorusGeometry(1, 0.04, 10, 44),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 }),
+      )
+      outerHalo.scale.set(PORTAL_RX * 1.09, PORTAL_RY * 1.09, 0.5)
+      outerHalo.position.z = 0.06
+      group.add(outerHalo)
 
       const light = new THREE.PointLight(hex, 2.2, 14)
       light.position.set(0, 0, 0.8)
@@ -1000,10 +1023,12 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
     const renderPortalWindow = (src: PortalSlot, dest: PortalSlot) => {
       if (!src.active || !dest.active) return
 
-      // Skip if src portal is behind player camera
+      // Skip if src portal is behind player camera OR facing away from camera!
       camera.getWorldDirection(tmpLookDir)
-      tmpToPortal.subVectors(src.pos, camera.position).normalize()
-      if (tmpLookDir.dot(tmpToPortal) < -0.25) return
+      tmpToPortal.subVectors(src.pos, camera.position)
+      if (tmpToPortal.dot(src.normal) >= 0.08) return // Viewing back of portal
+      tmpToPortal.normalize()
+      if (tmpLookDir.dot(tmpToPortal) < -0.22) return
 
       src.group.updateMatrixWorld(true)
       dest.group.updateMatrixWorld(true)
@@ -1021,8 +1046,8 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
       portalCam.matrixWorldInverse.copy(virtCamMat).invert()
       portalCam.fov = camera.fov
       portalCam.aspect = camera.aspect
-      portalCam.near = 0.1
-      portalCam.far = 160
+      portalCam.near = 0.12
+      portalCam.far = 140
       portalCam.updateProjectionMatrix()
 
       // Clip everything BEHIND the destination portal plane so the destination wall NEVER occludes the view!
@@ -1033,18 +1058,22 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
       const prevLocalVis = localRig.root.visible
       const prevGloveVis = fppGloveGroup.visible
       const prevPreviewVis = previewRing.visible
+      const prevShadowAuto = renderer.shadowMap.autoUpdate
       src.windowMesh.visible = false
       dest.windowMesh.visible = false
       fppGloveGroup.visible = false
       previewRing.visible = false
       localRig.root.visible = true
 
+      // CRITICAL PERFORMANCE BOOST: Don't re-render shadow maps during portal RTT passes!
+      renderer.shadowMap.autoUpdate = false
       renderer.clippingPlanes = [exitClipPlane]
       renderer.setRenderTarget(src.rt)
       renderer.clear()
       renderer.render(scene, portalCam)
       renderer.setRenderTarget(null)
       renderer.clippingPlanes = []
+      renderer.shadowMap.autoUpdate = prevShadowAuto
 
       src.windowMesh.visible = true
       dest.windowMesh.visible = true
@@ -1214,6 +1243,12 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
       yaw: 0,
       pitch: 0,
       grounded: false,
+      coyoteTimer: 0,
+      jumpBuffer: 0,
+      prevGrounded: false,
+      camRoll: 0,
+      camShake: 0,
+      landDip: 0,
       portalCooldown: 0,
       pulseCooldown: 0,
       discCooldown: 0,
@@ -1457,146 +1492,174 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
       spawnShockwave(dest.pos, dest.slot === 'cyan' ? 0x22d3ee : 0xf97316, 4.2)
     }
 
-    // === SEALED CHAMBER COLLISION RESOLUTION (100% enclosed box, zero abyss!) ===
+    // === BULLETPROOF SUB-STEPPED SEALED CHAMBER COLLISION (AXIAL X -> Z -> Y + AUTO-STEP — ZERO WALL GLITCH!) ===
+    const tmpChestPt = new THREE.Vector3()
     const resolveEntityPhysics = (
       pos: THREE.Vector3,
       vel: THREE.Vector3,
       dt: number,
       allowPortals: boolean,
-    ): { grounded: boolean; wallSlamSpeed: number } => {
-      vel.y -= GRAVITY * dt
-      pos.addScaledVector(vel, dt)
-
-      // Check if entity is currently entering an open linked portal (let them glide into it!)
-      const bothOpen = allowPortals && portals.cyan.active && portals.orange.active
-      const nearPortalAperture =
-        bothOpen &&
-        (isInsidePortalAperture(pos.clone().add(new THREE.Vector3(0, 1.2, 0)), portals.cyan) ||
-          isInsidePortalAperture(pos.clone().add(new THREE.Vector3(0, 1.2, 0)), portals.orange) ||
-          isInsidePortalAperture(pos, portals.cyan) ||
-          isInsidePortalAperture(pos, portals.orange))
-
+    ): { grounded: boolean; wallSlamSpeed: number; landedImpact: number } => {
+      const subSteps = Math.max(1, Math.min(5, Math.ceil(dt / 0.0085)))
+      const sdt = dt / subSteps
       let grounded = false
       let wallSlamSpeed = 0
-
-      // 1. Walkable Ramps
-      for (const r of ramps) {
-        if (pos.x >= r.minX - 0.3 && pos.x <= r.maxX + 0.3 && pos.z >= r.minZ - 0.3 && pos.z <= r.maxZ + 0.3) {
-          const t =
-            r.axis === 'z'
-              ? THREE.MathUtils.clamp((pos.z - r.minZ) / Math.max(0.01, r.maxZ - r.minZ), 0, 1)
-              : THREE.MathUtils.clamp((pos.x - r.minX) / Math.max(0.01, r.maxX - r.minX), 0, 1)
-          const rampY = THREE.MathUtils.lerp(r.yStart, r.yEnd, t)
-          if (pos.y <= rampY + 0.55 && pos.y >= rampY - 1.2 && vel.y <= 2) {
-            pos.y = rampY
-            vel.y = 0
-            grounded = true
-          }
-        }
-      }
-
-      // 2. Internal solid boxes (pillars, balconies, high platforms, center base)
-      for (const b of colliders) {
-        const minX = b.cx - b.hx - PLAYER_RADIUS
-        const maxX = b.cx + b.hx + PLAYER_RADIUS
-        const minZ = b.cz - b.hz - PLAYER_RADIUS
-        const maxZ = b.cz + b.hz + PLAYER_RADIUS
-        const minY = b.cy - b.hy
-        const maxY = b.cy + b.hy
-
-        if (pos.x > minX && pos.x < maxX && pos.z > minZ && pos.z < maxZ && pos.y < maxY && pos.y + PLAYER_HEIGHT > minY) {
-          const penTop = maxY - pos.y
-          const penBot = pos.y + PLAYER_HEIGHT - minY
-          const penLeft = pos.x - minX
-          const penRight = maxX - pos.x
-          const penFront = pos.z - minZ
-          const penBack = maxZ - pos.z
-          const minPen = Math.min(penTop, penBot, penLeft, penRight, penFront, penBack)
-
-          if (minPen === penTop && vel.y <= 0.5) {
-            pos.y = maxY
-            vel.y = 0
-            grounded = true
-          } else if (minPen === penBot && vel.y > 0) {
-            pos.y = minY - PLAYER_HEIGHT
-            vel.y = 0
-          } else if (minPen === penLeft) {
-            if (!nearPortalAperture) {
-              wallSlamSpeed = Math.max(wallSlamSpeed, Math.abs(vel.x))
-              pos.x = minX
-              vel.x = 0
-            }
-          } else if (minPen === penRight) {
-            if (!nearPortalAperture) {
-              wallSlamSpeed = Math.max(wallSlamSpeed, Math.abs(vel.x))
-              pos.x = maxX
-              vel.x = 0
-            }
-          } else if (minPen === penFront) {
-            if (!nearPortalAperture) {
-              wallSlamSpeed = Math.max(wallSlamSpeed, Math.abs(vel.z))
-              pos.z = minZ
-              vel.z = 0
-            }
-          } else if (minPen === penBack) {
-            if (!nearPortalAperture) {
-              wallSlamSpeed = Math.max(wallSlamSpeed, Math.abs(vel.z))
-              pos.z = maxZ
-              vel.z = 0
-            }
-          }
-        }
-      }
-
-      // 3. Outer Sealed Chamber Box Boundaries (FLOOR y=0, CEILING y=24, WALLS x/z=±24) — NEVER fall out!
+      let landedImpact = 0
+      const STEP_HEIGHT = 0.54
       const bound = ROOM_HALF - PLAYER_RADIUS
-      if (!nearPortalAperture) {
-        if (pos.y <= 0) {
-          pos.y = 0
-          if (vel.y < 0) vel.y = 0
-          grounded = true
+
+      for (let step = 0; step < subSteps; step++) {
+        vel.y -= GRAVITY * sdt
+        const bothOpen = allowPortals && portals.cyan.active && portals.orange.active
+        tmpChestPt.set(pos.x, pos.y + 1.2, pos.z)
+        const nearPortalAperture =
+          bothOpen &&
+          (isInsidePortalAperture(tmpChestPt, portals.cyan) ||
+            isInsidePortalAperture(tmpChestPt, portals.orange) ||
+            isInsidePortalAperture(pos, portals.cyan) ||
+            isInsidePortalAperture(pos, portals.orange))
+
+        // --- AXIS 1: X (smooth wall-sliding + auto-step up low ledges!) ---
+        const prevX = pos.x
+        pos.x += vel.x * sdt
+        if (!nearPortalAperture) {
+          for (const b of colliders) {
+            const minX = b.cx - b.hx - PLAYER_RADIUS
+            const maxX = b.cx + b.hx + PLAYER_RADIUS
+            const minZ = b.cz - b.hz - PLAYER_RADIUS + 0.02
+            const maxZ = b.cz + b.hz + PLAYER_RADIUS - 0.02
+            const minY = b.cy - b.hy
+            const maxY = b.cy + b.hy
+            if (pos.x > minX && pos.x < maxX && pos.z > minZ && pos.z < maxZ && pos.y < maxY - 0.02 && pos.y + PLAYER_HEIGHT > minY + 0.02) {
+              if (maxY - pos.y <= STEP_HEIGHT && vel.y <= 1.0) {
+                pos.y = maxY
+                vel.y = Math.max(0, vel.y)
+                grounded = true
+              } else {
+                wallSlamSpeed = Math.max(wallSlamSpeed, Math.abs(vel.x))
+                pos.x = prevX <= b.cx ? minX : maxX
+                vel.x = 0
+              }
+            }
+          }
+          if (pos.x < -bound) {
+            wallSlamSpeed = Math.max(wallSlamSpeed, Math.abs(vel.x))
+            pos.x = -bound
+            vel.x = 0
+          } else if (pos.x > bound) {
+            wallSlamSpeed = Math.max(wallSlamSpeed, Math.abs(vel.x))
+            pos.x = bound
+            vel.x = 0
+          }
         }
-        if (pos.y + PLAYER_HEIGHT >= ROOM_HEIGHT) {
-          pos.y = ROOM_HEIGHT - PLAYER_HEIGHT
-          if (vel.y > 0) vel.y = 0
+
+        // --- AXIS 2: Z (smooth wall-sliding + auto-step up low ledges!) ---
+        const prevZ = pos.z
+        pos.z += vel.z * sdt
+        if (!nearPortalAperture) {
+          for (const b of colliders) {
+            const minX = b.cx - b.hx - PLAYER_RADIUS + 0.02
+            const maxX = b.cx + b.hx + PLAYER_RADIUS - 0.02
+            const minZ = b.cz - b.hz - PLAYER_RADIUS
+            const maxZ = b.cz + b.hz + PLAYER_RADIUS
+            const minY = b.cy - b.hy
+            const maxY = b.cy + b.hy
+            if (pos.x > minX && pos.x < maxX && pos.z > minZ && pos.z < maxZ && pos.y < maxY - 0.02 && pos.y + PLAYER_HEIGHT > minY + 0.02) {
+              if (maxY - pos.y <= STEP_HEIGHT && vel.y <= 1.0) {
+                pos.y = maxY
+                vel.y = Math.max(0, vel.y)
+                grounded = true
+              } else {
+                wallSlamSpeed = Math.max(wallSlamSpeed, Math.abs(vel.z))
+                pos.z = prevZ <= b.cz ? minZ : maxZ
+                vel.z = 0
+              }
+            }
+          }
+          if (pos.z < -bound) {
+            wallSlamSpeed = Math.max(wallSlamSpeed, Math.abs(vel.z))
+            pos.z = -bound
+            vel.z = 0
+          } else if (pos.z > bound) {
+            wallSlamSpeed = Math.max(wallSlamSpeed, Math.abs(vel.z))
+            pos.z = bound
+            vel.z = 0
+          }
         }
-        if (pos.x < -bound) {
-          wallSlamSpeed = Math.max(wallSlamSpeed, Math.abs(vel.x))
-          pos.x = -bound
-          vel.x = 0
+
+        // --- AXIS 3: Y (floor, ceiling, platforms & smooth walkable ramps!) ---
+        const prevY = pos.y
+        pos.y += vel.y * sdt
+        let stepGrounded = false
+
+        // Walkable Ramps
+        for (const r of ramps) {
+          if (pos.x >= r.minX - 0.32 && pos.x <= r.maxX + 0.32 && pos.z >= r.minZ - 0.32 && pos.z <= r.maxZ + 0.32) {
+            const t =
+              r.axis === 'z'
+                ? THREE.MathUtils.clamp((pos.z - r.minZ) / Math.max(0.01, r.maxZ - r.minZ), 0, 1)
+                : THREE.MathUtils.clamp((pos.x - r.minX) / Math.max(0.01, r.maxX - r.minX), 0, 1)
+            const rampY = THREE.MathUtils.lerp(r.yStart, r.yEnd, t)
+            if (pos.y <= rampY + 0.52 && prevY >= rampY - 0.85 && vel.y <= 3.5) {
+              if (vel.y < -4) landedImpact = Math.max(landedImpact, Math.min(1, -vel.y / 22))
+              pos.y = rampY
+              vel.y = 0
+              stepGrounded = true
+            }
+          }
         }
-        if (pos.x > bound) {
-          wallSlamSpeed = Math.max(wallSlamSpeed, Math.abs(vel.x))
-          pos.x = bound
-          vel.x = 0
+
+        // Solid Box Tops & Bottoms
+        if (!nearPortalAperture) {
+          for (const b of colliders) {
+            const minX = b.cx - b.hx - PLAYER_RADIUS + 0.03
+            const maxX = b.cx + b.hx + PLAYER_RADIUS - 0.03
+            const minZ = b.cz - b.hz - PLAYER_RADIUS + 0.03
+            const maxZ = b.cz + b.hz + PLAYER_RADIUS - 0.03
+            const minY = b.cy - b.hy
+            const maxY = b.cy + b.hy
+            if (pos.x > minX && pos.x < maxX && pos.z > minZ && pos.z < maxZ && pos.y < maxY && pos.y + PLAYER_HEIGHT > minY) {
+              if (vel.y <= 0 && prevY >= maxY - 0.45) {
+                if (vel.y < -4) landedImpact = Math.max(landedImpact, Math.min(1, -vel.y / 22))
+                pos.y = maxY
+                vel.y = 0
+                stepGrounded = true
+              } else if (vel.y > 0 && prevY + PLAYER_HEIGHT <= minY + 0.45) {
+                pos.y = minY - PLAYER_HEIGHT
+                vel.y = 0
+              }
+            }
+          }
+
+          if (pos.y <= 0) {
+            if (vel.y < -4) landedImpact = Math.max(landedImpact, Math.min(1, -vel.y / 22))
+            pos.y = 0
+            if (vel.y < 0) vel.y = 0
+            stepGrounded = true
+          }
+          if (pos.y + PLAYER_HEIGHT >= ROOM_HEIGHT) {
+            pos.y = ROOM_HEIGHT - PLAYER_HEIGHT
+            if (vel.y > 0) vel.y = 0
+          }
+        } else {
+          pos.x = THREE.MathUtils.clamp(pos.x, -ROOM_HALF - 0.45, ROOM_HALF + 0.45)
+          pos.z = THREE.MathUtils.clamp(pos.z, -ROOM_HALF - 0.45, ROOM_HALF + 0.45)
+          pos.y = THREE.MathUtils.clamp(pos.y, -0.35, ROOM_HEIGHT + 0.35)
         }
-        if (pos.z < -bound) {
-          wallSlamSpeed = Math.max(wallSlamSpeed, Math.abs(vel.z))
-          pos.z = -bound
-          vel.z = 0
+
+        if (stepGrounded) grounded = true
+
+        // Boost Pads on floor
+        for (const bp of boostPads) {
+          if (pos.y < 1.25 && Math.hypot(pos.x - bp.x, pos.z - bp.z) < 2.2) {
+            vel.y = 22.0
+            grounded = false
+            audioEngine.playJumpPad()
+          }
         }
-        if (pos.z > bound) {
-          wallSlamSpeed = Math.max(wallSlamSpeed, Math.abs(vel.z))
-          pos.z = bound
-          vel.z = 0
-        }
-      } else {
-        // Hard safety clamp slightly past wall just in case
-        pos.x = THREE.MathUtils.clamp(pos.x, -ROOM_HALF - 0.5, ROOM_HALF + 0.5)
-        pos.z = THREE.MathUtils.clamp(pos.z, -ROOM_HALF - 0.5, ROOM_HALF + 0.5)
-        pos.y = THREE.MathUtils.clamp(pos.y, -0.5, ROOM_HEIGHT + 0.5)
       }
 
-      // 4. Boost Pads on floor
-      for (const bp of boostPads) {
-        if (pos.y < 1.2 && Math.hypot(pos.x - bp.x, pos.z - bp.z) < 2.2) {
-          vel.y = 21.5
-          grounded = false
-          audioEngine.playJumpPad()
-        }
-      }
-
-      return { grounded, wallSlamSpeed }
+      return { grounded, wallSlamSpeed, landedImpact }
     }
 
     // === RAYCAST FOR SHOOTING PORTALS ===
@@ -1891,6 +1954,15 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
     let fpsTimer = performance.now()
     let laserAngle = 0
     let speedKingId: string | null = null
+    let lastAimPortalableState = false
+    let lastSpeedKingState: string | null = null
+    const camRaycaster = new THREE.Raycaster()
+    const tmpCamOrigin = new THREE.Vector3()
+    const tmpCamDir = new THREE.Vector3()
+    const tmpDesiredCam = new THREE.Vector3()
+    const tmpEyePos = new THREE.Vector3()
+    const tmpCamEuler = new THREE.Euler(0, 0, 0, 'YXZ')
+    let smoothCamDist = 6.2
 
     const animate = () => {
       rafId = window.requestAnimationFrame(animate)
@@ -1906,11 +1978,7 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
         fpsTimer = now
       }
 
-      // Live FOV & day/night lighting adjustments
-      if (Math.abs(camera.fov - fovRef.current) > 0.2) {
-        camera.fov = fovRef.current
-        camera.updateProjectionMatrix()
-      }
+      // Dynamic FOV handled smoothly in camera block below; apply day/night lighting adjustments
       const isNight = worldTimeRef.current === 'night'
       hemi.intensity = isNight ? 0.65 : 1.15
       dirLight.intensity = isNight ? 0.72 : 1.25
@@ -1943,7 +2011,7 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
         if (player.emoteTimer <= 0) player.emote = null
       }
 
-      // === 1. LOCAL PLAYER MOVEMENT ===
+      // === 1. LOCAL PLAYER MOVEMENT (Coyote Time + Jump Buffer + Crisp Air Strafe) ===
       const uiBlocked = menuOpenRef.current || wardrobeOpenRef.current || chatOpenRef.current
       let moveFwd = 0
       let moveRight = 0
@@ -1970,24 +2038,50 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
         wishZ /= wishLen
       }
 
-      const horizSpd = Math.hypot(player.vel.x, player.vel.z)
-      if (player.grounded) {
-        const drag = horizSpd > maxSpd + 3 ? 3.2 : 11
-        player.vel.x += (wishX * maxSpd - player.vel.x) * Math.min(1, dt * drag)
-        player.vel.z += (wishZ * maxSpd - player.vel.z) * Math.min(1, dt * drag)
-        if (!uiBlocked && (keys.has('Space') || touchJump)) {
-          player.vel.y = JUMP_VEL
-          player.grounded = false
-          audioEngine.playJump()
-        }
+      if (!uiBlocked && (keys.has('Space') || touchJump)) {
+        player.jumpBuffer = 0.15
       } else {
-        // Responsive air strafe while preserving portal momentum!
-        player.vel.x += wishX * 20 * dt
-        player.vel.z += wishZ * 20 * dt
+        player.jumpBuffer = Math.max(0, player.jumpBuffer - dt)
+      }
+      if (player.grounded) {
+        player.coyoteTimer = 0.14
+      } else {
+        player.coyoteTimer = Math.max(0, player.coyoteTimer - dt)
       }
 
+      const horizSpd = Math.hypot(player.vel.x, player.vel.z)
+      if (player.grounded) {
+        const drag = horizSpd > maxSpd + 3 ? 3.2 : 12.5
+        player.vel.x += (wishX * maxSpd - player.vel.x) * Math.min(1, dt * drag)
+        player.vel.z += (wishZ * maxSpd - player.vel.z) * Math.min(1, dt * drag)
+      } else {
+        // Responsive air strafe while preserving portal momentum!
+        const airAccel = horizSpd < maxSpd ? 28 : 18
+        player.vel.x += wishX * airAccel * dt
+        player.vel.z += wishZ * airAccel * dt
+      }
+
+      if (player.jumpBuffer > 0 && player.coyoteTimer > 0) {
+        player.vel.y = JUMP_VEL
+        player.grounded = false
+        player.coyoteTimer = 0
+        player.jumpBuffer = 0
+        audioEngine.playJump()
+      }
+
+      player.prevGrounded = player.grounded
       const phys = resolveEntityPhysics(player.pos, player.vel, dt, player.portalCooldown <= 0)
       player.grounded = phys.grounded
+      if (!player.prevGrounded && player.grounded && phys.landedImpact > 0.08) {
+        audioEngine.playLand(phys.landedImpact)
+        player.landDip = Math.max(player.landDip, phys.landedImpact * 0.24)
+      }
+      if (phys.wallSlamSpeed > 14) {
+        player.camShake = Math.max(player.camShake, Math.min(0.28, (phys.wallSlamSpeed - 12) * 0.012))
+      }
+      player.landDip = THREE.MathUtils.lerp(player.landDip, 0, Math.min(1, dt * 13))
+      player.camShake = Math.max(0, player.camShake - dt * 1.4)
+      player.camRoll = THREE.MathUtils.lerp(player.camRoll, -moveRight * 0.022, Math.min(1, dt * 10))
 
       // Footsteps audio
       if (player.grounded && horizSpd > 2.2) {
@@ -2365,9 +2459,16 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
         }
         speedKingId = kingId
         if (kingId === playerId) player.score += Math.round(dt * 18)
-        setSpeedKingName(kingName)
+        if (kingName !== lastSpeedKingState) {
+          lastSpeedKingState = kingName
+          setSpeedKingName(kingName)
+        }
       } else {
         speedKingId = null
+        if (lastSpeedKingState !== null) {
+          lastSpeedKingState = null
+          setSpeedKingName(null)
+        }
       }
 
       // === 8. ROUND TIMER (Paused in Solo Training!) ===
@@ -2391,31 +2492,60 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
         }
       }
 
-      // === 9. UPDATE CAMERA (FPP / TPP) + LOCAL RIG + PORTAL PLACEMENT PREVIEW ===
-      const eyePos = player.pos.clone().add(new THREE.Vector3(0, 2.28, 0))
-      const euler = new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ')
+      // === 9. UPDATE CAMERA (FPP / TPP + Wall Raycast + Dynamic Speed FOV & Juice) ===
+      const shakeX = player.camShake > 0.005 ? (Math.random() - 0.5) * player.camShake : 0
+      const shakeY = player.camShake > 0.005 ? (Math.random() - 0.5) * player.camShake : 0
+      tmpEyePos.set(player.pos.x + shakeX, player.pos.y + 2.28 - player.landDip + shakeY, player.pos.z)
       const isFpp = cameraViewRef.current === 'fpp'
+      tmpCamEuler.set(player.pitch, player.yaw, isFpp ? player.camRoll : 0, 'YXZ')
+
+      // Smooth dynamic FOV — widens exhilaratingly during sprint & portal meteor launches!
+      const baseArenaFov = fovRef.current
+      const targetFov = THREE.MathUtils.clamp(baseArenaFov + Math.max(0, curSpeedMs - 9) * 0.58 + (sprint && horizSpd > 9 ? 3.5 : 0), 62, 102)
+      if (Math.abs(camera.fov - targetFov) > 0.08) {
+        camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, Math.min(1, dt * 8))
+        camera.updateProjectionMatrix()
+      }
 
       if (isFpp) {
-        camera.position.copy(eyePos)
-        camera.quaternion.setFromEuler(euler)
+        camera.position.copy(tmpEyePos)
+        camera.quaternion.setFromEuler(tmpCamEuler)
         localRig.root.visible = false
         fppGloveGroup.visible = true
         fppGloveGroup.position.set(
-          0.36,
-          -0.32 + Math.sin(elapsed * (horizSpd > 2 ? 10 : 2.5)) * (horizSpd > 2 ? 0.018 : 0.004),
+          0.36 + player.camRoll * 0.4,
+          -0.32 - player.landDip * 0.25 + Math.sin(elapsed * (horizSpd > 2 ? 10 : 2.5)) * (horizSpd > 2 ? 0.018 : 0.004),
           -0.58 + player.recoil * 0.14,
         )
         gloveCore.rotation.y = elapsed * 3.5
       } else {
-        const backDir = new THREE.Vector3(0, 0, 1).applyEuler(euler)
-        const desiredCam = eyePos.clone().addScaledVector(backDir, 6.2).add(new THREE.Vector3(0, 0.85, 0))
-        // Clamp TPP camera inside sealed chamber box!
-        desiredCam.x = THREE.MathUtils.clamp(desiredCam.x, -ROOM_HALF + 0.6, ROOM_HALF - 0.6)
-        desiredCam.z = THREE.MathUtils.clamp(desiredCam.z, -ROOM_HALF + 0.6, ROOM_HALF - 0.6)
-        desiredCam.y = THREE.MathUtils.clamp(desiredCam.y, 0.6, ROOM_HEIGHT - 0.6)
-        camera.position.copy(desiredCam)
-        camera.lookAt(eyePos)
+        tmpCamDir.set(0, 0, 1).applyEuler(tmpCamEuler)
+        tmpCamOrigin.set(tmpEyePos.x, tmpEyePos.y + 0.35, tmpEyePos.z)
+        // Wall-collision raycast so TPP camera NEVER clips inside pillars, balconies or outer walls!
+        const desiredDist = 6.2
+        tmpDesiredCam.copy(tmpCamOrigin).addScaledVector(tmpCamDir, desiredDist)
+        tmpDesiredCam.y += 0.5
+        const rayVec = tmpDesiredCam.clone().sub(tmpCamOrigin)
+        const rayLen = rayVec.length()
+        let allowedDist = rayLen
+        if (rayLen > 0.1) {
+          camRaycaster.set(tmpCamOrigin, rayVec.divideScalar(rayLen))
+          camRaycaster.far = rayLen + 0.35
+          const camHits = camRaycaster.intersectObjects(raycastSurfaces, false)
+          if (camHits.length > 0) {
+            allowedDist = Math.max(1.35, camHits[0].distance - 0.55)
+          }
+        }
+        smoothCamDist = THREE.MathUtils.lerp(
+          smoothCamDist,
+          allowedDist,
+          Math.min(1, dt * (allowedDist < smoothCamDist ? 26 : 10)),
+        )
+        camera.position.copy(tmpCamOrigin).addScaledVector(rayVec, smoothCamDist)
+        camera.position.x = THREE.MathUtils.clamp(camera.position.x, -ROOM_HALF + 0.55, ROOM_HALF - 0.55)
+        camera.position.z = THREE.MathUtils.clamp(camera.position.z, -ROOM_HALF + 0.55, ROOM_HALF - 0.55)
+        camera.position.y = THREE.MathUtils.clamp(camera.position.y, 0.55, ROOM_HEIGHT - 0.55)
+        camera.lookAt(tmpEyePos)
         localRig.root.visible = true
         fppGloveGroup.visible = false
       }
@@ -2443,9 +2573,13 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
         meteorAura.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), player.vel.clone().normalize())
       }
 
-      // Live Aim Preview Ring on portalable walls!
+      // Live Aim Preview Ring on portalable walls (only trigger React state on change!)
       const aimHit = raycastPortalSurface()
-      setAimPortalable(Boolean(aimHit))
+      const nextAimPortalable = Boolean(aimHit)
+      if (nextAimPortalable !== lastAimPortalableState) {
+        lastAimPortalableState = nextAimPortalable
+        setAimPortalable(nextAimPortalable)
+      }
       if (aimHit && !uiBlocked) {
         previewRing.visible = true
         previewRing.position.copy(aimHit.pos).addScaledVector(aimHit.normal, 0.09)
