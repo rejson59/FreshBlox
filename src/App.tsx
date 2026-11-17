@@ -6,7 +6,6 @@ import {
   FlaskConical,
   Hash,
   Inbox,
-  Loader2,
   LogOut,
   MessageSquarePlus,
   Moon,
@@ -29,6 +28,7 @@ import { SocialProfileView } from './components/social/SocialProfileView'
 import { AdminPanelView } from './components/admin/AdminPanelView'
 import { FeedbackInboxView } from './components/admin/FeedbackInboxView'
 import { TestLabView } from './components/tests/TestLabView'
+import { FreshLoaderAnimation } from './components/loading/FreshLoaders'
 import { AuthScreen } from './components/auth/AuthScreen'
 import { FeedbackModal } from './components/feedback/FeedbackModal'
 import { fetchAdminPlatformStats } from './lib/adminApi'
@@ -192,16 +192,18 @@ export function App() {
   if (authLoading) {
     return (
       <div
-        className="flex min-h-dvh w-full flex-col items-center justify-center gap-4 px-4"
+        className="flex min-h-dvh w-full flex-col items-center justify-center gap-6 px-4"
         style={{ background: shellBg, color: tokens.textPrimary }}
       >
         <div className="flex items-center gap-2.5">
           <FreshBloxLogo size={42} />
           <FreshBloxWordmark mode={mode} size="md" />
         </div>
-        <div className="flex items-center gap-2 text-xs font-bold" style={{ color: tokens.textSecondary }}>
-          <Loader2 className="h-4 w-4 animate-spin" style={{ color: ARCTIC_SKY.skyMain }} />
-          <span>{ta.checkingSession}</span>
+        <div className="flex h-20 w-20 items-center justify-center">
+          <FreshLoaderAnimation id={labFlags.loaderPreset} size="md" mode={mode} />
+        </div>
+        <div className="text-xs font-bold tracking-wide" style={{ color: tokens.textSecondary }}>
+          {ta.checkingSession}
         </div>
       </div>
     )

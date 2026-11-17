@@ -89,3 +89,137 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(56, 189, 248, 0.6);
 }
+
+/* ============================================================
+   FRESHBLOX LOADING ANIMATIONS SUITE (L-01 .. L-16)
+   GPU-accelerated transform/opacity keyframes
+   ============================================================ */
+
+@keyframes fbIsoBounce {
+  0%, 100% { transform: translateY(0px) scale(1); }
+  45% { transform: translateY(-9px) scale(1.04); }
+  70% { transform: translateY(1px) scale(0.98); }
+}
+
+@keyframes fbCubeSpin3D {
+  0% { transform: rotateX(-24deg) rotateY(0deg); }
+  50% { transform: rotateX(24deg) rotateY(180deg); }
+  100% { transform: rotateX(-24deg) rotateY(360deg); }
+}
+
+@keyframes fbVoxelWave {
+  0%, 70%, 100% { transform: scale(0.72); opacity: 0.32; }
+  35% { transform: scale(1.06); opacity: 1; }
+}
+
+@keyframes fbObbyJump {
+  0%   { transform: translate(0px, 0px) scale(1.08, 0.88); }
+  12%  { transform: translate(11px, -18px) scale(0.92, 1.12); }
+  25%  { transform: translate(22px, 0px) scale(1.1, 0.86); }
+  37%  { transform: translate(33px, -18px) scale(0.92, 1.12); }
+  50%  { transform: translate(44px, 0px) scale(1.1, 0.86); }
+  62%  { transform: translate(55px, -18px) scale(0.92, 1.12); }
+  75%  { transform: translate(66px, 0px) scale(1.1, 0.86); }
+  88%  { transform: translate(33px, -24px) rotate(180deg) scale(0.95, 1.05); }
+  100% { transform: translate(0px, 0px) rotate(360deg) scale(1.08, 0.88); }
+}
+
+@keyframes fbObbyPad {
+  0%, 100% { opacity: 0.45; transform: translateY(0px); }
+  50% { opacity: 1; transform: translateY(2px); }
+}
+
+@keyframes fbTileA {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(26px, 0); }
+  50% { transform: translate(26px, 26px); }
+  75% { transform: translate(0, 26px); }
+}
+@keyframes fbTileB {
+  0%, 100% { transform: translate(26px, 0); }
+  25% { transform: translate(26px, 26px); }
+  50% { transform: translate(0, 26px); }
+  75% { transform: translate(0, 0); }
+}
+@keyframes fbTileC {
+  0%, 100% { transform: translate(26px, 26px); }
+  25% { transform: translate(0, 26px); }
+  50% { transform: translate(0, 0); }
+  75% { transform: translate(26px, 0); }
+}
+@keyframes fbTileD {
+  0%, 100% { transform: translate(0, 26px); }
+  25% { transform: translate(0, 0); }
+  50% { transform: translate(26px, 0); }
+  75% { transform: translate(26px, 26px); }
+}
+
+@keyframes fbSpinCW {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fbSpinCCW {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+
+@keyframes fbGemLevitate {
+  0%, 100% { transform: translateY(0px) scale(1); filter: drop-shadow(0 6px 14px rgba(56, 189, 248, 0.35)); }
+  50% { transform: translateY(-7px) scale(1.06); filter: drop-shadow(0 12px 22px rgba(56, 189, 248, 0.65)); }
+}
+
+@keyframes fbRippleOut {
+  0% { transform: scale(0.55); opacity: 0.7; }
+  100% { transform: scale(1.55); opacity: 0; }
+}
+
+@keyframes fbRadarBlip {
+  0%, 15%, 100% { opacity: 0; transform: scale(0.6); }
+  30% { opacity: 1; transform: scale(1.2); }
+  60% { opacity: 0.2; transform: scale(0.9); }
+}
+
+@keyframes fbPortalSquare {
+  0% { transform: rotate(0deg) scale(1); opacity: 0.9; }
+  50% { transform: rotate(90deg) scale(0.76); opacity: 0.45; }
+  100% { transform: rotate(180deg) scale(1); opacity: 0.9; }
+}
+
+@keyframes fbBarWave {
+  0%, 100% { transform: scaleY(0.28); opacity: 0.45; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+
+@keyframes fbLogoBreathe {
+  0%, 100% { transform: scale(0.95); }
+  50% { transform: scale(1.04); }
+}
+
+@keyframes fbScannerCell {
+  0%, 100% { opacity: 0.2; transform: scaleY(0.75); }
+  50% { opacity: 1; transform: scaleY(1.18); }
+}
+
+@keyframes fbLiquidSlide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(260%); }
+}
+
+@keyframes fbNewtonLeft {
+  0%, 50%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(34deg); }
+}
+
+@keyframes fbNewtonRight {
+  0%, 50%, 100% { transform: rotate(0deg); }
+  75% { transform: rotate(-34deg); }
+}
+
+@keyframes fbMorphShape {
+  0%, 100% { border-radius: 26%; transform: rotate(0deg) scale(0.92); }
+  25% { border-radius: 50%; transform: rotate(90deg) scale(1.05); }
+  50% { border-radius: 18%; transform: rotate(180deg) scale(0.88); }
+  75% { border-radius: 50%; transform: rotate(270deg) scale(1.05); }
+}
+

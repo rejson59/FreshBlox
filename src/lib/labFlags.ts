@@ -1,3 +1,5 @@
+import { isLoaderPresetId, LoaderPresetId } from '../components/loading/FreshLoaders'
+
 export interface FreshLabFlags {
   /** Live FPS + coordinates / speed telemetry chip inside 3D worlds */
   showPerfOverlay: boolean
@@ -7,6 +9,8 @@ export interface FreshLabFlags {
   turboMovement: boolean
   /** Show extra debug metadata on cards & HUD */
   verboseDebugBadges: boolean
+  /** Selected loading screen animation preset tested in Test Lab */
+  loaderPreset: LoaderPresetId
 }
 
 export const DEFAULT_LAB_FLAGS: FreshLabFlags = {
@@ -14,6 +18,7 @@ export const DEFAULT_LAB_FLAGS: FreshLabFlags = {
   unlockAllObbyStages: false,
   turboMovement: false,
   verboseDebugBadges: false,
+  loaderPreset: 'iso-blocks',
 }
 
 const STORAGE_KEY = 'freshblox_lab_flags_v1'
@@ -28,6 +33,9 @@ export function loadLabFlags(): FreshLabFlags {
       unlockAllObbyStages: Boolean(parsed.unlockAllObbyStages),
       turboMovement: Boolean(parsed.turboMovement),
       verboseDebugBadges: Boolean(parsed.verboseDebugBadges),
+      loaderPreset: isLoaderPresetId(parsed.loaderPreset)
+        ? parsed.loaderPreset
+        : DEFAULT_LAB_FLAGS.loaderPreset,
     }
   } catch {
     return { ...DEFAULT_LAB_FLAGS }

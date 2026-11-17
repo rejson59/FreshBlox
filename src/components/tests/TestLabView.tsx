@@ -19,6 +19,8 @@ import { Lang } from '../../data/locales'
 import { WorldKind } from '../../data/catalog'
 import { hasAdminAccess, PlayerProfile } from '../../store/usePlayerStore'
 import { DEFAULT_LAB_FLAGS, FreshLabFlags } from '../../lib/labFlags'
+import { LoadingShowcasePanel } from './LoadingShowcasePanel'
+import { LoaderPresetId } from '../loading/FreshLoaders'
 import {
   regenerateWorldThumbnails,
   useWorldThumbnails,
@@ -26,6 +28,14 @@ import {
   WorldThumbnailMap,
 } from '../../engine/worldThumbnails'
 import { isSupabaseConfigured } from '../../lib/supabase'
+
+type BooleanLabFlagKey =
+  | 'showPerfOverlay'
+  | 'unlockAllObbyStages'
+  | 'turboMovement'
+  | 'verboseDebugBadges'
+
+type LabSubTab = 'loaders' | 'tools'
 
 interface TestLabViewProps {
   profile: PlayerProfile
@@ -60,6 +70,7 @@ export const TestLabView: React.FC<TestLabViewProps> = ({
   const [renderingThumbs, setRenderingThumbs] = useState(false)
   const [lastRenderMs, setLastRenderMs] = useState<number | null>(null)
   const [customStage, setCustomStage] = useState<string>(String(profile.obbyStage))
+  const [subTab, setSubTab] = useState<LabSubTab>('loaders')
 
   const thumbs = localThumbs ?? initialThumbs
   const tokens = getThemeTokens(mode)
@@ -81,8 +92,12 @@ export const TestLabView: React.FC<TestLabViewProps> = ({
     )
   }
 
-  const toggleFlag = (key: keyof FreshLabFlags) => {
+  const toggleFlag = (key: BooleanLabFlagKey) => {
     onChangeFlags({ ...flags, [key]: !flags[key] })
+  }
+
+  const handleSelectLoader = (loaderPreset: LoaderPresetId) => {
+    onChangeFlags({ ...flags, loaderPreset })
   }
 
   const handleRerenderThumbs = async () => {
@@ -101,7 +116,7 @@ export const TestLabView: React.FC<TestLabViewProps> = ({
   }
 
   const flagItems: Array<{
-    key: keyof FreshLabFlags
+    key: BooleanLabFlagKey
     icon: React.ComponentType<{ className?: string }>
     title: string
     desc: string
@@ -204,6 +219,48 @@ export const TestLabView: React.FC<TestLabViewProps> = ({
         </span>
       </div>
 
+      {/* Sub-navigation tabs inside Test Lab */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setSubTab('loaders')}
+          className="inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-extrabold transition cursor-pointer"
+          style={{
+            background: subTab === 'loaders' ? 'rgba(14, 165, 233, 0.16)' : panelSurface,
+            borderColor: subTab === 'loaders' ? 'rgba(56, 189, 248, 0.45)' : panelBorder,
+            color: subTab === 'loaders' ? ARCTIC_SKY.skyBright : tokens.textSecondary,
+          }}
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          <span>{isPl ? 'Animacje ładowania (16)' : 'Loading Animations (16)'}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSubTab('tools')}
+          className="inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-extrabold transition cursor-pointer"
+          style={{
+            background: subTab === 'tools' ? 'rgba(16, 185, 129, 0.16)' : panelSurface,
+            borderColor: subTab === 'tools' ? 'rgba(52, 211, 153, 0.45)' : panelBorder,
+            color: subTab === 'tools' ? '#34D399' : tokens.textSecondary,
+          }}
+        >
+          <FlaskConical className="h-3.5 w-3.5" />
+          <span>{isPl ? 'Narzędzia i światy 3D' : '3D Tools & Flags'}</span>
+        </button>
+      </div>
+
+      {subTab === 'loaders' && (
+        <LoadingShowcasePanel
+          mode={mode}
+          lang={lang}
+          selectedLoader={flags.loaderPreset}
+          onSelectLoader={handleSelectLoader}
+        />
+      )}
+
+      {subTab === 'tools' && (
+      <>
       <div className="grid gap-4 lg:grid-cols-12">
         {/* === LEFT: FEATURE FLAGS & EXPERIMENTS === */}
         <section
@@ -407,6 +464,8 @@ export const TestLabView: React.FC<TestLabViewProps> = ({
           ))}
         </div>
       </section>
+      </>
+      )}
     </div>
   )
 }
