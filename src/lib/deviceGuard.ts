@@ -391,14 +391,20 @@ export async function collectDeviceRegistrationProof(): Promise<DeviceRegistrati
         canvasSample,
       ].join('|')
 
+      const availHeight = window.screen?.availHeight || 0
+      const langSig = (navigator.language || 'en').toLowerCase()
       const coreHwRaw = [
         physScreen,
+        availHeight,
         colorDepth,
         cores,
+        mem,
         touch,
         tz,
+        langSig,
         osFamily,
         glInfo.coreGpu,
+        glInfo.params,
       ].join('|')
 
       const [browserFp, coreHw] = await Promise.all([

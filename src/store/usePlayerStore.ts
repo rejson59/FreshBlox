@@ -449,6 +449,42 @@ export function usePlayerStore() {
     profile.obbyBestTimeMs,
   ])
 
+const REGISTER_API_PATH = '/api/register-account'
+
+async function postRegisterApi(
+  payload: Record<string, unknown>,
+  retries = 1,
+  timeoutMs = 15000,
+): Promise<{ response?: Response; networkError?: boolean }> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      const response = await fetch(REGISTER_API_PATH, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      })
+      window.clearTimeout(timer)
+      // Retry once on transient 502/503/504 gateway glitches
+      if (attempt < retries && (response.status === 502 || response.status === 503 || response.status === 504)) {
+        await new Promise((r) => window.setTimeout(r, 650))
+        continue
+      }
+      return { response }
+    } catch {
+      window.clearTimeout(timer)
+      if (attempt < retries) {
+        await new Promise((r) => window.setTimeout(r, 650))
+        continue
+      }
+      return { networkError: true }
+    }
+  }
+  return { networkError: true }
+}
+
   const checkDeviceRegistrationAllowed = useCallback(async (): Promise<boolean> => {
     const localBlocked = await hasLocalDeviceRegisteredFlag()
     if (localBlocked) return false
@@ -456,21 +492,18 @@ export function usePlayerStore() {
 
     try {
       const proof = await collectDeviceRegistrationProof()
-      const res = await fetch(`${supabaseUrl}/functions/v1/register-account`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: supabaseAnonKey,
-          Authorization: `Bearer ${supabaseAnonKey}`,
-        },
-        body: JSON.stringify({
+      const { response } = await postRegisterApi(
+        {
           action: 'check',
           deviceToken: proof.deviceToken,
           browserFp: proof.browserFp,
           coreHw: proof.coreHw,
-        }),
-      })
-      const json = (await res.json().catch(() => null)) as { ok?: boolean; allowed?: boolean } | null
+        },
+        0,
+        8000,
+      )
+      if (!response) return true
+      const json = (await response.json().catch(() => null)) as { ok?: boolean; allowed?: boolean } | null
       if (json && json.allowed === false) {
         await markDeviceRegisteredLocally()
         return false
@@ -497,25 +530,20 @@ export function usePlayerStore() {
 
       const proof = await collectDeviceRegistrationProof()
 
-      let resp: Response
-      try {
-        resp = await fetch(`${supabaseUrl}/functions/v1/register-account`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: supabaseAnonKey,
-            Authorization: `Bearer ${supabaseAnonKey}`,
-          },
-          body: JSON.stringify({
-            action: 'register',
-            username: clean,
-            password,
-            deviceToken: proof.deviceToken,
-            browserFp: proof.browserFp,
-            coreHw: proof.coreHw,
-          }),
-        })
-      } catch {
+      const { response: resp, networkError } = await postRegisterApi(
+        {
+          action: 'register',
+          username: clean,
+          password,
+          deviceToken: proof.deviceToken,
+          browserFp: proof.browserFp,
+          coreHw: proof.coreHw,
+        },
+        1,
+        15000,
+      )
+
+      if (networkError || !resp) {
         return { ok: false, error: 'NETWORK_ERROR' }
       }
 
@@ -526,7 +554,7 @@ export function usePlayerStore() {
       } | null
 
       if (!resp.ok || !json?.ok || !json.loginEmail) {
-        const errCode = json?.error || 'SERVER_ERROR'
+        const errCode = json?.error || (resp.status >= 500 ? 'SERVER_ERROR' : 'CREATE_USER_FAILED')
         if (errCode === 'DEVICE_LIMIT_REACHED') {
           await markDeviceRegisteredLocally()
         }
@@ -561,24 +589,41 @@ export function usePlayerStore() {
         return { ok: false, error: 'INVALID_CREDENTIALS' }
       }
 
-      // Resolve current username -> synthetic auth email via Postgres RPC
-      const { data: resolvedEmail, error: resolveErr } = await supabase.rpc('resolve_freshblox_login_email', {
-        p_username: clean,
-      })
-      if (resolveErr || !resolvedEmail || typeof resolvedEmail !== 'string') {
-        return { ok: false, error: 'INVALID_CREDENTIALS' }
-      }
+      try {
+        // Resolve current username -> synthetic auth email via Postgres RPC
+        const { data: resolvedEmail, error: resolveErr } = await supabase.rpc('resolve_freshblox_login_email', {
+          p_username: clean,
+        })
+        if (resolveErr) {
+          const msg = (resolveErr.message || '').toLowerCase()
+          if (msg.includes('fetch') || msg.includes('network')) {
+            return { ok: false, error: 'NETWORK_ERROR' }
+          }
+          return { ok: false, error: 'INVALID_CREDENTIALS' }
+        }
+        if (!resolvedEmail || typeof resolvedEmail !== 'string') {
+          return { ok: false, error: 'INVALID_CREDENTIALS' }
+        }
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: resolvedEmail,
-        password,
-      })
-      if (error) return { ok: false, error: 'INVALID_CREDENTIALS' }
-      if (data.user) {
-        await hydrateCloudProfile(data.user.id, data.user.email ?? null)
-        setAuthUser({ id: data.user.id, email: data.user.email ?? null })
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: resolvedEmail,
+          password,
+        })
+        if (error) {
+          const msg = (error.message || '').toLowerCase()
+          if (msg.includes('fetch') || msg.includes('network')) {
+            return { ok: false, error: 'NETWORK_ERROR' }
+          }
+          return { ok: false, error: 'INVALID_CREDENTIALS' }
+        }
+        if (data.user) {
+          await hydrateCloudProfile(data.user.id, data.user.email ?? null)
+          setAuthUser({ id: data.user.id, email: data.user.email ?? null })
+        }
+        return { ok: true }
+      } catch {
+        return { ok: false, error: 'NETWORK_ERROR' }
       }
-      return { ok: true }
     },
     [hydrateCloudProfile],
   )

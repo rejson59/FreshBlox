@@ -50,8 +50,18 @@ function translateAuthError(code: string | undefined, lang: Lang): string {
         : 'Too many new accounts from this network in the last 24h — please try again later.'
     case 'NETWORK_ERROR':
       return lang === 'pl'
-        ? 'Błąd połączenia z serwerem. Sprawdź internet i spróbuj ponownie.'
-        : 'Connection error. Check your internet and try again.'
+        ? 'Nie udało się połączyć z serwerem. Spróbuj ponownie za chwilę.'
+        : 'Could not reach the server. Please try again in a moment.'
+    case 'SERVER_ERROR':
+    case 'SERVER_MISCONFIGURED':
+    case 'CREATE_USER_FAILED':
+      return lang === 'pl'
+        ? 'Serwer rejestracji chwilowo nie odpowiada. Spróbuj ponownie za chwilę.'
+        : 'The registration server is temporarily busy. Please try again in a moment.'
+    case 'INVALID_DEVICE_PROOF':
+      return lang === 'pl'
+        ? 'Odśwież stronę i spróbuj utworzyć konto ponownie.'
+        : 'Please refresh the page and try creating your account again.'
     case 'INVALID_USERNAME':
       return lang === 'pl'
         ? 'Nazwa użytkownika musi mieć 3–20 znaków (tylko litery A-Z, cyfry 0-9, _ lub -).'
