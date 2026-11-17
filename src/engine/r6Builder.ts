@@ -562,9 +562,9 @@ export function createR6Rig(opts: {
   head.add(hatRes.group)
   disposables.push(...hatRes.disposables)
 
-  // Shoulders attached to torsoPivot with crisp outward joint seam clearance (0.59 torso + 0.27 arm = 0.86 → 0.91!)
+  // Shoulders attached to torsoPivot with natural realistic R6 seam (0.59 torso + 0.27 arm = 0.86 → 0.875!)
   const leftArmPivot = new THREE.Group()
-  leftArmPivot.position.set(-0.91, 1.22, 0) // shoulder at world y=2.50
+  leftArmPivot.position.set(-0.875, 1.22, 0) // shoulder at world y=2.50
   const leftArm = new THREE.Mesh(geos.limb, armMat)
   leftArm.position.y = -0.58
   leftArm.castShadow = castShadow
@@ -572,16 +572,16 @@ export function createR6Rig(opts: {
   torsoPivot.add(leftArmPivot)
 
   const rightArmPivot = new THREE.Group()
-  rightArmPivot.position.set(0.91, 1.22, 0)
+  rightArmPivot.position.set(0.875, 1.22, 0)
   const rightArm = new THREE.Mesh(geos.limb, armMat)
   rightArm.position.y = -0.58
   rightArm.castShadow = castShadow
   rightArmPivot.add(rightArm)
   torsoPivot.add(rightArmPivot)
 
-  // Legs attached at pelvis line under comPivot with clean separation (half-width 0.27 → ±0.32!)
+  // Legs attached at pelvis line under comPivot with realistic classic R6 spacing (half-width 0.27 → ±0.305!)
   const leftLegPivot = new THREE.Group()
-  leftLegPivot.position.set(-0.32, pelvisY, 0)
+  leftLegPivot.position.set(-0.305, pelvisY, 0)
   const leftLeg = new THREE.Mesh(geos.limb, legMat)
   leftLeg.position.y = -0.64
   leftLeg.castShadow = castShadow
@@ -589,7 +589,7 @@ export function createR6Rig(opts: {
   comPivot.add(leftLegPivot)
 
   const rightLegPivot = new THREE.Group()
-  rightLegPivot.position.set(0.32, pelvisY, 0)
+  rightLegPivot.position.set(0.305, pelvisY, 0)
   const rightLeg = new THREE.Mesh(geos.limb, legMat)
   rightLeg.position.y = -0.64
   rightLeg.castShadow = castShadow

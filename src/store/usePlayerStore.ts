@@ -185,7 +185,6 @@ export function usePlayerStore() {
 
   const buyAndEquip = useCallback(
     (category: 'outfit' | 'hat' | 'face', itemId: string, price: number): boolean => {
-      let ok = false
       setProfile((p) => {
         const listKey =
           category === 'outfit' ? 'unlockedOutfits' : category === 'hat' ? 'unlockedHats' : 'unlockedFaces'
@@ -193,7 +192,6 @@ export function usePlayerStore() {
         const alreadyOwned = currentList.includes(itemId)
         if (!alreadyOwned && p.freshGems < price) return p
 
-        ok = true
         const nextBadges =
           !alreadyOwned && price > 0 && !p.badges.includes('stylist') ? [...p.badges, 'stylist'] : p.badges
 
@@ -212,7 +210,61 @@ export function usePlayerStore() {
           [listKey]: alreadyOwned ? currentList : [...currentList, itemId],
         }
       })
-      return ok
+      return true
+    },
+    [],
+  )
+
+  const buyBundle = useCallback(
+    (items: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; price: number }>): boolean => {
+      if (items.length === 0) return false
+      setProfile((p) => {
+        let totalCost = 0
+        const toBuy = items.filter((item) => {
+          const listKey =
+            item.category === 'outfit'
+              ? 'unlockedOutfits'
+              : item.category === 'hat'
+                ? 'unlockedHats'
+                : 'unlockedFaces'
+          const owned = (p[listKey] as string[]).includes(item.id)
+          if (!owned) totalCost += item.price
+          return !owned
+        })
+        if (toBuy.length === 0 || p.freshGems < totalCost) return p
+
+        let unlockedOutfits = [...p.unlockedOutfits]
+        let unlockedHats = [...p.unlockedHats]
+        let unlockedFaces = [...p.unlockedFaces]
+        const nextAvatar: R6AvatarConfig = { ...p.avatar }
+
+        for (const item of toBuy) {
+          if (item.category === 'outfit') {
+            unlockedOutfits = [...unlockedOutfits, item.id as OutfitId]
+            nextAvatar.outfitId = item.id as OutfitId
+          } else if (item.category === 'hat') {
+            unlockedHats = [...unlockedHats, item.id as HatId]
+            nextAvatar.hatId = item.id as HatId
+          } else if (item.category === 'face') {
+            unlockedFaces = [...unlockedFaces, item.id as FaceId]
+            nextAvatar.faceId = item.id as FaceId
+          }
+        }
+
+        const nextBadges =
+          totalCost > 0 && !p.badges.includes('stylist') ? [...p.badges, 'stylist'] : p.badges
+
+        return {
+          ...p,
+          freshGems: p.freshGems - totalCost,
+          badges: nextBadges,
+          avatar: nextAvatar,
+          unlockedOutfits,
+          unlockedHats,
+          unlockedFaces,
+        }
+      })
+      return true
     },
     [],
   )
@@ -241,6 +293,7 @@ export function usePlayerStore() {
     incrementQuest,
     claimQuest,
     buyAndEquip,
+    buyBundle,
     addFriend,
   }
 }

@@ -65,16 +65,16 @@ function resetTarget(out: R6PoseTarget) {
   out.headRot.z = 0
   out.lArmRot.x = 0
   out.lArmRot.y = 0
-  out.lArmRot.z = -0.08
+  out.lArmRot.z = -0.04
   out.rArmRot.x = 0
   out.rArmRot.y = 0
-  out.rArmRot.z = 0.08
+  out.rArmRot.z = 0.04
   out.lLegRot.x = 0
   out.lLegRot.y = 0
-  out.lLegRot.z = -0.04
+  out.lLegRot.z = -0.025
   out.rLegRot.x = 0
   out.rLegRot.y = 0
-  out.rLegRot.z = 0.04
+  out.rLegRot.z = 0.025
   out.scaleY = 1
   out.scaleXZ = 1
   out.snappiness = 15
@@ -116,26 +116,26 @@ export function evaluateR6Pose(
     out.headRot.y = 0.1 + scan * 0.2
     out.headRot.x = -0.02 - breathe * 0.02
 
-    // Arms relaxed slightly OUTWARD with athletic swagger (NEVER touching torso!)
-    out.lArmRot.x = -0.05 + breathe * 0.05
-    out.lArmRot.z = -0.11 - breathe * 0.025
+    // Arms relaxed naturally close beside torso (realistic R6 hang, zero clipping!)
+    out.lArmRot.x = -0.04 + breathe * 0.045
+    out.lArmRot.z = -0.045 - breathe * 0.014
     out.lArmRot.y = 0
 
-    out.rArmRot.x = 0.04 - breathe * 0.05
-    out.rArmRot.z = 0.11 + breathe * 0.025
+    out.rArmRot.x = 0.035 - breathe * 0.045
+    out.rArmRot.z = 0.045 + breathe * 0.014
     out.rArmRot.y = 0
 
-    // Solid wide athletic stance (legs angled slightly OUTWARD!)
-    out.lLegRot.x = -0.06
-    out.lLegRot.z = -0.07
-    out.rLegRot.x = 0.06
-    out.rLegRot.z = 0.07
+    // Natural grounded athletic stance (realistic separation!)
+    out.lLegRot.x = -0.05
+    out.lLegRot.z = -0.04
+    out.rLegRot.x = 0.05
+    out.rLegRot.z = 0.04
 
     out.scaleY = 1 + breathe * 0.01
     out.scaleXZ = 1 - breathe * 0.005
     out.snappiness = 12
   } else if (pose === 'walk') {
-    // Crisp, Energetic Roblox Pro Walk (clean stride, counter-rotating torso, outward arm clearance)
+    // Crisp, Energetic Roblox Pro Walk (clean stride, counter-rotating torso, realistic close arm swing)
     const w = elapsed * 8.8
     const s = Math.sin(w)
     const c = Math.cos(w)
@@ -151,23 +151,23 @@ export function evaluateR6Pose(
     out.headRot.y = s * 0.12
     out.headRot.x = -0.05 + Math.sin(w * 2 - 0.5) * 0.035
 
-    // Clean outward arm swing (left < 0, right > 0)
+    // Realistic close arm swing (zero clipping, natural silhouette!)
     out.lArmRot.x = s * 0.75
-    out.lArmRot.z = -0.11 - Math.abs(s) * 0.05
+    out.lArmRot.z = -0.055 - Math.abs(s) * 0.035
     out.rArmRot.x = -s * 0.75
-    out.rArmRot.z = 0.11 + Math.abs(s) * 0.05
+    out.rArmRot.z = 0.055 + Math.abs(s) * 0.035
 
     // Crisp parallel-to-slightly-outward stride
     out.lLegRot.x = -s * 0.74
-    out.lLegRot.z = -0.04
+    out.lLegRot.z = -0.025
     out.rLegRot.x = s * 0.74
-    out.rLegRot.z = 0.04
+    out.rLegRot.z = 0.025
 
     out.scaleY = 1 + (bounce - 0.5) * 0.04
     out.scaleXZ = 1 - (bounce - 0.5) * 0.02
     out.snappiness = 18
   } else if (pose === 'run') {
-    // High-Energy Action / Parkour Sprint (forward aerodynamic drive, outward power arms!)
+    // High-Energy Action / Parkour Sprint (forward aerodynamic drive, natural tight power arms!)
     const r = elapsed * 13.6
     const s = Math.sin(r)
     const c = Math.cos(r)
@@ -183,23 +183,23 @@ export function evaluateR6Pose(
     out.headRot.x = -0.22
     out.headRot.y = s * 0.2
 
-    // Powerful outward-cleared sprint arms (zero torso clipping!)
+    // Powerful athletic sprint arms close to ribs (zero torso clipping!)
     out.lArmRot.x = s * 1.24 - 0.12
-    out.lArmRot.z = -0.16 - Math.abs(s) * 0.08
+    out.lArmRot.z = -0.085 - Math.abs(s) * 0.055
     out.rArmRot.x = -s * 1.24 - 0.12
-    out.rArmRot.z = 0.16 + Math.abs(s) * 0.08
+    out.rArmRot.z = 0.085 + Math.abs(s) * 0.055
 
     // Explosive athletic stride
     out.lLegRot.x = -s * 1.12
-    out.lLegRot.z = -0.05
+    out.lLegRot.z = -0.035
     out.rLegRot.x = s * 1.12
-    out.rLegRot.z = 0.05
+    out.rLegRot.z = 0.035
 
     out.scaleY = 1 + (lift - 0.5) * 0.065
     out.scaleXZ = 1 - (lift - 0.5) * 0.03
     out.snappiness = 22
   } else if (pose === 'jump') {
-    // Heroic Open-Silhouette Action Jump (wide outward arms overhead, athletic airborne legs — NEVER blocking face!)
+    // Heroic Open-Silhouette Action Jump (arms swept cleanly up, realistic spread — NEVER blocking face!)
     const t = clamp01(poseTime / 0.2)
     const pop = easeOutBack(t)
     const hover = Math.sin(poseTime * 7) * 0.04
@@ -211,67 +211,66 @@ export function evaluateR6Pose(
     out.headRot.x = -0.1
     out.headRot.y = -0.08
 
-    // Both arms swept HIGH & WIDE OUTWARD (clean heroic V!)
+    // Both arms swept HIGH with crisp natural athletic angle
     out.lArmRot.x = -2.35 * pop
-    out.lArmRot.z = -0.34 * pop
+    out.lArmRot.z = -0.22 * pop
     out.rArmRot.x = -2.1 * pop
-    out.rArmRot.z = 0.38 * pop
+    out.rArmRot.z = 0.25 * pop
 
-    // Dynamic front knee lift + trailing rear leg, slightly outward
+    // Dynamic front knee lift + trailing rear leg
     out.lLegRot.x = -0.72 * pop
-    out.lLegRot.z = -0.09
+    out.lLegRot.z = -0.06
     out.rLegRot.x = 0.52 * pop
-    out.rLegRot.z = 0.09
+    out.rLegRot.z = 0.06
 
     out.scaleY = 1.06 - t * 0.03
     out.scaleXZ = 0.96 + t * 0.02
     out.snappiness = 20
   } else if (pose === 'fall') {
-    // Dynamic Freefall / Skydive Control (arms spread WIDE outward for balance)
+    // Dynamic Freefall / Skydive Control
     const f = elapsed * 10
     out.comRot.x = 0.08
     out.torsoRot.x = 0.08
     out.headRot.x = 0.16
 
     out.lArmRot.x = -2.35 + Math.sin(f) * 0.16
-    out.lArmRot.z = -0.56 - Math.cos(f) * 0.1
+    out.lArmRot.z = -0.44 - Math.cos(f) * 0.08
     out.rArmRot.x = -2.35 - Math.sin(f) * 0.16
-    out.rArmRot.z = 0.56 + Math.cos(f) * 0.1
+    out.rArmRot.z = 0.44 + Math.cos(f) * 0.08
 
     out.lLegRot.x = -0.28 + Math.sin(f * 0.85) * 0.24
-    out.lLegRot.z = -0.12
+    out.lLegRot.z = -0.08
     out.rLegRot.x = -0.12 - Math.sin(f * 0.85) * 0.24
-    out.rLegRot.z = 0.12
+    out.rLegRot.z = 0.08
 
     out.scaleY = 1.03
     out.scaleXZ = 0.98
     out.snappiness = 15
   } else if (pose === 'wave') {
-    // Cool, Confident Game-Hero Wave (planted solid athletic stance, right arm raised cleanly OUTWARD!)
+    // Cool, Confident Game-Hero Wave (natural relaxed left arm close to side, right arm waving cleanly outward!)
     const intro = easeOutBack(clamp01(poseTime / 0.24))
     const w = Math.sin(poseTime * 13)
 
-    out.comPos.y = Math.sin(poseTime * 4) * 0.03
-    out.torsoRot.y = -0.1 * intro
-    out.torsoRot.x = -0.03 * intro
+    out.comPos.y = Math.sin(poseTime * 4) * 0.025
+    out.torsoRot.y = -0.09 * intro
+    out.torsoRot.x = -0.02 * intro
 
-    // Friendly confident forward look
-    out.headRot.y = 0.08 * intro
-    out.headRot.x = -0.04 * intro
+    out.headRot.y = 0.07 * intro
+    out.headRot.x = -0.03 * intro
 
-    // Left arm relaxed naturally OUTWARD at side (NEVER crossing into chest!)
-    out.lArmRot.x = 0.06 * intro
-    out.lArmRot.z = -0.16 * intro
+    // Left arm relaxed naturally close beside hip
+    out.lArmRot.x = 0.05 * intro
+    out.lArmRot.z = -0.065 * intro
 
-    // Right arm raised high & clearly OUTWARD to the right side, waving briskly!
+    // Right arm raised high & waving cleanly outside the head
     out.rArmRot.x = -2.68 * intro
-    out.rArmRot.z = (0.44 + w * 0.28) * intro // always positive (+0.16..+0.72) → cleanly OUTWARD!
+    out.rArmRot.z = (0.34 + w * 0.24) * intro
 
-    // Solid wide planted hero stance (ZERO knock-knees or shy tilt!)
-    out.lLegRot.x = -0.05
-    out.lLegRot.z = -0.09
-    out.rLegRot.x = 0.05
-    out.rLegRot.z = 0.09
+    // Solid grounded stance
+    out.lLegRot.x = -0.04
+    out.lLegRot.z = -0.055
+    out.rLegRot.x = 0.04
+    out.rLegRot.z = 0.055
 
     out.snappiness = 18
   } else if (pose === 'dance') {
@@ -652,9 +651,9 @@ export function evaluateR6Pose(
   }
 
   // HARD MATHEMATICAL ANTI-CLIPPING GUARD:
-  // Arms & legs can NEVER bend inward into the torso or into each other on ANY frame!
-  out.lArmRot.z = Math.min(out.lArmRot.z, -0.07)
-  out.rArmRot.z = Math.max(out.rArmRot.z, 0.07)
-  out.lLegRot.z = Math.min(out.lLegRot.z, -0.03)
-  out.rLegRot.z = Math.max(out.rLegRot.z, 0.03)
+  // Keeps arms naturally close beside torso while NEVER clipping inward into torso or knees!
+  out.lArmRot.z = Math.min(out.lArmRot.z, -0.032)
+  out.rArmRot.z = Math.max(out.rArmRot.z, 0.032)
+  out.lLegRot.z = Math.min(out.lLegRot.z, -0.018)
+  out.rLegRot.z = Math.max(out.rLegRot.z, 0.018)
 }

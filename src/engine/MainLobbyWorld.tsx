@@ -2,11 +2,16 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import {
+  Armchair,
   ArrowLeft,
   Bot,
   Check,
   Gauge,
+  LocateFixed,
+  Maximize2,
   MessageSquare,
+  Minimize2,
+  RotateCw,
   Send,
   Share2,
   Smartphone,
@@ -19,6 +24,12 @@ import {
 import { getRankForXp, R6AvatarConfig } from '../data/catalog'
 import { Lang, LOCALES } from '../data/locales'
 import { LobbyChatMessage, LobbyMultiplayerClient, PlayerPose, RemotePlayerState } from '../lib/multiplayer'
+import {
+  enterGameFullscreenLandscape,
+  exitGameFullscreen,
+  isDocumentFullscreen,
+  isTouchMobileDevice,
+} from '../lib/mobileFullscreen'
 import { sfx } from '../lib/sfx'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { FreshGemShard } from '../components/brand/FreshBloxBrand'
@@ -34,6 +45,16 @@ interface AABB {
   maxY: number
   minZ: number
   maxZ: number
+}
+
+interface BenchSpot {
+  id: string
+  x: number
+  z: number
+  rotY: number
+  seatY: number
+  /** Facing angle (+Z in local bench frame rotated by rotY) */
+  faceAngle: number
 }
 
 interface GemPickup {
@@ -76,6 +97,7 @@ interface MainLobbyWorldProps {
   freshGems: number
   xp: number
   avatar: R6AvatarConfig
+  isFullscreen: boolean
   onCollectGem: () => void
   onChatSent: () => void
   onEmoteUsed: () => void
@@ -85,19 +107,10 @@ interface MainLobbyWorldProps {
   onOpenAvatar: () => void
 }
 
-function detectTouchDevice(): boolean {
-  if (typeof window === 'undefined') return false
-  return (
-    'ontouchstart' in window ||
-    navigator.maxTouchPoints > 0 ||
-    window.matchMedia('(pointer: coarse)').matches
-  )
-}
-
 function detectDefaultQuality(): GraphicsQuality {
   if (typeof window === 'undefined') return 'medium'
   const cores = navigator.hardwareConcurrency || 4
-  const isTouch = detectTouchDevice()
+  const isTouch = isTouchMobileDevice()
   const narrow = window.innerWidth < 820
   if (cores <= 2) return 'low'
   if (isTouch || narrow || cores <= 4) return 'medium'
@@ -105,6 +118,7 @@ function detectDefaultQuality(): GraphicsQuality {
 }
 
 const QUALITY_ORDER: GraphicsQuality[] = ['low', 'medium', 'high']
+const STEP_HEIGHT = 0.56 // Auto-step smoothly over walkways, plaza layers & low stairs without jumping!
 
 export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   roomCode,
@@ -114,6 +128,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   freshGems,
   xp,
   avatar,
+  isFullscreen,
   onCollectGem,
   onChatSent,
   onEmoteUsed,
@@ -126,13 +141,24 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   const mountRef = useRef<HTMLDivElement>(null)
 
   const [quality, setQuality] = useState<GraphicsQuality>(() => detectDefaultQuality())
-  const [touchMode, setTouchMode] = useState<boolean>(() => detectTouchDevice())
+  const [touchMode, setTouchMode] = useState<boolean>(() => isTouchMobileDevice())
   const [sprintLocked, setSprintLocked] = useState<boolean>(false)
   const [fpsDisplay, setFpsDisplay] = useState<number>(60)
   const [chatOpen, setChatOpen] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 700 : true,
+    typeof window !== 'undefined' ? window.innerWidth >= 860 && !isTouchMobileDevice() : true,
   )
   const [unreadCount, setUnreadCount] = useState(0)
+
+  // Interactive bench & portal state
+  const [nearBench, setNearBench] = useState<BenchSpot | null>(null)
+  const [seatedBench, setSeatedBench] = useState<BenchSpot | null>(null)
+  const [nearPortalName, setNearPortalName] = useState<string | null>(null)
+
+  // Portrait mobile rotate hint
+  const [isPortraitMobile, setIsPortraitMobile] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? isTouchMobileDevice() && window.innerHeight > window.innerWidth : false,
+  )
+  const [rotateBannerDismissed, setRotateBannerDismissed] = useState(false)
 
   const [botsEnabled, setBotsEnabled] = useState(true)
   const [soundEnabled, setSoundEnabled] = useState(true)
@@ -154,25 +180,25 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
   const botsEnabledRef = useRef(botsEnabled)
   botsEnabledRef.current = botsEnabled
-
   const qualityRef = useRef(quality)
   qualityRef.current = quality
-
   const sprintLockedRef = useRef(sprintLocked)
   sprintLockedRef.current = sprintLocked
-
   const chatOpenRef = useRef(chatOpen)
   chatOpenRef.current = chatOpen
+
+  const nearBenchRef = useRef<BenchSpot | null>(null)
+  const seatedBenchRef = useRef<BenchSpot | null>(null)
+  const toggleSitActionRef = useRef<() => void>(() => {})
+  const resetSpawnActionRef = useRef<() => void>(() => {})
 
   const touchMoveRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const jumpQueuedRef = useRef<boolean>(false)
 
   const avatarRef = useRef(avatar)
   avatarRef.current = avatar
-
   const usernameRef = useRef(username)
   usernameRef.current = username
-
   const rankRef = useRef(getRankForXp(xp).name)
   rankRef.current = getRankForXp(xp).name
 
@@ -202,6 +228,19 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     onReachTerrace,
   }
 
+  // Track mobile orientation cleanly
+  useEffect(() => {
+    const checkOrient = () => {
+      setIsPortraitMobile(isTouchMobileDevice() && window.innerHeight > window.innerWidth)
+    }
+    window.addEventListener('resize', checkOrient)
+    window.addEventListener('orientationchange', checkOrient)
+    return () => {
+      window.removeEventListener('resize', checkOrient)
+      window.removeEventListener('orientationchange', checkOrient)
+    }
+  }, [])
+
   const showToast = useCallback((msg: string) => {
     setToast(msg)
     window.setTimeout(() => {
@@ -209,7 +248,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     }, 2400)
   }, [])
 
-  // Live graphics quality application (zero reload needed!)
+  // Live graphics quality application
   useEffect(() => {
     const renderer = rendererRef.current
     const sun = sunLightRef.current
@@ -240,24 +279,26 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     renderer.shadowMap.needsUpdate = true
   }, [quality])
 
-  const triggerEmote = useCallback(
-    (pose: PlayerPose) => {
-      activeEmoteRef.current = pose
-      const durations: Partial<Record<PlayerPose, number>> = {
-        backflip: 1.75,
-        spin: 1.45,
-        dance: 6.4,
-        cheer: 2.4,
-        wave: 3.2,
-        sit: 18,
-      }
-      emoteTimerRef.current = durations[pose] ?? 3.4
-      setActiveEmote(pose)
-      sfx.playClick()
-      callbacksRef.current.onEmoteUsed()
-    },
-    [],
-  )
+  const triggerEmote = useCallback((pose: PlayerPose) => {
+    // If sitting on bench, stand up cleanly for non-sit emotes
+    if (seatedBenchRef.current && pose !== 'sit') {
+      seatedBenchRef.current = null
+      setSeatedBench(null)
+    }
+    activeEmoteRef.current = pose
+    const durations: Partial<Record<PlayerPose, number>> = {
+      backflip: 1.75,
+      spin: 1.45,
+      dance: 6.4,
+      cheer: 2.4,
+      wave: 3.2,
+      sit: 18,
+    }
+    emoteTimerRef.current = durations[pose] ?? 3.4
+    setActiveEmote(pose)
+    sfx.playClick()
+    callbacksRef.current.onEmoteUsed()
+  }, [])
 
   const handleTouchMoveVector = useCallback((x: number, y: number) => {
     touchMoveRef.current.x = x
@@ -320,6 +361,15 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     sfx.playClick()
   }, [])
 
+  const handleToggleFullscreen = useCallback(() => {
+    sfx.playClick()
+    if (isDocumentFullscreen()) {
+      exitGameFullscreen()
+    } else {
+      enterGameFullscreenLandscape()
+    }
+  }, [])
+
   useEffect(() => {
     const container = mountRef.current
     if (!container) return
@@ -365,7 +415,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     container.appendChild(renderer.domElement)
     rendererRef.current = renderer
 
-    // Fresh-Day bright sky lighting (single fast shadow caster)
+    // Fresh-Day bright sky lighting
     const hemi = new THREE.HemisphereLight('#F0F9FF', '#7DD3FC', 1.15)
     scene.add(hemi)
 
@@ -385,7 +435,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     scene.add(sun)
     sunLightRef.current = sun
 
-    // Shared Stud Texture & Pooled Materials (dramatically reduces GPU state switches & texture RAM)
+    // Shared Stud Texture & Pooled Materials
     const baseStudTex = getSharedFreshStudTexture()
     const studMatCache = new Map<string, THREE.MeshStandardMaterial>()
 
@@ -454,7 +504,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     addBlock(0, -0.02, 0, 26, 0.3, 26, '#BAE6FD', { radius: 0.12, roughness: 0.28, castShadow: false })
     addBlock(0, 0.06, 0, 14, 0.26, 14, '#7DD3FC', { radius: 0.1, roughness: 0.24, castShadow: false })
 
-    // Four cardinal walkway carpets
+    // Four cardinal walkway carpets (now seamlessly auto-stepped onto!)
     addBlock(0, 0.03, 18, 6.2, 0.2, 22, '#F0F9FF', { radius: 0.08, castShadow: false })
     addBlock(0, 0.03, -18, 6.2, 0.2, 22, '#F0F9FF', { radius: 0.08, castShadow: false })
     addBlock(18, 0.03, 0, 22, 0.2, 6.2, '#F0F9FF', { radius: 0.08, castShadow: false })
@@ -462,18 +512,16 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
     // Central FreshBlox Crystal Fountain Monument
     addBlock(0, 0.45, 0, 6.4, 0.9, 6.4, '#F8FAFC', { radius: 0.16 })
-    const waterPool = new THREE.Mesh(
-      trackGeo(new RoundedBoxGeometry(5.2, 0.28, 5.2, 2, 0.08)),
-      trackMat(
-        new THREE.MeshStandardMaterial({
-          color: '#38BDF8',
-          emissive: '#0284C7',
-          emissiveIntensity: 0.28,
-          roughness: 0.1,
-          metalness: 0.18,
-        }),
-      ),
+    const waterPoolMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: '#38BDF8',
+        emissive: '#0284C7',
+        emissiveIntensity: 0.3,
+        roughness: 0.1,
+        metalness: 0.18,
+      }),
     )
+    const waterPool = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(5.2, 0.28, 5.2, 2, 0.08)), waterPoolMat)
     waterPool.position.set(0, 0.88, 0)
     scene.add(waterPool)
 
@@ -494,57 +542,80 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     centerCrystal.castShadow = true
     scene.add(centerCrystal)
 
-    // Hangout Chill Seating Zone (West side)
-    const benchMat = trackMat(new THREE.MeshStandardMaterial({ color: '#0369A1', roughness: 0.28 }))
+    // === INTERACTIVE HANGOUT BENCHES (5 sculpted glossy benches with backrests!) ===
+    const benchSeatMat = trackMat(new THREE.MeshStandardMaterial({ color: '#0369A1', roughness: 0.25, metalness: 0.08 }))
+    const benchBackMat = trackMat(new THREE.MeshStandardMaterial({ color: '#0EA5E9', roughness: 0.24, metalness: 0.08 }))
     const benchLegMat = trackMat(new THREE.MeshStandardMaterial({ color: '#F8FAFC', roughness: 0.26 }))
-    const benchSeatGeo = trackGeo(new RoundedBoxGeometry(3.4, 0.34, 1.15, 2, 0.08))
-    const benchLegGeo = trackGeo(new RoundedBoxGeometry(0.42, 0.46, 0.95, 2, 0.06))
-    const benchPositions = [
-      { x: -16, z: -8, rotY: 0.4 },
-      { x: -16, z: 8, rotY: -0.4 },
-      { x: -22, z: 0, rotY: Math.PI / 2 },
+    const benchSeatGeo = trackGeo(new RoundedBoxGeometry(3.6, 0.3, 1.2, 2, 0.08))
+    const benchBackGeo = trackGeo(new RoundedBoxGeometry(3.6, 0.72, 0.24, 2, 0.06))
+    const benchLegGeo = trackGeo(new RoundedBoxGeometry(0.4, 0.52, 0.96, 2, 0.06))
+
+    const benches: BenchSpot[] = [
+      { id: 'b1', x: -16, z: -8, rotY: 0.45, seatY: 0.82, faceAngle: 0.45 },
+      { id: 'b2', x: -16, z: 8, rotY: Math.PI - 0.45, seatY: 0.82, faceAngle: Math.PI - 0.45 },
+      { id: 'b3', x: -22, z: 0, rotY: Math.PI / 2, seatY: 0.82, faceAngle: Math.PI / 2 },
+      { id: 'b4', x: -8.5, z: -8.5, rotY: Math.PI / 4, seatY: 0.82, faceAngle: Math.PI / 4 },
+      { id: 'b5', x: 8.5, z: 8.5, rotY: -Math.PI * 0.75, seatY: 0.82, faceAngle: -Math.PI * 0.75 },
     ]
-    for (const bp of benchPositions) {
-      const seat = new THREE.Mesh(benchSeatGeo, benchMat)
-      seat.position.set(bp.x, 0.65, bp.z)
-      seat.rotation.y = bp.rotY
+
+    for (const bp of benches) {
+      const benchGroup = new THREE.Group()
+      benchGroup.position.set(bp.x, 0, bp.z)
+      benchGroup.rotation.y = bp.rotY
+
+      const seat = new THREE.Mesh(benchSeatGeo, benchSeatMat)
+      seat.position.set(0, 0.65, 0)
       seat.castShadow = true
       seat.receiveShadow = true
-      scene.add(seat)
-      for (const side of [-1.2, 1.2]) {
+      benchGroup.add(seat)
+
+      // Backrest on local -Z so sitting faces local +Z!
+      const back = new THREE.Mesh(benchBackGeo, benchBackMat)
+      back.position.set(0, 1.12, -0.52)
+      back.rotation.x = -0.14
+      back.castShadow = true
+      benchGroup.add(back)
+
+      for (const side of [-1.35, 1.35]) {
         const leg = new THREE.Mesh(benchLegGeo, benchLegMat)
-        leg.position.set(bp.x + Math.cos(bp.rotY) * side, 0.24, bp.z - Math.sin(bp.rotY) * side)
-        leg.rotation.y = bp.rotY
-        scene.add(leg)
+        leg.position.set(side, 0.26, 0)
+        benchGroup.add(leg)
       }
+      scene.add(benchGroup)
+
       colliders.push({
-        minX: bp.x - 1.5,
-        maxX: bp.x + 1.5,
+        minX: bp.x - 1.35,
+        maxX: bp.x + 1.35,
         minY: 0,
-        maxY: 0.85,
+        maxY: 0.82,
         minZ: bp.z - 1.1,
         maxZ: bp.z + 1.1,
       })
     }
 
-    // Hangout Stage / Dance Platform (South side)
+    // Hangout Stage / Dance Platform (South side) + Walk-up stairs!
     addBlock(0, 0.45, 24, 13, 0.9, 8.5, '#0F172A', { radius: 0.16 })
-    const danceFloor = new THREE.Mesh(
-      trackGeo(new RoundedBoxGeometry(11.6, 0.16, 7.2, 2, 0.05)),
-      trackMat(
-        new THREE.MeshStandardMaterial({
-          color: '#0EA5E9',
-          emissive: '#0284C7',
-          emissiveIntensity: 0.42,
-          roughness: 0.18,
-          metalness: 0.15,
-        }),
-      ),
+    // Seamless auto-step-up front stair leading onto the stage
+    addBlock(0, 0.22, 19.3, 6.4, 0.45, 1.4, '#38BDF8', { radius: 0.08 })
+    const danceFloorMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: '#0EA5E9',
+        emissive: '#0284C7',
+        emissiveIntensity: 0.42,
+        roughness: 0.18,
+        metalness: 0.15,
+      }),
     )
+    const danceFloor = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(11.6, 0.16, 7.2, 2, 0.05)), danceFloorMat)
     danceFloor.position.set(0, 0.92, 24)
     scene.add(danceFloor)
 
     // Future Game Mode Portals (North side)
+    const portalZones: Array<{ name: string; x: number; z: number; soon: boolean }> = [
+      { name: 'SkyTower Obby', x: -11, z: -26, soon: true },
+      { name: 'Crystal Arena', x: 11, z: -26, soon: true },
+    ]
+
     const createPortalArch = (x: number, z: number, label: string, sub: string, color: string) => {
       addBlock(x - 3.1, 3.1, z, 1.1, 6.2, 1.2, '#F8FAFC', { radius: 0.14 })
       addBlock(x + 3.1, 3.1, z, 1.1, 6.2, 1.2, '#F8FAFC', { radius: 0.14 })
@@ -622,7 +693,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     terraceBeacon.position.set(25.5, 9.2, 13.5)
     scene.add(terraceBeacon)
 
-    // Stylized Fresh Glossy Block Trees (shared geometry & materials!)
+    // Stylized Fresh Glossy Block Trees
     const trunkGeo = trackGeo(new RoundedBoxGeometry(1.1, 3.6, 1.1, 2, 0.12))
     const trunkMat = trackMat(new THREE.MeshStandardMaterial({ color: '#92400E', roughness: 0.52 }))
     const foliageGeo1 = trackGeo(new RoundedBoxGeometry(3.8, 2.2, 3.8, 2, 0.26))
@@ -716,7 +787,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       return { id: idx, mesh, baseY: g.y, x: g.x, z: g.z, collectedUntil: 0 }
     })
 
-    // Soft floating Arctic Sky clouds (toggled off in Low/Eco quality!)
+    // Soft floating Arctic Sky clouds
     const cloudsGroup = new THREE.Group()
     cloudsGroup.visible = initQ !== 'low'
     const cloudMat = trackMat(new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.85 }))
@@ -729,7 +800,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     scene.add(cloudsGroup)
     cloudsGroupRef.current = cloudsGroup
 
-    // === LOCAL PLAYER CLEAN R6 RIG (NO ORBS/AURA!) ===
+    // === LOCAL PLAYER CLEAN R6 RIG ===
     const localRig = createR6Rig({
       avatar: avatarRef.current,
       username: usernameRef.current,
@@ -742,7 +813,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
     const player = {
       x: 0,
-      y: 0.25,
+      y: 0.2,
       z: 9,
       vx: 0,
       vy: 0,
@@ -750,9 +821,61 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       rotY: Math.PI,
       grounded: false,
       reachedTerrace: false,
+      visualStepOffset: 0,
     }
 
-    // === HANGOUT COMPANION BOTS (CLEAN R6, NO ORBS/AURA!) ===
+    // Bind sit/stand & spawn reset actions directly to physics player state!
+    const standUpFromBench = () => {
+      const b = seatedBenchRef.current
+      if (!b) return
+      // Step smoothly 1.5m forward off the bench seat
+      player.x = b.x + Math.sin(b.faceAngle) * 1.55
+      player.z = b.z + Math.cos(b.faceAngle) * 1.55
+      player.y = 0.25
+      player.vy = 0
+      seatedBenchRef.current = null
+      setSeatedBench(null)
+      sfx.playClick()
+    }
+
+    const sitOnBench = (b: BenchSpot) => {
+      player.x = b.x + Math.sin(b.faceAngle) * 0.14
+      player.z = b.z + Math.cos(b.faceAngle) * 0.14
+      player.y = b.seatY - 0.36
+      player.vx = 0
+      player.vy = 0
+      player.vz = 0
+      player.rotY = b.faceAngle
+      player.grounded = true
+      activeEmoteRef.current = null
+      setActiveEmote(null)
+      seatedBenchRef.current = b
+      setSeatedBench(b)
+      sfx.playClick()
+    }
+
+    toggleSitActionRef.current = () => {
+      if (seatedBenchRef.current) {
+        standUpFromBench()
+      } else if (nearBenchRef.current) {
+        sitOnBench(nearBenchRef.current)
+      }
+    }
+
+    resetSpawnActionRef.current = () => {
+      seatedBenchRef.current = null
+      setSeatedBench(null)
+      player.x = 0
+      player.y = 0.5
+      player.z = 9
+      player.vx = 0
+      player.vy = 0
+      player.vz = 0
+      player.rotY = Math.PI
+      sfx.playJump()
+    }
+
+    // === HANGOUT COMPANION BOTS ===
     const botConfigs: Array<{
       id: string
       username: string
@@ -777,7 +900,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         rank: 'Crystal III',
         avatar: { outfitId: 'crystal-royal', faceId: 'star-eyes', hatId: 'crystal-halo', skinColor: '#F3C998' },
         waypoints: [
-          { x: 6, z: -5, pause: 5, emote: 'cheer', chat: lang === 'pl' ? 'Czyste R6 bez kulek wygląda mega!' : 'Clean R6 looks awesome!' },
+          { x: 6, z: -5, pause: 5, emote: 'cheer', chat: lang === 'pl' ? 'Można siadać na ławkach pod [E]!' : 'You can sit on benches with [E]!' },
           { x: 11, z: -8, pause: 4, emote: 'backflip' },
           { x: 4, z: 10, pause: 5, emote: 'wave' },
         ],
@@ -887,6 +1010,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         e.preventDefault()
       }
       keys.add(code)
+      if (code === 'KeyE') toggleSitActionRef.current()
       if (code === 'Digit1') triggerEmote('wave')
       if (code === 'Digit2') triggerEmote('dance')
       if (code === 'Digit3') triggerEmote('cheer')
@@ -956,26 +1080,41 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     const onResize = () => {
       if (!container) return
       const w = container.clientWidth || window.innerWidth
-      const h = container.clientHeight || window.innerHeight - 64
+      const h = container.clientHeight || window.innerHeight
       camera.aspect = w / h
       camera.updateProjectionMatrix()
       renderer.setSize(w, h)
     }
+    const ro = new ResizeObserver(onResize)
+    ro.observe(container)
     window.addEventListener('resize', onResize)
 
-    // Pre-allocated scratch vectors (ZERO per-frame GC allocations!)
+    // Pre-allocated scratch vectors
     const camForward = new THREE.Vector3()
     const camRight = new THREE.Vector3()
     const moveVec = new THREE.Vector3()
     const desiredCamPos = new THREE.Vector3()
     const lookTarget = new THREE.Vector3()
 
-    // === MAIN 60FPS PHYSICS & RENDER LOOP ===
+    // Helper: checks if stepping up onto `targetY` at `(tx, tz)` has clear headroom!
+    const playerR = 0.54
+    const hasHeadroomAt = (tx: number, tz: number, targetY: number): boolean => {
+      for (const b of colliders) {
+        if (tx + playerR > b.minX && tx - playerR < b.maxX && tz + playerR > b.minZ && tz - playerR < b.maxZ) {
+          if (targetY + 3.1 > b.minY + 0.15 && targetY < b.maxY - 0.05) {
+            return false
+          }
+        }
+      }
+      return true
+    }
+
     let rafId = 0
     let lastTime = performance.now()
     let elapsed = 0
     let lastBroadcast = 0
     let lastCountUpdate = 0
+    let lastProximityCheck = 0
     let fpsFrames = 0
     let fpsLastTick = performance.now()
 
@@ -985,7 +1124,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       lastTime = now
       elapsed += dt
 
-      // Lightweight FPS meter (updates UI every 0.5s only)
+      // Lightweight FPS meter
       fpsFrames++
       if (now - fpsLastTick >= 500) {
         const measured = Math.round((fpsFrames * 1000) / (now - fpsLastTick))
@@ -1006,120 +1145,189 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       const stickY = touchMoveRef.current.y
       if (Math.abs(stickX) > 0.08 || Math.abs(stickY) > 0.08) {
         inputX += stickX
-        inputZ -= stickY // pushing stick UP (negative screen Y) moves FORWARD (+inputZ)
+        inputZ -= stickY
       }
 
       const isMoving = Math.abs(inputX) > 0.06 || Math.abs(inputZ) > 0.06
+      const wantJump = keys.has('Space') || jumpQueuedRef.current
+      jumpQueuedRef.current = false
+
+      // If seated on a bench, moving or jumping stands you right back up!
+      if (seatedBenchRef.current) {
+        if (isMoving || wantJump) {
+          standUpFromBench()
+          if (wantJump) {
+            player.vy = 10.6
+            player.grounded = false
+            sfx.playJump()
+          }
+        }
+      }
+
       const stickMag = Math.hypot(stickX, stickY)
       const isSprinting =
         keys.has('ShiftLeft') || keys.has('ShiftRight') || sprintLockedRef.current || stickMag > 0.88
       const speed = isSprinting ? 12.6 : 7.8
 
-      if (isMoving && activeEmoteRef.current) {
-        activeEmoteRef.current = null
-        setActiveEmote(null)
-      }
-
-      camForward.set(-Math.sin(camYaw), 0, -Math.cos(camYaw))
-      camRight.set(Math.cos(camYaw), 0, -Math.sin(camYaw))
-      moveVec.set(0, 0, 0).addScaledVector(camForward, inputZ).addScaledVector(camRight, inputX)
-      const mag = moveVec.length()
-      if (mag > 1) moveVec.divideScalar(mag)
-
-      player.vx = moveVec.x * speed
-      player.vz = moveVec.z * speed
-
-      if (isMoving) {
-        const targetAngle = Math.atan2(player.vx, player.vz)
-        let diff = targetAngle - player.rotY
-        while (diff > Math.PI) diff -= Math.PI * 2
-        while (diff < -Math.PI) diff += Math.PI * 2
-        player.rotY += diff * Math.min(1, dt * 14)
-      }
-
-      const wantJump = keys.has('Space') || jumpQueuedRef.current
-      jumpQueuedRef.current = false
-      if (wantJump && player.grounded) {
-        player.vy = 11.4
-        player.grounded = false
-        sfx.playJump()
-      }
-
-      player.vy -= 28 * dt
-
-      // Move X & collide
-      const playerR = 0.56
-      const prevY = player.y
-      player.x += player.vx * dt
-      for (const b of colliders) {
-        if (player.y + 3.2 > b.minY + 0.25 && player.y < b.maxY - 0.12) {
-          if (
-            player.x + playerR > b.minX &&
-            player.x - playerR < b.maxX &&
-            player.z + playerR > b.minZ &&
-            player.z - playerR < b.maxZ
-          ) {
-            if (player.vx > 0) player.x = b.minX - playerR
-            else if (player.vx < 0) player.x = b.maxX + playerR
-          }
+      if (!seatedBenchRef.current) {
+        if (isMoving && activeEmoteRef.current) {
+          activeEmoteRef.current = null
+          setActiveEmote(null)
         }
-      }
 
-      // Move Z & collide
-      player.z += player.vz * dt
-      for (const b of colliders) {
-        if (player.y + 3.2 > b.minY + 0.25 && player.y < b.maxY - 0.12) {
-          if (
-            player.x + playerR > b.minX &&
-            player.x - playerR < b.maxX &&
-            player.z + playerR > b.minZ &&
-            player.z - playerR < b.maxZ
-          ) {
-            if (player.vz > 0) player.z = b.minZ - playerR
-            else if (player.vz < 0) player.z = b.maxZ + playerR
-          }
+        camForward.set(-Math.sin(camYaw), 0, -Math.cos(camYaw))
+        camRight.set(Math.cos(camYaw), 0, -Math.sin(camYaw))
+        moveVec.set(0, 0, 0).addScaledVector(camForward, inputZ).addScaledVector(camRight, inputX)
+        const mag = moveVec.length()
+        if (mag > 1) moveVec.divideScalar(mag)
+
+        player.vx = moveVec.x * speed
+        player.vz = moveVec.z * speed
+
+        if (isMoving) {
+          const targetAngle = Math.atan2(player.vx, player.vz)
+          let diff = targetAngle - player.rotY
+          while (diff > Math.PI) diff -= Math.PI * 2
+          while (diff < -Math.PI) diff += Math.PI * 2
+          player.rotY += diff * Math.min(1, dt * 14)
         }
-      }
 
-      // Move Y & land on tops
-      player.y += player.vy * dt
-      player.grounded = false
-      for (const b of colliders) {
-        if (
-          player.x + playerR > b.minX &&
-          player.x - playerR < b.maxX &&
-          player.z + playerR > b.minZ &&
-          player.z - playerR < b.maxZ
-        ) {
-          if (player.vy <= 0 && prevY >= b.maxY - 0.35 && player.y <= b.maxY) {
-            player.y = b.maxY
-            player.vy = 0
-            player.grounded = true
-          }
-        }
-      }
-
-      // Plaza boundary & safety respawn
-      player.x = Math.max(-35, Math.min(35, player.x))
-      player.z = Math.max(-35, Math.min(35, player.z))
-      if (player.y < -12) {
-        player.x = 0
-        player.y = 1.5
-        player.z = 9
-        player.vy = 0
-      }
-
-      // Jump-Pads
-      for (const jp of jumpPads) {
-        jp.ring.scale.setScalar(1 + Math.sin(elapsed * 5) * 0.06)
-        const dSq = (player.x - jp.x) ** 2 + (player.z - jp.z) ** 2
-        if (dSq < jp.radius * jp.radius && Math.abs(player.y - jp.y) < 0.7 && player.vy <= 1) {
-          player.vy = jp.boost
+        if (wantJump && player.grounded) {
+          player.vy = 11.4
           player.grounded = false
-          sfx.playJumpPad()
-          callbacksRef.current.onJumpPadUsed()
+          sfx.playJump()
+        }
+
+        player.vy -= 28 * dt
+
+        // === SMOOTH AUTO-STEP-UP COLLISION (Walkways, Paths, Plaza Layers & Stairs!) ===
+        const prevY = player.y
+        let autoSteppedToY = player.y
+
+        // Move X with auto-step check
+        player.x += player.vx * dt
+        for (const b of colliders) {
+          if (player.y + 3.15 > b.minY + 0.15 && player.y < b.maxY - 0.04) {
+            if (
+              player.x + playerR > b.minX &&
+              player.x - playerR < b.maxX &&
+              player.z + playerR > b.minZ &&
+              player.z - playerR < b.maxZ
+            ) {
+              const ledgeHeight = b.maxY - player.y
+              if (player.grounded && ledgeHeight > 0 && ledgeHeight <= STEP_HEIGHT && hasHeadroomAt(player.x, player.z, b.maxY)) {
+                autoSteppedToY = Math.max(autoSteppedToY, b.maxY)
+              } else {
+                if (player.vx > 0) player.x = b.minX - playerR
+                else if (player.vx < 0) player.x = b.maxX + playerR
+              }
+            }
+          }
+        }
+
+        // Move Z with auto-step check
+        player.z += player.vz * dt
+        for (const b of colliders) {
+          if (player.y + 3.15 > b.minY + 0.15 && player.y < b.maxY - 0.04) {
+            if (
+              player.x + playerR > b.minX &&
+              player.x - playerR < b.maxX &&
+              player.z + playerR > b.minZ &&
+              player.z - playerR < b.maxZ
+            ) {
+              const ledgeHeight = b.maxY - player.y
+              if (player.grounded && ledgeHeight > 0 && ledgeHeight <= STEP_HEIGHT && hasHeadroomAt(player.x, player.z, b.maxY)) {
+                autoSteppedToY = Math.max(autoSteppedToY, b.maxY)
+              } else {
+                if (player.vz > 0) player.z = b.minZ - playerR
+                else if (player.vz < 0) player.z = b.maxZ + playerR
+              }
+            }
+          }
+        }
+
+        if (autoSteppedToY > player.y) {
+          const delta = autoSteppedToY - player.y
+          player.y = autoSteppedToY
+          player.visualStepOffset -= delta // keeps visual ascent silky-smooth!
+          player.vy = Math.max(0, player.vy)
+        }
+
+        // Move Y & land on tops
+        player.y += player.vy * dt
+        player.grounded = false
+        for (const b of colliders) {
+          if (
+            player.x + playerR > b.minX &&
+            player.x - playerR < b.maxX &&
+            player.z + playerR > b.minZ &&
+            player.z - playerR < b.maxZ
+          ) {
+            if (player.vy <= 0 && prevY >= b.maxY - STEP_HEIGHT && player.y <= b.maxY + 0.02) {
+              player.y = b.maxY
+              player.vy = 0
+              player.grounded = true
+            }
+          }
+        }
+
+        // Decay visual step smoothing quickly
+        player.visualStepOffset *= Math.max(0, 1 - dt * 18)
+
+        // Plaza boundary & safety respawn
+        player.x = Math.max(-35, Math.min(35, player.x))
+        player.z = Math.max(-35, Math.min(35, player.z))
+        if (player.y < -12) {
+          player.x = 0
+          player.y = 1.5
+          player.z = 9
+          player.vy = 0
+        }
+
+        // Jump-Pads
+        for (const jp of jumpPads) {
+          jp.ring.scale.setScalar(1 + Math.sin(elapsed * 5) * 0.06)
+          const dSq = (player.x - jp.x) ** 2 + (player.z - jp.z) ** 2
+          if (dSq < jp.radius * jp.radius && Math.abs(player.y - jp.y) < 0.7 && player.vy <= 1) {
+            player.vy = jp.boost
+            player.grounded = false
+            sfx.playJumpPad()
+            callbacksRef.current.onJumpPadUsed()
+          }
         }
       }
+
+      // Interactive proximity checks (every ~120ms so React never re-renders unnecessarily!)
+      if (now - lastProximityCheck > 120) {
+        lastProximityCheck = now
+        let closestBench: BenchSpot | null = null
+        let bestDistSq = 2.65 * 2.65
+        for (const b of benches) {
+          const dSq = (player.x - b.x) ** 2 + (player.z - b.z) ** 2
+          if (dSq < bestDistSq) {
+            bestDistSq = dSq
+            closestBench = b
+          }
+        }
+        if (closestBench?.id !== nearBenchRef.current?.id) {
+          nearBenchRef.current = closestBench
+          setNearBench(closestBench)
+        }
+
+        let foundPortal: string | null = null
+        for (const pz of portalZones) {
+          const dSq = (player.x - pz.x) ** 2 + (player.z - pz.z) ** 2
+          if (dSq < 4.0 * 4.0) {
+            foundPortal = pz.name
+            break
+          }
+        }
+        setNearPortalName((prev) => (prev === foundPortal ? prev : foundPortal))
+      }
+
+      // Reactive South Dance Stage glow when player steps on it!
+      const onStage = Math.abs(player.x) < 6.2 && player.z > 19.6 && player.z < 28.4 && player.y >= 0.75
+      danceFloorMat.emissiveIntensity = onStage ? 0.55 + Math.sin(elapsed * 8) * 0.25 : 0.35
 
       // Sky Observation Terrace milestone
       if (!player.reachedTerrace && player.y >= 7.0 && player.x > 21 && player.z > 9) {
@@ -1171,11 +1379,12 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       }
 
       let currentPose: PlayerPose = 'idle'
-      if (!player.grounded) currentPose = player.vy > 0 ? 'jump' : 'fall'
+      if (seatedBenchRef.current) currentPose = 'sit'
+      else if (!player.grounded) currentPose = player.vy > 0 ? 'jump' : 'fall'
       else if (activeEmoteRef.current) currentPose = activeEmoteRef.current
       else if (isMoving) currentPose = isSprinting ? 'run' : 'walk'
 
-      localRig.root.position.set(player.x, player.y, player.z)
+      localRig.root.position.set(player.x, player.y + player.visualStepOffset, player.z)
       localRig.root.rotation.y = player.rotY
       localRig.update(dt, elapsed, currentPose)
 
@@ -1264,13 +1473,14 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         setOnlineCount(1 + remotePlayers.size + (botsEnabledRef.current ? bots.length : 0))
       }
 
-      // Smooth 3rd-person orbit camera (zero allocation!)
+      // Smooth 3rd-person orbit camera
+      const targetVisualY = player.y + player.visualStepOffset
       const camX = player.x + Math.sin(camYaw) * Math.cos(camPitch) * camDist
-      const camY = player.y + 2.45 + Math.sin(camPitch) * camDist
+      const camY = targetVisualY + 2.45 + Math.sin(camPitch) * camDist
       const camZ = player.z + Math.cos(camYaw) * Math.cos(camPitch) * camDist
       desiredCamPos.set(camX, Math.max(1.2, camY), camZ)
       camera.position.lerp(desiredCamPos, Math.min(1, dt * 11))
-      lookTarget.set(player.x, player.y + 2.2, player.z)
+      lookTarget.set(player.x, targetVisualY + 2.2, player.z)
       camera.lookAt(lookTarget)
 
       renderer.render(scene, camera)
@@ -1280,6 +1490,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
     return () => {
       cancelAnimationFrame(rafId)
+      ro.disconnect()
       mp.disconnect()
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
@@ -1314,26 +1525,28 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
   return (
     <div
-      className="relative h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)] w-full overflow-hidden bg-sky-200 select-none"
+      className={`relative w-full overflow-hidden bg-sky-200 select-none ${
+        isFullscreen ? 'h-dvh' : 'h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)]'
+      }`}
       style={{ overscrollBehavior: 'none' }}
     >
       {/* 3D Canvas Host */}
       <div ref={mountRef} className="h-full w-full cursor-grab active:cursor-grabbing" style={{ touchAction: 'none' }} />
 
-      {/* TOP HUD BAR (Responsive for PC, Tablet & Mobile) */}
-      <div className="pointer-events-none absolute top-2.5 sm:top-3.5 left-2.5 sm:left-3.5 right-2.5 sm:right-3.5 flex flex-wrap items-center justify-between gap-2 z-10">
+      {/* TOP HUD BAR */}
+      <div className="pointer-events-none absolute top-2.5 sm:top-3.5 left-2.5 sm:left-3.5 right-2.5 sm:right-3.5 flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 z-10">
         <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
           <button
             onClick={onBackHome}
             className="flex items-center gap-1 rounded-xl bg-slate-950/75 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-bold text-sky-50 border border-sky-400/30 backdrop-blur-md hover:bg-slate-900 transition cursor-pointer"
           >
             <ArrowLeft className="h-3.5 w-3.5 text-sky-400" />
-            <span className="hidden xs:inline">{t.backToLobby}</span>
+            <span className="hidden sm:inline">{t.backToLobby}</span>
           </button>
 
           <div className="flex items-center gap-1.5 sm:gap-2 rounded-xl bg-slate-950/75 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-bold text-sky-50 border border-sky-400/30 backdrop-blur-md">
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="hidden sm:inline">{t.roomLabel}</span>
+            <span className="hidden md:inline">{t.roomLabel}</span>
             <span className="font-mono text-sky-300">{roomCode}</span>
             <span className="flex items-center gap-1 text-sky-200/80 pl-1 border-l border-sky-400/20">
               <Users className="h-3.5 w-3.5" />
@@ -1357,38 +1570,59 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
             <span>{freshGems}</span>
           </div>
 
-          {/* Quality + FPS switcher (Eko / Średnia / Wysoka) */}
+          {/* Quality + FPS switcher */}
           <button
             onClick={cycleQuality}
             title="Graphics Quality"
-            className="flex items-center gap-1 rounded-xl bg-slate-950/75 px-2.5 py-1.5 sm:py-2 text-xs font-bold text-sky-100 border border-sky-400/30 backdrop-blur-md hover:bg-slate-900 transition cursor-pointer"
+            className="flex items-center gap-1 rounded-xl bg-slate-950/75 px-2 sm:px-2.5 py-1.5 sm:py-2 text-xs font-bold text-sky-100 border border-sky-400/30 backdrop-blur-md hover:bg-slate-900 transition cursor-pointer"
           >
             <Gauge className="h-3.5 w-3.5 text-sky-400" />
             <span>{t.quality[quality]}</span>
-            <span className="hidden md:inline font-mono text-[10px] text-emerald-300/90 pl-0.5">
+            <span className="hidden lg:inline font-mono text-[10px] text-emerald-300/90 pl-0.5">
               {fpsDisplay} FPS
             </span>
           </button>
 
-          {/* Touch Controls Toggle (auto-on for phone/tablet, manual override on PC) */}
+          {/* Spawn Reset Button */}
+          <button
+            onClick={() => resetSpawnActionRef.current()}
+            title={t.spawnReset}
+            className="flex items-center gap-1 rounded-xl bg-slate-950/75 px-2 py-1.5 sm:py-2 text-xs font-bold text-sky-100 border border-sky-400/30 backdrop-blur-md hover:bg-slate-900 transition cursor-pointer"
+          >
+            <LocateFixed className="h-3.5 w-3.5 text-sky-400" />
+          </button>
+
+          {/* Fullscreen + Landscape toggle */}
+          <button
+            onClick={handleToggleFullscreen}
+            title={t.fullscreenBtn}
+            className={`flex items-center gap-1 rounded-xl px-2 py-1.5 sm:py-2 text-xs font-bold border backdrop-blur-md transition cursor-pointer ${
+              isFullscreen
+                ? 'bg-sky-500/30 text-sky-50 border-sky-300/60'
+                : 'bg-slate-950/75 text-sky-100 border-sky-400/30 hover:bg-slate-900'
+            }`}
+          >
+            {isFullscreen ? <Minimize2 className="h-3.5 w-3.5 text-sky-300" /> : <Maximize2 className="h-3.5 w-3.5 text-sky-400" />}
+          </button>
+
+          {/* Touch Controls Toggle */}
           <button
             onClick={() => {
               setTouchMode((v) => !v)
               sfx.playClick()
             }}
-            className={`flex items-center gap-1 rounded-xl px-2.5 py-1.5 sm:py-2 text-xs font-bold border backdrop-blur-md transition cursor-pointer ${
+            className={`flex items-center gap-1 rounded-xl px-2 py-1.5 sm:py-2 text-xs font-bold border backdrop-blur-md transition cursor-pointer ${
               touchMode
                 ? 'bg-sky-500/30 text-sky-50 border-sky-300/60'
                 : 'bg-slate-950/75 text-slate-300 border-slate-500/30'
             }`}
           >
             <Smartphone className="h-3.5 w-3.5 text-sky-300" />
-            <span className="hidden lg:inline">{touchMode ? t.touchOn : t.touchOff}</span>
           </button>
 
           <button
             onClick={() => setBotsEnabled((b) => !b)}
-            className={`hidden md:flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 sm:py-2 text-xs font-bold border backdrop-blur-md transition cursor-pointer ${
+            className={`hidden lg:flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 sm:py-2 text-xs font-bold border backdrop-blur-md transition cursor-pointer ${
               botsEnabled
                 ? 'bg-slate-950/75 text-sky-100 border-sky-400/30'
                 : 'bg-slate-950/55 text-slate-400 border-slate-500/30'
@@ -1400,7 +1634,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
           <button
             onClick={toggleSound}
-            className="flex items-center gap-1 rounded-xl bg-slate-950/75 px-2.5 py-1.5 sm:py-2 text-xs font-bold text-sky-100 border border-sky-400/30 backdrop-blur-md hover:bg-slate-900 transition cursor-pointer"
+            className="flex items-center gap-1 rounded-xl bg-slate-950/75 px-2 py-1.5 sm:py-2 text-xs font-bold text-sky-100 border border-sky-400/30 backdrop-blur-md hover:bg-slate-900 transition cursor-pointer"
             aria-label={soundEnabled ? t.soundOn : t.soundOff}
           >
             {soundEnabled ? <Volume2 className="h-3.5 w-3.5 text-sky-400" /> : <VolumeX className="h-3.5 w-3.5 text-slate-400" />}
@@ -1411,10 +1645,39 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
             className="flex items-center gap-1 rounded-xl bg-slate-950/75 px-2.5 py-1.5 sm:py-2 text-xs font-bold text-sky-200 border border-sky-400/40 backdrop-blur-md hover:bg-sky-950 transition cursor-pointer"
           >
             <Sparkles className="h-3.5 w-3.5 text-sky-400" />
-            <span>{t.quickAvatar}</span>
+            <span className="hidden sm:inline">{t.quickAvatar}</span>
           </button>
         </div>
       </div>
+
+      {/* MOBILE PORTRAIT ROTATE + FULLSCREEN HELPER BANNER */}
+      {isPortraitMobile && !rotateBannerDismissed && (
+        <div className="pointer-events-auto absolute top-14 left-1/2 -translate-x-1/2 z-30 w-[min(340px,calc(100vw-24px))]">
+          <div className="flex items-center justify-between gap-2 rounded-2xl border border-sky-400/50 bg-slate-950/90 px-3 py-2 text-xs text-sky-50 shadow-2xl backdrop-blur-xl">
+            <div className="flex items-center gap-2 min-w-0">
+              <RotateCw className="h-4 w-4 shrink-0 text-sky-400 animate-spin" style={{ animationDuration: '5s' }} />
+              <span className="text-[11px] font-semibold leading-tight">{t.rotateBannerText}</span>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => enterGameFullscreenLandscape()}
+                className="rounded-xl bg-sky-400 px-2.5 py-1.5 text-[10px] font-black text-slate-950 active:scale-95 cursor-pointer"
+              >
+                {t.rotateBannerBtn}
+              </button>
+              <button
+                type="button"
+                onClick={() => setRotateBannerDismissed(true)}
+                className="rounded-lg p-1 text-sky-200/70 hover:text-white cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* REWARD / EVENT TOAST */}
       {toast && (
@@ -1426,10 +1689,41 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         </div>
       )}
 
-      {/* CHAT PANEL (Collapsible on phones/tablets so the viewport stays spacious!) */}
+      {/* INTERACTIVE BENCH SIT / STAND PROMPT OR PORTAL HINT */}
+      {(seatedBench || nearBench || nearPortalName) && (
+        <div
+          className={`pointer-events-auto absolute left-1/2 -translate-x-1/2 z-20 ${
+            touchMode ? 'bottom-20 sm:bottom-8' : 'bottom-20'
+          }`}
+        >
+          {seatedBench || nearBench ? (
+            <button
+              type="button"
+              onClick={() => toggleSitActionRef.current()}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="flex items-center gap-2 rounded-full border border-sky-300/70 bg-slate-950/85 px-4 py-2.5 text-xs font-extrabold text-sky-50 shadow-[0_8px_28px_rgba(14,165,233,0.4)] backdrop-blur-xl transition hover:bg-sky-950 active:scale-95 cursor-pointer"
+            >
+              <Armchair className="h-4 w-4 text-sky-400" />
+              <span>{seatedBench ? t.standPrompt : t.sitPrompt}</span>
+              <span className="hidden sm:inline rounded-md bg-sky-400/20 border border-sky-300/40 px-1.5 py-0.5 font-mono text-[10px] text-sky-200">
+                E
+              </span>
+            </button>
+          ) : nearPortalName ? (
+            <div className="flex items-center gap-2 rounded-full border border-sky-400/40 bg-slate-950/80 px-4 py-2 text-xs font-bold text-sky-100 backdrop-blur-xl shadow-lg">
+              <Sparkles className="h-3.5 w-3.5 text-sky-400" />
+              <span>
+                {nearPortalName} — {t.portalSoonHint}
+              </span>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* CHAT PANEL */}
       <div
         className={`pointer-events-auto absolute left-3 z-20 ${
-          touchMode ? 'top-16 sm:top-16' : 'bottom-4'
+          touchMode ? 'top-14 sm:top-16' : 'bottom-4'
         }`}
       >
         {!chatOpen ? (
@@ -1452,7 +1746,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         ) : (
           <div
             onPointerDown={(e) => e.stopPropagation()}
-            className="w-[min(320px,calc(100vw-24px))] rounded-2xl bg-slate-950/80 border border-sky-400/30 backdrop-blur-xl shadow-2xl overflow-hidden"
+            className="w-[min(310px,calc(100vw-24px))] rounded-2xl bg-slate-950/80 border border-sky-400/30 backdrop-blur-xl shadow-2xl overflow-hidden"
           >
             <div className="flex items-center justify-between px-3 py-2 border-b border-sky-400/20">
               <div className="flex items-center gap-1.5 text-xs font-extrabold text-sky-100">
@@ -1461,7 +1755,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-semibold text-sky-300/80">
-                  {isSupabaseConfigured ? t.multiplayerHintSupabase : 'Local + Multi-Tab'}
+                  {isSupabaseConfigured ? t.multiplayerHintSupabase : t.multiplayerHintLocal}
                 </span>
                 <button
                   type="button"
@@ -1474,7 +1768,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
               </div>
             </div>
 
-            <div className="max-h-32 sm:max-h-36 overflow-y-auto px-3 py-2 space-y-1.5 text-xs">
+            <div className="max-h-28 sm:max-h-36 overflow-y-auto px-3 py-2 space-y-1.5 text-xs">
               {messages.map((m) => (
                 <div key={m.id} className="leading-snug">
                   <span className={m.system ? 'font-bold text-sky-400' : 'font-extrabold text-sky-200'}>
@@ -1497,11 +1791,11 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
                   chatInputFocusedRef.current = false
                 }}
                 placeholder={t.chatPlaceholder}
-                className="flex-1 rounded-xl bg-slate-900/90 px-3 py-1.5 text-xs text-white placeholder-sky-200/45 border border-sky-400/25 focus:outline-none focus:border-sky-400"
+                className="min-w-0 flex-1 rounded-xl bg-slate-900/90 px-3 py-1.5 text-xs text-white placeholder-sky-200/45 border border-sky-400/25 focus:outline-none focus:border-sky-400"
               />
               <button
                 type="submit"
-                className="flex items-center justify-center rounded-xl bg-sky-500 p-2 text-slate-950 hover:bg-sky-400 transition cursor-pointer"
+                className="flex shrink-0 items-center justify-center rounded-xl bg-sky-500 p-2 text-slate-950 hover:bg-sky-400 transition cursor-pointer"
                 aria-label={t.chatSend}
               >
                 <Send className="h-3.5 w-3.5" />
@@ -1511,7 +1805,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         )}
       </div>
 
-      {/* DESKTOP EMOTE BAR & CONTROLS (hidden when Touch HUD is active so screen stays ultra-clean) */}
+      {/* DESKTOP EMOTE BAR & CONTROLS */}
       {!touchMode && (
         <div className="pointer-events-none absolute bottom-4 right-4 hidden sm:flex flex-col items-end gap-2 z-10">
           <div className="pointer-events-auto flex flex-wrap justify-end gap-1.5 rounded-2xl bg-slate-950/75 p-2 border border-sky-400/30 backdrop-blur-xl shadow-2xl">
@@ -1540,7 +1834,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       {/* MOBILE / TABLET VIRTUAL THUMBSTICK & ACTION BUTTONS */}
       {touchMode && (
         <>
-          <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 z-10 hidden sm:block">
+          <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 z-10 hidden md:block">
             <div className="rounded-full bg-slate-950/60 px-3 py-1 text-[11px] font-semibold text-sky-100/85 border border-sky-400/20 backdrop-blur-md">
               {t.touchControlsList}
             </div>
