@@ -2,32 +2,19 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import {
-  Check,
   ChevronLeft,
   ChevronRight,
-  Compass,
   Crosshair,
   Flag,
-  Gamepad2,
   Home,
-  Lock,
-  LogOut,
   Maximize2,
   MessageSquare,
   MessageSquarePlus,
-  Moon,
   RotateCcw,
   Send,
   Shirt,
-  Smartphone,
   Sparkles,
-  Sun,
   Trophy,
-  Users,
-  Volume2,
-  VolumeX,
-  Wifi,
-  X,
 } from 'lucide-react'
 import {
   FaceId,
@@ -50,8 +37,10 @@ import { cloneFreshTexturesWithRepeat, FreshSurfaceKind, getFreshTexturePair } f
 import { generateTestObbyCourse, OBBY_ZONES, ObbyBlockDef } from './obbyCourse'
 import { MobileTouchControls } from '../components/hud/MobileTouchControls'
 import { InGameWardrobeDrawer } from '../components/hud/InGameWardrobeDrawer'
+import { InGameMenuDrawer } from '../components/hud/InGameMenuDrawer'
 import { FreshBloxLogo } from '../components/brand/FreshBloxBrand'
-import { enterGameFullscreenLandscape, isTouchMobileDevice } from '../lib/mobileFullscreen'
+import { enterGameFullscreenLandscape, exitGameFullscreen, isTouchMobileDevice } from '../lib/mobileFullscreen'
+import { loadMousePrefs, saveMousePrefs } from '../lib/mousePrefs'
 import { useVisualViewport } from '../lib/useVisualViewport'
 
 type GraphicsQuality = 'low' | 'medium' | 'high'
@@ -247,6 +236,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   const [touchMode, setTouchMode] = useState<boolean>(() => isTouchMobileDevice())
   const [touchSprint, setTouchSprint] = useState<boolean>(false)
   const [shiftLockActive, setShiftLockActive] = useState<boolean>(false)
+  const [mousePrefs, setMousePrefs] = useState(() => loadMousePrefs())
   const [activeEmoteUi, setActiveEmoteUi] = useState<PlayerPose | null>(null)
   const [isPortraitMobile, setIsPortraitMobile] = useState<boolean>(false)
   const [quality, setQuality] = useState<GraphicsQuality>(() => (isTouchMobileDevice() ? 'low' : 'medium'))
@@ -288,10 +278,20 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   qualityRef.current = quality
   const worldTimeRef = useRef<WorldTimeOfDay>(worldTime)
   worldTimeRef.current = worldTime
+  const hubOpenRef = useRef<boolean>(hubOpen)
+  hubOpenRef.current = hubOpen
+  const touchModeRef = useRef<boolean>(touchMode)
+  touchModeRef.current = touchMode
   const wardrobeOpenRef = useRef<boolean>(wardrobeOpen)
   wardrobeOpenRef.current = wardrobeOpen
   const chatOpenRef = useRef<boolean>(chatOpen)
   chatOpenRef.current = chatOpen
+  const clickToLockRef = useRef<boolean>(mousePrefs.clickToLock)
+  clickToLockRef.current = mousePrefs.clickToLock
+  const shiftLockAlignRef = useRef<boolean>(mousePrefs.shiftLockAlign)
+  shiftLockAlignRef.current = mousePrefs.shiftLockAlign
+  const mouseSensRef = useRef<number>(mousePrefs.sensitivity)
+  mouseSensRef.current = mousePrefs.sensitivity
   const usernameRef = useRef(username)
   usernameRef.current = username
   const rankRef = useRef(rank.name)
@@ -309,6 +309,21 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   maxUnlockedRef.current = maxUnlockedStage
   const feedbackOpenRef = useRef<boolean>(feedbackOpen)
   feedbackOpenRef.current = feedbackOpen
+
+  // Release pointer lock cleanly whenever any overlay opens
+  useEffect(() => {
+    if ((hubOpen || wardrobeOpen || feedbackOpen) && document.pointerLockElement) {
+      document.exitPointerLock?.()
+    }
+  }, [hubOpen, wardrobeOpen, feedbackOpen])
+
+  const updateMousePrefs = useCallback((patch: Partial<typeof mousePrefs>) => {
+    setMousePrefs((prev) => {
+      const next = { ...prev, ...patch }
+      saveMousePrefs(next)
+      return next
+    })
+  }, [])
 
   const callbacksRef = useRef({
     onStageReached,
@@ -337,6 +352,8 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   const focusWardrobeCamRef = useRef<(() => void) | null>(null)
   const recenterCamRef = useRef<(() => void) | null>(null)
   const toggleShiftLockRef = useRef<(() => void) | null>(null)
+  const lockMouseRef = useRef<(() => void) | null>(null)
+  const pointerLockReleasedAtRef = useRef<number>(0)
 
   const mpRef = useRef<LobbyMultiplayerClient | null>(null)
   const localRigRef = useRef<R6RigHandle | null>(null)
@@ -465,13 +482,17 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           closeLiveWardrobe()
           return
         }
+        // If Esc just released pointer lock, don't force the menu open immediately
+        if (performance.now() - pointerLockReleasedAtRef.current < 220) {
+          return
+        }
         setHubOpen((open) => !open)
         sfx.playClick()
         return
       }
       if (isTextFieldFocused()) return
       const code = e.code
-      if (code === 'Tab') {
+      if (code === 'Tab' || code === 'KeyM') {
         e.preventDefault()
         toggleShiftLockRef.current?.()
         return
@@ -1170,23 +1191,46 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       sfx.playClick()
     }
 
-    // Mouse / Touch camera controls + Desktop Shift-Lock (Tab)
+    // Mouse / Touch camera controls + Desktop Mouse Lock (Click 3D / Tab / M — no dragging needed!)
     const dom = renderer.domElement
     const activeTouchPointers = new Map<number, { x: number; y: number }>()
     let lastPinchDist = 0
 
+    const requestLockSafe = () => {
+      if (touchModeRef.current) return
+      if (document.pointerLockElement === dom) return
+      try {
+        const res = (dom.requestPointerLock as unknown as () => Promise<void> | void)?.()
+        if (res && typeof (res as Promise<void>).catch === 'function') {
+          ;(res as Promise<void>).catch(() => {})
+        }
+      } catch {
+        // Ignore browser rejection if called without user gesture
+      }
+    }
+
     const onPointerLockChange = () => {
       const locked = document.pointerLockElement === dom
+      if (!locked && shiftLockRef.current) {
+        pointerLockReleasedAtRef.current = performance.now()
+      }
       shiftLockRef.current = locked
       setShiftLockActive(locked)
+      if (locked) {
+        camState.dragging = false
+      }
     }
     document.addEventListener('pointerlockchange', onPointerLockChange)
+
+    lockMouseRef.current = () => {
+      requestLockSafe()
+    }
 
     toggleShiftLockRef.current = () => {
       if (document.pointerLockElement === dom) {
         document.exitPointerLock?.()
       } else {
-        dom.requestPointerLock?.()
+        requestLockSafe()
       }
       sfx.playClick()
     }
@@ -1204,6 +1248,23 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         }
         return
       }
+      // Desktop PC: Left-clicking the 3D scene automatically locks the mouse when Mouse Lock mode is on!
+      if (
+        !touchModeRef.current &&
+        clickToLockRef.current &&
+        e.button === 0 &&
+        document.pointerLockElement !== dom &&
+        !hubOpenRef.current &&
+        !wardrobeOpenRef.current &&
+        !feedbackOpenRef.current
+      ) {
+        const activeEl = document.activeElement as HTMLElement | null
+        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'BUTTON')) {
+          activeEl.blur()
+        }
+        requestLockSafe()
+        return
+      }
       if (e.button === 0 || e.button === 2) {
         camState.dragging = true
         camState.lastX = e.clientX
@@ -1211,10 +1272,26 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       }
     }
 
+    let lastLockMoveTs = 0
+    const applyPointerLockDelta = (mx: number, my: number, ts: number) => {
+      if (ts === lastLockMoveTs) return
+      lastLockMoveTs = ts
+      // Guard against occasional Chromium huge jump spikes right after pointer lock engages
+      if (Math.abs(mx) > 350 || Math.abs(my) > 350) return
+      const s = mouseSensRef.current
+      camState.yaw -= mx * 0.0038 * s
+      camState.pitch = Math.max(0.05, Math.min(1.18, camState.pitch + my * 0.0034 * s))
+    }
+
+    const onLockedMouseMove = (e: MouseEvent) => {
+      if (document.pointerLockElement === dom) {
+        applyPointerLockDelta(e.movementX, e.movementY, e.timeStamp)
+      }
+    }
+
     const onPointerMove = (e: PointerEvent) => {
-      if (shiftLockRef.current && document.pointerLockElement === dom) {
-        camState.yaw -= e.movementX * 0.0046
-        camState.pitch = Math.max(0.05, Math.min(1.18, camState.pitch + e.movementY * 0.0042))
+      if (document.pointerLockElement === dom) {
+        applyPointerLockDelta(e.movementX, e.movementY, e.timeStamp)
         return
       }
       if (e.pointerType === 'touch') {
@@ -1235,7 +1312,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       const dy = e.clientY - camState.lastY
       camState.lastX = e.clientX
       camState.lastY = e.clientY
-      const sens = e.pointerType === 'touch' ? 0.0082 : 0.0065
+      const sens = e.pointerType === 'touch' ? 0.0082 : 0.0055 * mouseSensRef.current
       camState.yaw -= dx * sens
       camState.pitch = Math.max(0.05, Math.min(1.18, camState.pitch + dy * sens))
     }
@@ -1259,6 +1336,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
 
     dom.addEventListener('pointerdown', onPointerDown)
     window.addEventListener('pointermove', onPointerMove)
+    document.addEventListener('mousemove', onLockedMouseMove)
     window.addEventListener('pointerup', onPointerUp)
     window.addEventListener('pointercancel', onPointerUp)
     dom.addEventListener('wheel', onWheel, { passive: false })
@@ -1734,12 +1812,27 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
             player.vx += (targetVx - player.vx) * groundAccel
             player.vz += (targetVz - player.vz) * groundAccel
           }
-          const desiredRot = Math.atan2(moveX, moveZ)
-          let diff = desiredRot - player.rotY
-          while (diff > Math.PI) diff -= Math.PI * 2
-          while (diff < -Math.PI) diff += Math.PI * 2
-          player.rotY += diff * Math.min(1, dt * 15)
+          if (shiftLockRef.current && shiftLockAlignRef.current) {
+            const desiredRot = camState.yaw + Math.PI
+            let diff = desiredRot - player.rotY
+            while (diff > Math.PI) diff -= Math.PI * 2
+            while (diff < -Math.PI) diff += Math.PI * 2
+            player.rotY += diff * Math.min(1, dt * 18)
+          } else {
+            const desiredRot = Math.atan2(moveX, moveZ)
+            let diff = desiredRot - player.rotY
+            while (diff > Math.PI) diff -= Math.PI * 2
+            while (diff < -Math.PI) diff += Math.PI * 2
+            player.rotY += diff * Math.min(1, dt * 15)
+          }
         } else {
+          if (shiftLockRef.current && shiftLockAlignRef.current) {
+            const desiredRot = camState.yaw + Math.PI
+            let diff = desiredRot - player.rotY
+            while (diff > Math.PI) diff -= Math.PI * 2
+            while (diff < -Math.PI) diff += Math.PI * 2
+            player.rotY += diff * Math.min(1, dt * 16)
+          }
           if (standingOnIce) {
             const iceGlide = Math.max(0, 1 - dt * 1.45)
             player.vx *= iceGlide
@@ -2261,6 +2354,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       window.removeEventListener('resize', onResize)
       dom.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('pointermove', onPointerMove)
+      document.removeEventListener('mousemove', onLockedMouseMove)
       window.removeEventListener('pointerup', onPointerUp)
       window.removeEventListener('pointercancel', onPointerUp)
       dom.removeEventListener('wheel', onWheel)
@@ -2374,11 +2468,21 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
               <ChevronLeft className="h-3.5 w-3.5" />
             </button>
 
-            <div className="flex flex-col items-center px-1 min-w-[105px] sm:min-w-[175px]">
+            <div className="flex flex-col items-center px-1 min-w-[115px] sm:min-w-[190px]">
               <div className="flex items-center gap-1.5 text-[11px] sm:text-sm font-black tracking-tight">
                 <Flag className="h-3.5 w-3.5 text-sky-400 shrink-0" />
                 <span>
                   Stage <span className="text-sky-300">{currentStage}</span> / 100
+                </span>
+                <span
+                  className="hidden sm:inline-flex rounded-md border px-1.5 py-0.5 text-[9px] font-extrabold leading-none"
+                  style={{
+                    borderColor: `${currentZone.difficultyColor}66`,
+                    background: `${currentZone.difficultyColor}22`,
+                    color: currentZone.difficultyColor,
+                  }}
+                >
+                  {lang === 'pl' ? currentZone.difficultyPl : currentZone.difficultyEn}
                 </span>
               </div>
               <div className="mt-0.5 flex w-full items-center gap-1.5">
@@ -2390,7 +2494,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
                 </div>
                 <span className="font-mono text-[9px] font-bold text-sky-200">{formatTimeMs(elapsedMs)}</span>
               </div>
-              <div className="max-w-[135px] sm:max-w-[205px] truncate text-[9px] font-bold tracking-wide text-sky-100/90">
+              <div className="max-w-[140px] sm:max-w-[215px] truncate text-[9px] font-bold tracking-wide text-sky-100/90">
                 {stageTitle}
                 <span className="hidden md:inline text-sky-300/75">
                   {' · '}
@@ -2426,7 +2530,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           </div>
         </div>
 
-        {/* Right: Feedback + Shift-Lock (PC) + Live Wardrobe button */}
+        {/* Right: Feedback + PC Mouse Lock + Live Wardrobe button */}
         <div className="pointer-events-auto flex items-center gap-1.5">
           {onOpenFeedback && (
             <button
@@ -2446,15 +2550,27 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
             <button
               type="button"
               onClick={() => toggleShiftLockRef.current?.()}
-              title="Shift-Lock (Tab)"
-              className={`hidden md:flex h-9 items-center gap-1 rounded-2xl border px-2.5 text-xs font-bold backdrop-blur-xl shadow-lg transition cursor-pointer ${
+              title={
+                lang === 'pl'
+                  ? 'Lock myszy (Klik / Tab / M — obrót kamery bez przeciągania)'
+                  : 'Mouse Lock (Click / Tab / M — look without dragging)'
+              }
+              className={`flex h-9 items-center gap-1.5 rounded-2xl border px-2.5 text-xs font-extrabold backdrop-blur-xl shadow-lg transition cursor-pointer ${
                 shiftLockActive
-                  ? 'border-sky-300/70 bg-sky-500/35 text-white'
+                  ? 'border-sky-300/80 bg-sky-500/40 text-white ring-1 ring-sky-300/40'
                   : 'border-white/15 bg-slate-950/65 text-sky-100 hover:bg-slate-900/80'
               }`}
             >
-              <Lock className="h-3.5 w-3.5 text-sky-300" />
-              <span>Shift-Lock</span>
+              <Crosshair className={`h-3.5 w-3.5 ${shiftLockActive ? 'text-white' : 'text-sky-300'}`} />
+              <span className="hidden sm:inline">
+                {shiftLockActive
+                  ? lang === 'pl'
+                    ? 'Mysz zablok. · ESC'
+                    : 'Locked · ESC'
+                  : lang === 'pl'
+                    ? 'Lock myszy'
+                    : 'Mouse Lock'}
+              </span>
             </button>
           )}
           <button
@@ -2491,184 +2607,59 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         />
       )}
 
-      {/* === FRESHBLOX QUICK HUB DRAWER (Esc / Logo F) === */}
-      {hubOpen && (
-        <div
-          className="fixed inset-0 z-40 flex items-start justify-start bg-slate-950/45 backdrop-blur-sm p-2.5 sm:p-4"
-          onClick={() => setHubOpen(false)}
-        >
-          <div
-            className="flex max-h-[calc(100dvh-20px)] w-full max-w-sm flex-col overflow-hidden rounded-3xl border border-white/15 bg-slate-950/92 text-white shadow-2xl backdrop-blur-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3.5">
-              <div className="flex items-center gap-2.5">
-                <FreshBloxLogo size={28} />
-                <div>
-                  <div className="font-display text-sm font-black tracking-tight">{t.obbyLabel}</div>
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-sky-200/80">
-                    <span className="font-mono">#{roomCode}</span>
-                    <span>•</span>
-                    <span className="text-emerald-300">{onlineCount} online</span>
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setHubOpen(false)}
-                className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="flex-1 space-y-4 overflow-y-auto p-4">
-              {/* Quick Actions */}
-              <div className="space-y-2">
-                <div className="text-[10px] font-extrabold uppercase tracking-wider text-sky-200/70">
-                  {t.hubActions}
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={openLiveWardrobe}
-                    className="flex items-center gap-2 rounded-2xl border border-sky-400/30 bg-sky-500/15 px-3 py-2.5 text-xs font-extrabold text-sky-100 hover:bg-sky-500/25 cursor-pointer"
-                  >
-                    <Shirt className="h-4 w-4 text-sky-300" />
-                    <span>{t.liveWardrobeTitle}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCopyInvite}
-                    className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/8 px-3 py-2.5 text-xs font-extrabold text-white hover:bg-white/15 cursor-pointer"
-                  >
-                    {copiedInvite ? <Check className="h-4 w-4 text-emerald-400" /> : <Users className="h-4 w-4 text-sky-300" />}
-                    <span>{copiedInvite ? t.inviteCopied : t.inviteBtn}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setHubOpen(false)
-                      onSwitchToLobby()
-                    }}
-                    className="col-span-2 flex items-center justify-center gap-2 rounded-2xl border border-sky-400/35 bg-gradient-to-r from-sky-500 to-blue-600 px-3 py-2.5 text-xs font-extrabold text-white shadow cursor-pointer hover:brightness-110"
-                  >
-                    <Compass className="h-4 w-4" />
-                    <span>{t.switchToLobby}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Players in Obby Room */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-sky-200/70">
-                  <span>{t.playersInRoom}</span>
-                  <span>{roster.length}</span>
-                </div>
-                <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1">
-                  {roster.map((p) => (
-                    <div
-                      key={p.id}
-                      className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs"
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate font-extrabold text-white">
-                          {p.username}{' '}
-                          {p.isSelf && <span className="text-[10px] text-sky-300">({t.youTag})</span>}
-                        </div>
-                        <div className="text-[10px] text-sky-200/75">{p.rank}</div>
-                      </div>
-                      <span className="rounded-lg bg-sky-500/20 px-2 py-0.5 font-mono text-[11px] font-extrabold text-sky-200">
-                        Stage {p.stage}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* World & Settings */}
-              <div className="space-y-2">
-                <div className="text-[10px] font-extrabold uppercase tracking-wider text-sky-200/70">
-                  {t.hubSettings}
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setWorldTime((wt) => (wt === 'day' ? 'night' : 'day'))
-                      sfx.playClick()
-                    }}
-                    className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/8 py-2 text-xs font-bold hover:bg-white/15 cursor-pointer"
-                  >
-                    {worldTime === 'day' ? <Sun className="h-4 w-4 text-amber-300" /> : <Moon className="h-4 w-4 text-sky-200" />}
-                    <span>{worldTime === 'day' ? t.worldDay : t.worldNight}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={toggleSound}
-                    className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/8 py-2 text-xs font-bold hover:bg-white/15 cursor-pointer"
-                  >
-                    {soundEnabled ? <Volume2 className="h-4 w-4 text-emerald-300" /> : <VolumeX className="h-4 w-4 text-slate-400" />}
-                    <span>{soundEnabled ? t.soundOn : t.soundOff}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTouchMode((m) => !m)
-                      sfx.playClick()
-                    }}
-                    className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/8 py-2 text-xs font-bold hover:bg-white/15 cursor-pointer"
-                  >
-                    <Smartphone className="h-4 w-4 text-sky-300" />
-                    <span>{touchMode ? t.touchOn : t.touchOff}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQuality((q) => (q === 'low' ? 'medium' : q === 'medium' ? 'high' : 'low'))
-                      sfx.playClick()
-                    }}
-                    className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/8 py-2 text-xs font-bold hover:bg-white/15 cursor-pointer"
-                  >
-                    <Gamepad2 className="h-4 w-4 text-sky-300" />
-                    <span>{t.quality[quality]}</span>
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-sky-200/80">
-                  <span className="flex items-center gap-1.5 font-semibold">
-                    <Wifi className="h-3.5 w-3.5 text-emerald-400" />
-                    {isSupabaseConfigured ? t.multiplayerHintSupabase : t.multiplayerHintLocal}
-                  </span>
-                  <span className="font-mono font-bold text-white">Best: {maxUnlockedStage}/100</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 border-t border-white/10 p-3">
-              <button
-                type="button"
-                onClick={() => setHubOpen(false)}
-                className="flex-1 rounded-xl bg-white/10 py-2.5 text-xs font-extrabold text-white hover:bg-white/18 cursor-pointer"
-              >
-                {t.resumeGame}
-              </button>
-              <button
-                type="button"
-                onClick={onBackHome}
-                className="flex items-center justify-center gap-1.5 rounded-xl bg-rose-500/20 px-4 py-2.5 text-xs font-extrabold text-rose-200 hover:bg-rose-500/30 cursor-pointer"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                <span>{t.leaveGame}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* === UPGRADED FRESHBLOX IN-GAME MENU (Logo F / Esc) === */}
+      <InGameMenuDrawer
+        open={hubOpen}
+        worldKind="obby"
+        lang={lang}
+        roomCode={roomCode}
+        username={username}
+        rankName={rank.name}
+        onlineCount={onlineCount}
+        roster={roster}
+        currentStage={currentStage}
+        maxUnlockedStage={maxUnlockedStage}
+        stageTitle={`${stageTitle} · ${lang === 'pl' ? currentZone.namePl : currentZone.nameEn}`}
+        difficultyLabel={lang === 'pl' ? currentZone.difficultyPl : currentZone.difficultyEn}
+        difficultyColor={currentZone.difficultyColor}
+        touchMode={touchMode}
+        pointerLocked={shiftLockActive}
+        clickToLock={mousePrefs.clickToLock}
+        shiftLockAlign={mousePrefs.shiftLockAlign}
+        mouseSensitivity={mousePrefs.sensitivity}
+        onTogglePointerLock={() => toggleShiftLockRef.current?.()}
+        onChangeClickToLock={(enabled) => updateMousePrefs({ clickToLock: enabled })}
+        onChangeShiftLockAlign={(enabled) => updateMousePrefs({ shiftLockAlign: enabled })}
+        onChangeMouseSensitivity={(sensitivity) => updateMousePrefs({ sensitivity })}
+        worldTime={worldTime}
+        soundEnabled={soundEnabled}
+        quality={quality}
+        isFullscreen={isFullscreen}
+        supabaseConnected={isSupabaseConfigured}
+        copiedInvite={copiedInvite}
+        onChangeWorldTime={setWorldTime}
+        onToggleSound={toggleSound}
+        onChangeQuality={setQuality}
+        onToggleTouchMode={() => setTouchMode((m) => !m)}
+        onToggleFullscreen={() => {
+          if (isFullscreen) {
+            exitGameFullscreen()
+          } else {
+            enterGameFullscreenLandscape()
+          }
+        }}
+        onClose={() => setHubOpen(false)}
+        onResumeAndLock={() => {
+          setHubOpen(false)
+          lockMouseRef.current?.()
+        }}
+        onOpenWardrobe={openLiveWardrobe}
+        onCopyInvite={handleCopyInvite}
+        onResetPosition={() => respawnToStageRef.current?.(currentStage)}
+        onSwitchWorld={onSwitchToLobby}
+        onLeaveToHome={onBackHome}
+        onOpenFeedback={() => onOpenFeedback?.(`Test Obby 100 · Stage ${currentStage}`)}
+      />
 
       {/* === LIVE CHAT OVERLAY === */}
       {chatOpen && (
@@ -2802,16 +2793,28 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
               </button>
             ))}
           </div>
-          <div className="rounded-full bg-slate-950/55 px-3 py-0.5 text-[10px] font-semibold text-sky-100/80 backdrop-blur">
-            {t.obbyControlsList}
+          <div className="rounded-full bg-slate-950/55 px-3 py-0.5 text-[10px] font-semibold text-sky-100/85 backdrop-blur">
+            {shiftLockActive
+              ? lang === 'pl'
+                ? 'Mysz zablokowana (ruch bez przeciągania) · ESC lub Tab aby zwolnić kursor'
+                : 'Mouse locked (free-look active) · Press ESC or Tab to release cursor'
+              : mousePrefs.clickToLock
+                ? lang === 'pl'
+                  ? 'Kliknij ekran 3D lub Tab/M aby zablokować mysz · WASD + Spacja + Shift · R = Respawn'
+                  : 'Click 3D view or Tab/M for Mouse Lock · WASD + Space + Shift · R = Respawn'
+                : t.obbyControlsList}
           </div>
         </div>
       )}
 
-      {/* === SHIFT-LOCK RETICLE (Desktop) === */}
+      {/* === MOUSE LOCK / SHIFT-LOCK RETICLE (Desktop) === */}
       {shiftLockActive && !touchMode && (
         <div className="pointer-events-none fixed inset-0 z-20 flex items-center justify-center">
-          <Crosshair className="h-5 w-5 text-white/80 drop-shadow" />
+          {mousePrefs.shiftLockAlign ? (
+            <Crosshair className="h-5 w-5 text-sky-200 drop-shadow-[0_1px_4px_rgba(2,132,199,0.95)]" />
+          ) : (
+            <div className="h-2.5 w-2.5 rounded-full border-2 border-white/95 bg-sky-400/90 shadow-[0_0_8px_rgba(56,189,248,0.95)]" />
+          )}
         </div>
       )}
 
