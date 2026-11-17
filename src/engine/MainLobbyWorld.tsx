@@ -24,7 +24,7 @@ import {
   VolumeX,
   X,
 } from 'lucide-react'
-import { getRankForXp, R6AvatarConfig } from '../data/catalog'
+import { FaceId, getRankForXp, HatId, OutfitId, R6AvatarConfig } from '../data/catalog'
 import { Lang, LOCALES } from '../data/locales'
 import { LobbyChatMessage, LobbyMultiplayerClient, PlayerPose, RemotePlayerState } from '../lib/multiplayer'
 import {
@@ -37,6 +37,7 @@ import { sfx } from '../lib/sfx'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { FreshBloxLogo, FreshGemShard } from '../components/brand/FreshBloxBrand'
 import { MobileTouchControls } from '../components/hud/MobileTouchControls'
+import { InGameWardrobeDrawer } from '../components/hud/InGameWardrobeDrawer'
 import { createR6Rig, getSharedFreshStudTexture, R6RigHandle } from './r6Builder'
 
 export type GraphicsQuality = 'low' | 'medium' | 'high'
@@ -109,6 +110,9 @@ interface MainLobbyWorldProps {
   freshGems: number
   xp: number
   avatar: R6AvatarConfig
+  unlockedOutfits: OutfitId[]
+  unlockedHats: HatId[]
+  unlockedFaces: FaceId[]
   isFullscreen: boolean
   onCollectGem: () => void
   onChatSent: () => void
@@ -116,7 +120,9 @@ interface MainLobbyWorldProps {
   onJumpPadUsed: () => void
   onReachTerrace: () => void
   onBackHome: () => void
-  onOpenAvatar: () => void
+  onBuyAndEquip: (category: 'outfit' | 'hat' | 'face', itemId: string, price: number) => boolean
+  onBuyBundle: (items: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; price: number }>) => boolean
+  onSkinChange: (hex: string) => void
 }
 
 function detectDefaultQuality(): GraphicsQuality {
@@ -129,8 +135,11 @@ function detectDefaultQuality(): GraphicsQuality {
   return 'high'
 }
 
-const QUALITY_ORDER: GraphicsQuality[] = ['low', 'medium', 'high']
 const STEP_HEIGHT = 0.56 // Auto-step smoothly over walkways, plaza layers & low stairs without jumping!
+
+function avatarKey(a: R6AvatarConfig): string {
+  return `${a.outfitId}|${a.hatId}|${a.faceId}|${a.skinColor}`
+}
 
 export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   roomCode,
@@ -140,6 +149,9 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   freshGems,
   xp,
   avatar,
+  unlockedOutfits,
+  unlockedHats,
+  unlockedFaces,
   isFullscreen,
   onCollectGem,
   onChatSent,
@@ -147,7 +159,9 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   onJumpPadUsed,
   onReachTerrace,
   onBackHome,
-  onOpenAvatar,
+  onBuyAndEquip,
+  onBuyBundle,
+  onSkinChange,
 }) => {
   const t = LOCALES[lang].world
   const mountRef = useRef<HTMLDivElement>(null)
@@ -160,6 +174,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     typeof window !== 'undefined' ? window.innerWidth >= 860 && !isTouchMobileDevice() : true,
   )
   const [hubOpen, setHubOpen] = useState(false)
+  const [wardrobeOpen, setWardrobeOpen] = useState(false)
+  const [previewAvatar, setPreviewAvatar] = useState<R6AvatarConfig>(() => ({ ...avatar }))
   const [worldTime, setWorldTime] = useState<WorldTimeMode>('day')
   const [roster, setRoster] = useState<LobbyRosterEntry[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
@@ -201,6 +217,9 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   sprintLockedRef.current = sprintLocked
   const chatOpenRef = useRef(chatOpen)
   chatOpenRef.current = chatOpen
+  const wardrobeOpenRef = useRef(wardrobeOpen)
+  wardrobeOpenRef.current = wardrobeOpen
+  const focusWardrobeCamRef = useRef<() => void>(() => {})
 
   const nearBenchRef = useRef<BenchSpot | null>(null)
   const seatedBenchRef = useRef<BenchSpot | null>(null)
@@ -213,6 +232,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
   const avatarRef = useRef(avatar)
   avatarRef.current = avatar
+  const displayedAvatar: R6AvatarConfig = wardrobeOpen ? previewAvatar : avatar
+  const displayedAvatarRef = useRef<R6AvatarConfig>(displayedAvatar)
+  displayedAvatarRef.current = displayedAvatar
+  const localRigKeyRef = useRef<string>(avatarKey(displayedAvatar))
   const usernameRef = useRef(username)
   usernameRef.current = username
   const rankRef = useRef(getRankForXp(xp).name)
@@ -328,6 +351,48 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     }
     renderer.shadowMap.needsUpdate = true
   }, [quality, worldTime])
+
+  // LIVE HOT-SWAP LOCAL R6 AVATAR IN-GAME (0ms reload — instant outfit/hat/face/skin changes!)
+  useEffect(() => {
+    const nextKey = avatarKey(displayedAvatar)
+    if (nextKey === localRigKeyRef.current) return
+    const scene = sceneRef.current
+    const oldRig = localRigRef.current
+    if (!scene || !oldRig) return
+
+    const pos = oldRig.root.position.clone()
+    const rotY = oldRig.root.rotation.y
+    scene.remove(oldRig.root)
+    oldRig.dispose()
+
+    const freshRig = createR6Rig({
+      avatar: displayedAvatar,
+      username: usernameRef.current,
+      rank: rankRef.current,
+      showNameplate: true,
+      castShadow: qualityRef.current !== 'low',
+    })
+    freshRig.root.position.copy(pos)
+    freshRig.root.rotation.y = rotY
+    scene.add(freshRig.root)
+    localRigRef.current = freshRig
+    localRigKeyRef.current = nextKey
+  }, [displayedAvatar])
+
+  const openLiveWardrobe = useCallback(() => {
+    setPreviewAvatar({ ...avatarRef.current })
+    setHubOpen(false)
+    setChatOpen(false)
+    setWardrobeOpen(true)
+    focusWardrobeCamRef.current()
+    sfx.playClick()
+  }, [])
+
+  const closeLiveWardrobe = useCallback(() => {
+    setWardrobeOpen(false)
+    setPreviewAvatar({ ...avatarRef.current })
+    sfx.playClick()
+  }, [])
 
   const triggerEmote = useCallback((pose: PlayerPose) => {
     // If sitting on bench, stand up cleanly for non-sit emotes
@@ -869,7 +934,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
     // === LOCAL PLAYER CLEAN R6 RIG ===
     const localRig = createR6Rig({
-      avatar: avatarRef.current,
+      avatar: displayedAvatarRef.current,
       username: usernameRef.current,
       rank: rankRef.current,
       showNameplate: true,
@@ -877,6 +942,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     })
     scene.add(localRig.root)
     localRigRef.current = localRig
+    localRigKeyRef.current = avatarKey(displayedAvatarRef.current)
 
     const player = {
       x: 0,
@@ -1080,6 +1146,24 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           scene.add(rig.root)
           remotePlayers.set(state.id, { state, rig, speechUntil: 0 })
         } else {
+          // Live hot-swap remote player rig whenever a friend changes outfit/hat/face/skin in real time!
+          if (avatarKey(existing.state.avatar) !== avatarKey(state.avatar)) {
+            const pos = existing.rig.root.position.clone()
+            const rotY = existing.rig.root.rotation.y
+            scene.remove(existing.rig.root)
+            existing.rig.dispose()
+            const swapped = createR6Rig({
+              avatar: state.avatar,
+              username: state.username,
+              rank: state.rank,
+              showNameplate: true,
+              castShadow: qualityRef.current !== 'low',
+            })
+            swapped.root.position.copy(pos)
+            swapped.root.rotation.y = rotY
+            scene.add(swapped.root)
+            existing.rig = swapped
+          }
           existing.state = state
         }
       },
@@ -1111,6 +1195,12 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     let camPitch = 0.34
     let camDist = 11.2
 
+    // Smoothly swing camera to face the player's front when opening Live Wardrobe!
+    focusWardrobeCamRef.current = () => {
+      camYaw = player.rotY + 0.16
+      camPitch = 0.22
+    }
+
     const activePointers = new Map<number, { x: number; y: number }>()
     let lastPinchDist = 0
 
@@ -1122,7 +1212,12 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       }
       if (code === 'Escape') {
         e.preventDefault()
-        setHubOpen((open) => !open)
+        if (wardrobeOpenRef.current) {
+          setWardrobeOpen(false)
+          setPreviewAvatar({ ...avatarRef.current })
+        } else {
+          setHubOpen((open) => !open)
+        }
         sfx.playClick()
         return
       }
@@ -1501,9 +1596,11 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       else if (activeEmoteRef.current) currentPose = activeEmoteRef.current
       else if (isMoving) currentPose = isSprinting ? 'run' : 'walk'
 
-      localRig.root.position.set(player.x, player.y + player.visualStepOffset, player.z)
-      localRig.root.rotation.y = player.rotY
-      localRig.update(dt, elapsed, currentPose)
+      if (localRigRef.current) {
+        localRigRef.current.root.position.set(player.x, player.y + player.visualStepOffset, player.z)
+        localRigRef.current.root.rotation.y = player.rotY
+        localRigRef.current.update(dt, elapsed, currentPose)
+      }
 
       // Update Hangout Companion Bots
       botsGroup.visible = botsEnabledRef.current
@@ -1612,14 +1709,24 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         setOnlineCount(nextRoster.length)
       }
 
-      // Smooth 3rd-person orbit camera
+      // Smooth 3rd-person orbit camera (frames avatar neatly on the left when Live Wardrobe is open!)
       const targetVisualY = player.y + player.visualStepOffset
-      const camX = player.x + Math.sin(camYaw) * Math.cos(camPitch) * camDist
-      const camY = targetVisualY + 2.45 + Math.sin(camPitch) * camDist
-      const camZ = player.z + Math.cos(camYaw) * Math.cos(camPitch) * camDist
+      const inWardrobe = wardrobeOpenRef.current
+      const effectiveDist = inWardrobe ? 5.85 : camDist
+      const rightX = Math.cos(camYaw)
+      const rightZ = -Math.sin(camYaw)
+      const sideOffset = inWardrobe ? 1.15 : 0
+
+      const camX = player.x + rightX * sideOffset + Math.sin(camYaw) * Math.cos(camPitch) * effectiveDist
+      const camY = targetVisualY + (inWardrobe ? 2.15 : 2.45) + Math.sin(camPitch) * effectiveDist
+      const camZ = player.z + rightZ * sideOffset + Math.cos(camYaw) * Math.cos(camPitch) * effectiveDist
       desiredCamPos.set(camX, Math.max(1.2, camY), camZ)
-      camera.position.lerp(desiredCamPos, Math.min(1, dt * 11))
-      lookTarget.set(player.x, targetVisualY + 2.2, player.z)
+      camera.position.lerp(desiredCamPos, Math.min(1, dt * 10))
+      lookTarget.set(
+        player.x + rightX * sideOffset,
+        targetVisualY + (inWardrobe ? 1.95 : 2.2),
+        player.z + rightZ * sideOffset,
+      )
       camera.lookAt(lookTarget)
 
       renderer.render(scene, camera)
@@ -1641,7 +1748,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       renderer.domElement.removeEventListener('wheel', onWheel)
       renderer.domElement.removeEventListener('contextmenu', onContext)
 
-      localRig.dispose()
+      localRigRef.current?.dispose()
+      localRigRef.current = null
       for (const bot of bots) bot.rig.dispose()
       for (const entry of remotePlayers.values()) entry.rig.dispose()
       for (const d of disposables) d.dispose()
@@ -1688,7 +1796,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
               onClick={() => {
                 setHubOpen((open) => {
                   const next = !open
-                  if (next && touchMode) setChatOpen(false)
+                  if (next) {
+                    setWardrobeOpen(false)
+                    if (touchMode) setChatOpen(false)
+                  }
                   return next
                 })
                 sfx.playClick()
@@ -1712,6 +1823,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
                   if (next) {
                     setUnreadCount(0)
                     setHubOpen(false)
+                    if (touchMode) setWardrobeOpen(false)
                   }
                   return next
                 })
@@ -1750,21 +1862,44 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           </button>
         </div>
 
-        {/* Right minimalist cluster: FreshGems + Locker shortcut */}
+        {/* Right minimalist cluster: FreshGems + Live In-Game Wardrobe toggle */}
         <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">
           <button
             type="button"
-            onClick={onOpenAvatar}
-            className="flex h-10 items-center gap-1.5 rounded-2xl border border-white/15 bg-slate-950/75 px-3 text-xs font-extrabold text-sky-50 shadow-lg backdrop-blur-xl hover:bg-slate-900/90 active:scale-95 transition cursor-pointer"
+            onClick={() => (wardrobeOpen ? closeLiveWardrobe() : openLiveWardrobe())}
+            className={`flex h-10 items-center gap-1.5 rounded-2xl border px-3 text-xs font-extrabold shadow-lg backdrop-blur-xl active:scale-95 transition cursor-pointer ${
+              wardrobeOpen
+                ? 'border-sky-300/70 bg-sky-500/30 text-white'
+                : 'border-white/15 bg-slate-950/75 text-sky-50 hover:bg-slate-900/90'
+            }`}
           >
             <FreshGemShard size={15} />
             <span>{freshGems}</span>
             <span className="mx-0.5 h-3.5 w-[1px] bg-white/15 hidden sm:inline-block" />
-            <Sparkles className="h-3.5 w-3.5 text-sky-400 hidden sm:inline-block" />
+            <Sparkles className="h-3.5 w-3.5 text-sky-400" />
             <span className="hidden sm:inline text-sky-100 font-bold">{t.quickAvatar}</span>
           </button>
         </div>
       </div>
+
+      {/* === LIVE IN-GAME WARDROBE DRAWER (Change outfits, hats, faces & skin without leaving 3D!) === */}
+      {wardrobeOpen && (
+        <InGameWardrobeDrawer
+          lang={lang}
+          freshGems={freshGems}
+          ownedAvatar={avatar}
+          previewAvatar={previewAvatar}
+          unlockedOutfits={unlockedOutfits}
+          unlockedHats={unlockedHats}
+          unlockedFaces={unlockedFaces}
+          onPreviewChange={setPreviewAvatar}
+          onBuyAndEquip={onBuyAndEquip}
+          onBuyBundle={onBuyBundle}
+          onSkinChange={onSkinChange}
+          onTestEmote={triggerEmote}
+          onClose={closeLiveWardrobe}
+        />
+      )}
 
       {/* === ORIGINAL FRESHBLOX QUICK HUB (Slide-over glass side drawer — live 3D stays visible!) === */}
       {hubOpen && (
@@ -1846,10 +1981,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => {
-                      setHubOpen(false)
-                      onOpenAvatar()
-                    }}
+                    onClick={openLiveWardrobe}
                     className="flex items-center gap-2 rounded-2xl border border-sky-400/25 bg-sky-500/12 px-3 py-2.5 text-left text-xs font-bold text-sky-50 hover:bg-sky-500/20 active:scale-[0.98] transition cursor-pointer"
                   >
                     <Sparkles className="h-4 w-4 shrink-0 text-sky-300" />
@@ -2202,8 +2334,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         </div>
       )}
 
-      {/* DESKTOP EMOTE BAR */}
-      {!touchMode && (
+      {/* DESKTOP EMOTE BAR (hidden while Live Wardrobe is open) */}
+      {!touchMode && !wardrobeOpen && (
         <div className="pointer-events-none absolute bottom-4 right-4 hidden sm:flex flex-col items-end gap-2 z-10">
           <div className="pointer-events-auto flex flex-wrap justify-end gap-1.5 rounded-2xl bg-slate-950/75 p-2 border border-white/15 backdrop-blur-xl shadow-2xl">
             {emotesList.map((em) => (
@@ -2224,8 +2356,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         </div>
       )}
 
-      {/* MOBILE / TABLET VIRTUAL THUMBSTICK & ACTION BUTTONS (Clean bottom — zero cluttered text bar!) */}
-      {touchMode && (
+      {/* MOBILE / TABLET VIRTUAL THUMBSTICK & ACTION BUTTONS (hidden cleanly while Live Wardrobe is open!) */}
+      {touchMode && !wardrobeOpen && (
         <MobileTouchControls
           onMoveVector={handleTouchMoveVector}
           onJump={handleTouchJump}

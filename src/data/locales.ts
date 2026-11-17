@@ -66,6 +66,9 @@ export const LOCALES = {
       hubActions: 'Szybkie akcje',
       hubSettings: 'Świat i ustawienia',
       resumeGame: 'Wróć do gry',
+      liveWardrobeTitle: 'Szatnia Na Żywo',
+      liveWardrobeSub: 'Przebieraj się bez wychodzenia z gry!',
+      liveWardrobeDone: 'Gotowe',
       quality: {
         low: 'Eko',
         medium: 'Średnia',
@@ -205,6 +208,9 @@ export const LOCALES = {
       hubActions: 'Quick actions',
       hubSettings: 'World & settings',
       resumeGame: 'Resume',
+      liveWardrobeTitle: 'Live Wardrobe',
+      liveWardrobeSub: 'Change outfits without leaving the game!',
+      liveWardrobeDone: 'Done',
       quality: {
         low: 'Eco',
         medium: 'Med',

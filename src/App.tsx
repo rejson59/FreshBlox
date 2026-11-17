@@ -241,9 +241,14 @@ export function App() {
             freshGems={profile.freshGems}
             xp={profile.xp}
             avatar={profile.avatar}
+            unlockedOutfits={profile.unlockedOutfits}
+            unlockedHats={profile.unlockedHats}
+            unlockedFaces={profile.unlockedFaces}
             isFullscreen={isFullscreen}
             onBackHome={() => navigateView('home')}
-            onOpenAvatar={() => navigateView('avatar')}
+            onBuyAndEquip={buyAndEquip}
+            onBuyBundle={buyBundle}
+            onSkinChange={(hex) => updateAvatar({ skinColor: hex })}
             onCollectGem={() => {
               awardGemsAndXp(10, 15)
               incrementQuest('q_gems', 1)
