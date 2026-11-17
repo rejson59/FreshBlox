@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { cloneFreshTexturesWithRepeat, FreshSurfaceKind } from './freshTextures'
 import { createFreshBloxMonument } from './freshLogo3D'
 import { generateTestObbyCourse, OBBY_ZONES } from './obbyCourse'
@@ -616,8 +617,23 @@ function renderArenaThumbnail(renderer: THREE.WebGLRenderer, width: number, heig
   addStrip(-23.8, 15.5, 0, 0.16, 0.4, 44, '#A855F7')
   addStrip(23.8, 15.5, 0, 0.16, 0.4, 44, '#10B981')
 
-  // Multi-level Balconies, Pillars & Central Pedestal
-  addBox(0, 0.5, 0, 5.2, 1.0, 5.2, darkMat)
+  // Multi-level Balconies, Pillars & Central Titanium Pedestal + Plasma Tower
+  const titaniumMat = tr.trackMat(new THREE.MeshStandardMaterial({ color: '#94A3B8', roughness: 0.24, metalness: 0.5 }))
+  addBox(0, 0.5, 0, 5.6, 1.0, 5.6, titaniumMat)
+  addStrip(0, 1.02, 0, 5.8, 0.14, 5.8, '#38BDF8')
+  const towerCol = new THREE.Mesh(
+    tr.trackGeo(new THREE.CylinderGeometry(0.45, 0.72, 2.2, 16)),
+    tr.trackMat(new THREE.MeshStandardMaterial({ color: '#E2E8F0', roughness: 0.2, metalness: 0.35 })),
+  )
+  towerCol.position.set(0, 2.0, 0)
+  scene.add(towerCol)
+  const towerRing = new THREE.Mesh(
+    tr.trackGeo(new THREE.TorusGeometry(0.95, 0.1, 10, 24)),
+    tr.trackMat(new THREE.MeshBasicMaterial({ color: '#38BDF8' })),
+  )
+  towerRing.rotation.x = Math.PI / 2
+  towerRing.position.set(0, 2.8, 0)
+  scene.add(towerRing)
   addBox(-19.5, 6.2, 0, 8.5, 1.1, 24, wallMat)
   addBox(19.5, 6.2, 0, 8.5, 1.1, 24, wallMat)
   addBox(-10, 7, -10, 3.6, 14, 3.6, wallMat)
@@ -668,36 +684,42 @@ function renderArenaThumbnail(renderer: THREE.WebGLRenderer, width: number, heig
 }
 
 /**
- * 4. FRISBEE KING — Enclosed Winding Labyrinth Box with 45° Bank Walls, Ramps & Blazing Fiery Frisbee!
+ * 4. FRISBEE KING — Bright Daylight Cyber-Stadium with 45° Bank Walls, Ramps & Blazing Fiery Frisbee!
  */
-function renderFrisbeeThumbnail(renderer: THREE.WebGLRenderer, width: number, height: number): string {
+function renderFrisbeeThumbnail(
+  renderer: THREE.WebGLRenderer,
+  width: number,
+  height: number,
+  envTex: THREE.Texture,
+): string {
   const scene = new THREE.Scene()
   const tr = createTracker()
-  scene.background = new THREE.Color('#0B1221')
+  scene.background = new THREE.Color('#DCEBFF')
+  scene.environment = envTex
 
-  const hemi = new THREE.HemisphereLight('#FFF7ED', '#1E1B4B', 1.15)
+  const hemi = new THREE.HemisphereLight('#FFFFFF', '#64748B', 1.4)
   scene.add(hemi)
-  const sun = new THREE.DirectionalLight('#FFFFFF', 1.35)
-  sun.position.set(14, 19, 12)
+  const sun = new THREE.DirectionalLight('#FFFFFF', 1.45)
+  sun.position.set(14, 22, 14)
   sun.castShadow = true
   scene.add(sun)
 
-  const fireGlow = new THREE.PointLight('#F97316', 4.5, 36)
-  fireGlow.position.set(0, 6.2, 2)
+  const fireGlow = new THREE.PointLight('#F97316', 5.0, 42)
+  fireGlow.position.set(2, 7.5, 4)
   scene.add(fireGlow)
-  const coolGlow = new THREE.PointLight('#22D3EE', 2.8, 36)
-  coolGlow.position.set(-14, 10, -14)
+  const coolGlow = new THREE.PointLight('#22D3EE', 3.2, 42)
+  coolGlow.position.set(-14, 12, -14)
   scene.add(coolGlow)
 
   const camera = new THREE.PerspectiveCamera(48, width / height, 0.4, 160)
   camera.position.set(19, 14.5, 22)
-  camera.lookAt(-1, 4.2, -3)
+  camera.lookAt(-1, 4.4, -2)
 
-  const floorMat = tr.getSurfaceMat('facetTile', '#1E293B', 8, 8, 0.36, 0.16)
-  const outerMat = tr.getSurfaceMat('fluted', '#17253B', 6, 3, 0.35, 0.25)
-  const innerMat = tr.getSurfaceMat('fluted', '#334155', 4, 2, 0.3, 0.38)
+  const floorMat = tr.getSurfaceMat('facetTile', '#DFEBF7', 8, 8, 0.28, 0.1)
+  const outerMat = tr.getSurfaceMat('facetTile', '#CBD9EA', 6, 3, 0.3, 0.14)
+  const innerMat = tr.getSurfaceMat('fluted', '#64748B', 4, 2, 0.26, 0.36)
   const bankMat = tr.trackMat(
-    new THREE.MeshStandardMaterial({ color: '#0F766E', emissive: '#14B8A6', emissiveIntensity: 0.32, roughness: 0.24, metalness: 0.45 }),
+    new THREE.MeshStandardMaterial({ color: '#0D9488', emissive: '#14B8A6', emissiveIntensity: 0.42, roughness: 0.22, metalness: 0.35 }),
   )
 
   const addPlane = (w: number, h: number, pos: [number, number, number], rot: [number, number, number], mat: THREE.Material) => {
@@ -711,6 +733,19 @@ function renderFrisbeeThumbnail(renderer: THREE.WebGLRenderer, width: number, he
   addPlane(52, 20, [0, 10, -26], [0, 0, 0], outerMat)
   addPlane(52, 20, [-26, 10, 0], [0, Math.PI / 2, 0], outerMat)
 
+  // Glowing neon court lines on floor
+  const lineOrange = new THREE.Mesh(
+    tr.trackGeo(new THREE.BoxGeometry(36, 0.08, 0.35)),
+    tr.trackMat(new THREE.MeshBasicMaterial({ color: '#F97316' })),
+  )
+  lineOrange.position.set(0, 0.04, 0)
+  const lineCyan = new THREE.Mesh(
+    tr.trackGeo(new THREE.BoxGeometry(0.35, 0.08, 36)),
+    tr.trackMat(new THREE.MeshBasicMaterial({ color: '#22D3EE' })),
+  )
+  lineCyan.position.set(0, 0.04, 0)
+  scene.add(lineOrange, lineCyan)
+
   const addBox = (x: number, y: number, z: number, w: number, h: number, d: number, accent?: string) => {
     const m = new THREE.Mesh(tr.trackGeo(new RoundedBoxGeometry(w, h, d, 2, 0.14)), innerMat)
     m.position.set(x, y, z)
@@ -719,10 +754,10 @@ function renderFrisbeeThumbnail(renderer: THREE.WebGLRenderer, width: number, he
     scene.add(m)
     if (accent) {
       const t = new THREE.Mesh(
-        tr.trackGeo(new THREE.BoxGeometry(w + 0.08, 0.2, d + 0.08)),
+        tr.trackGeo(new THREE.BoxGeometry(w + 0.1, 0.22, d + 0.1)),
         tr.trackMat(new THREE.MeshBasicMaterial({ color: accent })),
       )
-      t.position.set(x, y + h / 2 - 0.12, z)
+      t.position.set(x, y + h / 2 - 0.1, z)
       scene.add(t)
     }
   }
@@ -742,8 +777,9 @@ function renderFrisbeeThumbnail(renderer: THREE.WebGLRenderer, width: number, he
   addBox(4.5, 2.8, -4.5, 2.2, 5.6, 2.2, '#F97316')
   addBox(-4.5, 2.8, 4.5, 2.2, 5.6, 2.2, '#F97316')
 
-  // Sloped Ramp leading to center skybridge
-  const ramp = new THREE.Mesh(tr.trackGeo(new THREE.BoxGeometry(5.2, 0.5, 11.5)), innerMat)
+  // Sloped Ramp leading to center skybridge with glowing rails
+  const rampMatThumb = tr.trackMat(new THREE.MeshStandardMaterial({ color: '#CBD5E1', roughness: 0.28, metalness: 0.18 }))
+  const ramp = new THREE.Mesh(tr.trackGeo(new THREE.BoxGeometry(5.2, 0.5, 11.5)), rampMatThumb)
   ramp.position.set(0, 2.8, 10.6)
   ramp.rotation.x = 0.52
   scene.add(ramp)
@@ -751,19 +787,19 @@ function renderFrisbeeThumbnail(renderer: THREE.WebGLRenderer, width: number, he
   // HERO BLAZING FIERY FRISBEE slicing across the frame with orange-gold trail!
   const discGroup = new THREE.Group()
   discGroup.position.set(2.5, 7.8, 5.5)
-  discGroup.rotation.z = 0.25
+  discGroup.rotation.z = 0.22
   const discBody = new THREE.Mesh(
-    tr.trackGeo(new THREE.CylinderGeometry(1.75, 1.9, 0.32, 32)),
-    tr.trackMat(new THREE.MeshStandardMaterial({ color: '#EF4444', emissive: '#F97316', emissiveIntensity: 2.2 })),
+    tr.trackGeo(new THREE.CylinderGeometry(1.85, 2.0, 0.34, 32)),
+    tr.trackMat(new THREE.MeshStandardMaterial({ color: '#EF4444', emissive: '#F97316', emissiveIntensity: 2.3 })),
   )
   const discRim = new THREE.Mesh(
-    tr.trackGeo(new THREE.TorusGeometry(1.85, 0.22, 10, 32)),
+    tr.trackGeo(new THREE.TorusGeometry(1.95, 0.24, 10, 32)),
     tr.trackMat(new THREE.MeshBasicMaterial({ color: '#FEF08A' })),
   )
   discRim.rotation.x = Math.PI / 2
   const flameRing = new THREE.Mesh(
-    tr.trackGeo(new THREE.RingGeometry(1.85, 3.4, 32)),
-    tr.trackMat(new THREE.MeshBasicMaterial({ color: '#F97316', transparent: true, opacity: 0.72, side: THREE.DoubleSide })),
+    tr.trackGeo(new THREE.RingGeometry(1.95, 3.6, 32)),
+    tr.trackMat(new THREE.MeshBasicMaterial({ color: '#F97316', transparent: true, opacity: 0.78, side: THREE.DoubleSide })),
   )
   flameRing.rotation.x = Math.PI / 2
   discGroup.add(discBody, discRim, flameRing)
@@ -777,7 +813,7 @@ function renderFrisbeeThumbnail(renderer: THREE.WebGLRenderer, width: number, he
   ]
   const trail = new THREE.Line(
     tr.trackGeo(new THREE.BufferGeometry().setFromPoints(trailPts)),
-    tr.trackMat(new THREE.LineBasicMaterial({ color: '#FACC15' })),
+    tr.trackMat(new THREE.LineBasicMaterial({ color: '#F97316' })),
   )
   scene.add(trail)
 
@@ -811,17 +847,22 @@ export function generateWorldThumbnails(): Promise<WorldThumbnailMap> {
         renderer.setPixelRatio(1)
         renderer.outputColorSpace = THREE.SRGBColorSpace
         renderer.toneMapping = THREE.ACESFilmicToneMapping
-        renderer.toneMappingExposure = 1.06
+        renderer.toneMappingExposure = 1.1
         renderer.shadowMap.enabled = true
         renderer.shadowMap.type = THREE.PCFSoftShadowMap
+
+        const pmrem = new THREE.PMREMGenerator(renderer)
+        const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
 
         const result: WorldThumbnailMap = {
           lobby: renderLobbyThumbnail(renderer, width, height),
           obby: renderObbyThumbnail(renderer, width, height),
           arena: renderArenaThumbnail(renderer, width, height),
-          frisbee: renderFrisbeeThumbnail(renderer, width, height),
+          frisbee: renderFrisbeeThumbnail(renderer, width, height, envTex),
         }
 
+        envTex.dispose()
+        pmrem.dispose()
         renderer.dispose()
         try {
           renderer.forceContextLoss()

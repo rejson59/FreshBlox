@@ -294,7 +294,8 @@ export function App() {
 
   // Lock page scroll while inside 3D gameplay so mobile address bar / overscroll never clips HUD controls
   useEffect(() => {
-    const inGame = Boolean(authUser) && (view === 'world' || view === 'obby' || view === 'arena')
+    const inGame =
+      Boolean(authUser) && (view === 'world' || view === 'obby' || view === 'arena' || view === 'frisbee')
     if (!inGame) return
     const prevBodyOverflow = document.body.style.overflow
     const prevHtmlOverflow = document.documentElement.style.overflow
@@ -887,20 +888,21 @@ export function App() {
 
       {/* === RIGHT WORKSPACE COLUMN (TOP LAUNCHER BAR + FULL VIEWPORT) === */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Compact Native Launcher Top Bar */}
+        {/* Compact Native Launcher Top Bar (Zero overlap on 360px mobile!) */}
         <header
-          className="z-20 flex h-13 shrink-0 items-center justify-between gap-2.5 border-b px-3 sm:px-5 backdrop-blur-xl"
+          className="z-20 flex h-13 shrink-0 items-center justify-between gap-2 border-b px-2.5 sm:px-5 backdrop-blur-xl"
           style={{ background: topBarBg, borderColor: shellBorder }}
         >
-          {/* Left: Brand Wordmark + Quick Room / Search Launcher Input */}
-          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          {/* Left: Brand Logo (compact F-icon on mobile, full wordmark on sm+) + Quick Room / Search Launcher Input */}
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-2.5">
             <button
               type="button"
               onClick={() => navigateView('home')}
               className="flex shrink-0 items-center gap-1.5 cursor-pointer"
+              aria-label="FreshBlox Home"
             >
-              <FreshBloxLogo size={24} className="lg:hidden shrink-0" />
-              <FreshBloxWordmark mode={mode} size="sm" className="w-[86px] sm:w-[98px] h-auto shrink-0" />
+              <FreshBloxLogo size={26} className="lg:hidden shrink-0" />
+              <FreshBloxWordmark mode={mode} size="sm" className="hidden sm:block w-[96px] h-auto shrink-0" />
             </button>
 
             <div className="hidden h-5 w-px sm:block" style={{ background: shellBorder }} />
@@ -965,7 +967,7 @@ export function App() {
           </div>
 
           {/* Right: Audio Mixer + Notifications Bell + Theme Picker + Player Chip */}
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
             {/* A-04: Audio 2.0 Mixer Popover */}
             <AudioMixerPopover lang={lang} />
 
@@ -976,7 +978,7 @@ export function App() {
                 setNotifOpen((o) => !o)
                 void loadNotifications()
               }}
-              className="relative flex h-8 w-8 items-center justify-center rounded-xl border transition hover:brightness-110 cursor-pointer"
+              className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border transition hover:brightness-110 cursor-pointer"
               style={{
                 borderColor: notifOpen ? `${themeAccent}66` : shellBorder,
                 background: notifOpen ? `${themeAccent}20` : inputBg,
@@ -993,11 +995,11 @@ export function App() {
               )}
             </button>
 
-            {/* Mobile-only quick tools */}
+            {/* Quick feedback (sm..lg, hidden on ultra-narrow <sm so header stays breathable) */}
             <button
               type="button"
               onClick={() => openFeedback()}
-              className="flex lg:hidden h-8 w-8 items-center justify-center rounded-xl border cursor-pointer"
+              className="hidden sm:flex lg:hidden h-8 w-8 shrink-0 items-center justify-center rounded-xl border cursor-pointer"
               style={{
                 borderColor: `${themeAccent}38`,
                 background: `${themeAccent}14`,
@@ -1011,7 +1013,7 @@ export function App() {
             <button
               type="button"
               onClick={() => setThemePickerOpen((o) => !o)}
-              className="flex lg:hidden h-8 w-8 items-center justify-center rounded-xl border cursor-pointer"
+              className="flex lg:hidden h-8 w-8 shrink-0 items-center justify-center rounded-xl border cursor-pointer"
               style={{ borderColor: shellBorder, background: inputBg, color: themeAccent }}
               aria-label="Color themes"
             >
@@ -1021,7 +1023,7 @@ export function App() {
             <button
               type="button"
               onClick={() => setLang((l) => (l === 'pl' ? 'en' : 'pl'))}
-              className="flex lg:hidden h-8 min-w-8 items-center justify-center rounded-xl border px-1.5 font-mono text-[10px] font-extrabold cursor-pointer"
+              className="flex lg:hidden h-8 w-8 shrink-0 items-center justify-center rounded-xl border font-mono text-[10px] font-extrabold cursor-pointer"
               style={{ borderColor: shellBorder, background: inputBg, color: tokens.textPrimary }}
             >
               {lang.toUpperCase()}
@@ -1033,7 +1035,7 @@ export function App() {
               onClick={() => {
                 navigateView('social')
               }}
-              className="flex h-8 items-center gap-2 rounded-xl border px-2.5 text-xs font-extrabold transition hover:brightness-110 cursor-pointer"
+              className="flex h-8 shrink-0 items-center gap-1.5 sm:gap-2 rounded-xl border px-2 sm:px-2.5 text-xs font-extrabold transition hover:brightness-110 cursor-pointer"
               style={{
                 borderColor:
                   profile.role === 'owner'
@@ -1051,7 +1053,7 @@ export function App() {
               ) : (
                 <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
               )}
-              <span className="max-w-[84px] sm:max-w-[140px] truncate">
+              <span className="max-w-[70px] sm:max-w-[140px] truncate">
                 {profile.clanTag ? `[${profile.clanTag}] ${profile.username}` : profile.username}
               </span>
               {profile.role !== 'player' && (

@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import {
   Bot,
+  ChevronDown,
   Crosshair,
   Disc,
   Eye,
@@ -345,6 +347,7 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
   onOpenFeedback,
 }) => {
   const vp = useVisualViewport()
+  const viewportWidth = vp.width
   const viewportHeight = vp.height
   const mountRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -389,6 +392,7 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
   const [fpsDisplay, setFpsDisplay] = useState(60)
 
   // HUD / Menus / Chat
+  const [modeMenuOpen, setModeMenuOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuTab, setMenuTab] = useState<MenuDrawerTab>('overview')
   const [wardrobeOpen, setWardrobeOpen] = useState(false)
@@ -526,16 +530,22 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
     renderer.shadowMap.enabled = qualityRef.current !== 'low'
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 1.08
+    renderer.toneMappingExposure = 1.12
     renderer.localClippingEnabled = true
+    renderer.domElement.style.touchAction = 'none'
     container.innerHTML = ''
     container.appendChild(renderer.domElement)
     canvasRef.current = renderer.domElement
 
+    // === PROCEDURAL STUDIO IBL ENVIRONMENT (Gives metallic & glass surfaces crisp reflections — ZERO pitch-black meshes!) ===
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    scene.environment = envTex
+
     // === BRIGHT, CRISP APERTURE-STYLE CHAMBER LIGHTING (High readability for portals!) ===
-    const hemi = new THREE.HemisphereLight('#E0F2FE', '#1E293B', 1.15)
+    const hemi = new THREE.HemisphereLight('#F0F9FF', '#64748B', 1.28)
     scene.add(hemi)
-    const dirLight = new THREE.DirectionalLight('#FFFFFF', 1.25)
+    const dirLight = new THREE.DirectionalLight('#FFFFFF', 1.35)
     dirLight.position.set(14, 22, 12)
     dirLight.castShadow = qualityRef.current !== 'low'
     dirLight.shadow.mapSize.set(1024, 1024)
@@ -545,15 +555,15 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
     dirLight.shadow.camera.bottom = -28
     scene.add(dirLight)
 
-    const fillLight = new THREE.DirectionalLight('#7DD3FC', 0.55)
+    const fillLight = new THREE.DirectionalLight('#BAE6FD', 0.65)
     fillLight.position.set(-16, 16, -14)
     scene.add(fillLight)
 
-    const cyanCornerLight = new THREE.PointLight('#22D3EE', 1.4, 34)
+    const cyanCornerLight = new THREE.PointLight('#22D3EE', 1.6, 36)
     cyanCornerLight.position.set(-17, 15, -17)
     scene.add(cyanCornerLight)
 
-    const orangeCornerLight = new THREE.PointLight('#F97316', 1.4, 34)
+    const orangeCornerLight = new THREE.PointLight('#F97316', 1.6, 36)
     orangeCornerLight.position.set(17, 15, 17)
     scene.add(orangeCornerLight)
 
@@ -564,39 +574,39 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
     const metalTex = cloneFreshTexturesWithRepeat('fluted', 4, 2)
 
     const portalWallMat = new THREE.MeshStandardMaterial({
-      color: '#EAF3FF',
+      color: '#F0F7FF',
       map: tileTexWall.map,
       bumpMap: tileTexWall.bumpMap,
       bumpScale: 0.04,
-      roughness: 0.34,
-      metalness: 0.06,
+      roughness: 0.3,
+      metalness: 0.08,
     })
     const portalFloorMat = new THREE.MeshStandardMaterial({
-      color: '#E2EEFC',
+      color: '#E6F1FC',
       map: tileTexFloor.map,
       bumpMap: tileTexFloor.bumpMap,
       bumpScale: 0.045,
-      roughness: 0.36,
-      metalness: 0.08,
+      roughness: 0.32,
+      metalness: 0.1,
     })
     const portalBlockMat = new THREE.MeshStandardMaterial({
-      color: '#F1F7FF',
+      color: '#F5FAFF',
       map: tileTexBlock.map,
       bumpMap: tileTexBlock.bumpMap,
       bumpScale: 0.04,
-      roughness: 0.3,
-      metalness: 0.06,
+      roughness: 0.28,
+      metalness: 0.08,
     })
     const darkFrameMat = new THREE.MeshStandardMaterial({
-      color: '#1E293B',
+      color: '#64748B',
       map: metalTex.map,
-      roughness: 0.42,
-      metalness: 0.58,
+      roughness: 0.26,
+      metalness: 0.48,
     })
     const rampMat = new THREE.MeshStandardMaterial({
-      color: '#CBD5E1',
-      roughness: 0.35,
-      metalness: 0.2,
+      color: '#DCE7F3',
+      roughness: 0.3,
+      metalness: 0.18,
     })
 
     // === SEALED BOX CHAMBER GEOMETRY (ZERO ABYSS!) ===
@@ -769,14 +779,63 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
     addBox('high-north', 0, 12.2, -18.5, 13, 1.2, 7.5, true)
     addBox('high-south', 0, 12.2, 18.5, 13, 1.2, 7.5, true)
 
-    // Central raised octagonal pedestal & laser emitter column (non-portalable dark metal base)
+    // Architectural overhead skylight LED panels so the chamber feels bright, modern & spacious
+    const skylightMat = new THREE.MeshBasicMaterial({ color: '#E0F2FE' })
+    const skylightFrameMat = new THREE.MeshStandardMaterial({ color: '#94A3B8', roughness: 0.28, metalness: 0.45 })
+    for (const [sx, sz] of [
+      [-11, -11],
+      [11, -11],
+      [-11, 11],
+      [11, 11],
+    ]) {
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.22, 9.2), skylightFrameMat)
+      frame.position.set(sx, ROOM_HEIGHT - 0.12, sz)
+      scene.add(frame)
+      const panel = new THREE.Mesh(new THREE.PlaneGeometry(8.2, 8.2), skylightMat)
+      panel.rotation.x = Math.PI / 2
+      panel.position.set(sx, ROOM_HEIGHT - 0.24, sz)
+      scene.add(panel)
+    }
+
+    // Central raised titanium pedestal & illuminated plasma laser tower (crisp sci-fi centerpiece!)
     addBox('center-base', 0, 0.45, 0, 6.4, 0.9, 6.4, false)
-    const emitterMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.65, 0.95, 2.2, 12),
-      new THREE.MeshStandardMaterial({ color: '#0F172A', metalness: 0.75, roughness: 0.25 }),
+    const pedestalTrim = new THREE.Mesh(
+      new THREE.BoxGeometry(6.55, 0.12, 6.55),
+      new THREE.MeshBasicMaterial({ color: '#38BDF8' }),
     )
-    emitterMesh.position.set(0, 1.9, 0)
-    scene.add(emitterMesh)
+    pedestalTrim.position.set(0, 0.92, 0)
+    scene.add(pedestalTrim)
+
+    const emitterGroup = new THREE.Group()
+    emitterGroup.position.set(0, 0.92, 0)
+    const emitterBase = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.95, 1.25, 0.45, 16),
+      new THREE.MeshStandardMaterial({ color: '#94A3B8', metalness: 0.55, roughness: 0.22 }),
+    )
+    emitterBase.position.y = 0.22
+    const emitterColumn = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.42, 0.62, 1.85, 16),
+      new THREE.MeshStandardMaterial({ color: '#E2E8F0', metalness: 0.35, roughness: 0.22 }),
+    )
+    emitterColumn.position.y = 1.25
+    const emitterCore = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.5, 0.5, 0.52, 16),
+      new THREE.MeshStandardMaterial({
+        color: '#F43F5E',
+        emissive: '#FF2A5F',
+        emissiveIntensity: 1.8,
+        roughness: 0.15,
+      }),
+    )
+    emitterCore.position.y = 1.9
+    const emitterHalo = new THREE.Mesh(
+      new THREE.TorusGeometry(0.86, 0.08, 12, 28),
+      new THREE.MeshBasicMaterial({ color: '#38BDF8' }),
+    )
+    emitterHalo.rotation.x = Math.PI / 2
+    emitterHalo.position.y = 1.88
+    emitterGroup.add(emitterBase, emitterColumn, emitterCore, emitterHalo)
+    scene.add(emitterGroup)
 
     // 4 Corner Speed Boost Pads on the floor (jump-launches toward high balconies!)
     const boostPads: Array<{ x: number; z: number; ring: THREE.Mesh }> = [
@@ -1200,28 +1259,39 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
     meteorAura.visible = false
     scene.add(meteorAura)
 
-    // First-Person Portal Gauntlet attached to main camera
+    // First-Person Sleek Titanium-White Portal Blaster attached to main camera
     const fppGloveGroup = new THREE.Group()
     const gloveBody = new THREE.Mesh(
-      new RoundedBoxGeometry(0.18, 0.14, 0.44, 2, 0.03),
-      new THREE.MeshStandardMaterial({ color: '#0F172A', metalness: 0.65, roughness: 0.25 }),
+      new RoundedBoxGeometry(0.16, 0.13, 0.44, 3, 0.035),
+      new THREE.MeshStandardMaterial({ color: '#F1F5F9', metalness: 0.28, roughness: 0.2 }),
     )
+    const gloveGrip = new THREE.Mesh(
+      new RoundedBoxGeometry(0.11, 0.09, 0.26, 2, 0.025),
+      new THREE.MeshStandardMaterial({ color: '#334155', metalness: 0.45, roughness: 0.3 }),
+    )
+    gloveGrip.position.set(0, -0.045, 0.08)
+    const gloveBarrel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.055, 0.068, 0.16, 16),
+      new THREE.MeshStandardMaterial({ color: '#94A3B8', metalness: 0.65, roughness: 0.2 }),
+    )
+    gloveBarrel.rotation.x = Math.PI / 2
+    gloveBarrel.position.set(0, 0.01, -0.24)
     const gloveCyan = new THREE.Mesh(
-      new THREE.BoxGeometry(0.05, 0.05, 0.34),
+      new THREE.BoxGeometry(0.036, 0.036, 0.34),
       new THREE.MeshBasicMaterial({ color: '#22D3EE' }),
     )
-    gloveCyan.position.set(-0.075, 0.04, -0.02)
+    gloveCyan.position.set(-0.072, 0.038, -0.02)
     const gloveOrange = new THREE.Mesh(
-      new THREE.BoxGeometry(0.05, 0.05, 0.34),
+      new THREE.BoxGeometry(0.036, 0.036, 0.34),
       new THREE.MeshBasicMaterial({ color: '#F97316' }),
     )
-    gloveOrange.position.set(0.075, 0.04, -0.02)
+    gloveOrange.position.set(0.072, 0.038, -0.02)
     const gloveCore = new THREE.Mesh(
-      new THREE.OctahedronGeometry(0.065, 0),
+      new THREE.OctahedronGeometry(0.052, 0),
       new THREE.MeshBasicMaterial({ color: '#38BDF8' }),
     )
-    gloveCore.position.set(0, 0.05, -0.24)
-    fppGloveGroup.add(gloveBody, gloveCyan, gloveOrange, gloveCore)
+    gloveCore.position.set(0, 0.048, -0.25)
+    fppGloveGroup.add(gloveBody, gloveGrip, gloveBarrel, gloveCyan, gloveOrange, gloveCore)
     fppGloveGroup.position.set(0.36, -0.32, -0.58)
     camera.add(fppGloveGroup)
     scene.add(camera)
@@ -1833,6 +1903,47 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
       player.pitch = THREE.MathUtils.clamp(player.pitch - e.movementY * sens, -1.42, 1.42)
     }
 
+    // === MULTI-TOUCH & DRAG CAMERA LOOK (Enables silky-smooth 360° touch aiming on mobile & tablets!) ===
+    let lookPointerId: number | null = null
+    let lastLookX = 0
+    let lastLookY = 0
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (menuOpenRef.current || wardrobeOpenRef.current || chatOpenRef.current || emoteWheelOpenRef.current) return
+      audioEngine.unlock()
+      // Ignore secondary mouse clicks if already pointer-locked
+      if (document.pointerLockElement === renderer.domElement) return
+      if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 2) return
+      if (e.pointerType === 'touch') e.preventDefault()
+      if (lookPointerId === null) {
+        lookPointerId = e.pointerId
+        lastLookX = e.clientX
+        lastLookY = e.clientY
+      }
+    }
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (lookPointerId === null || e.pointerId !== lookPointerId) return
+      if (document.pointerLockElement === renderer.domElement) return
+      if (menuOpenRef.current || wardrobeOpenRef.current || chatOpenRef.current || emoteWheelOpenRef.current) {
+        lookPointerId = null
+        return
+      }
+      const dx = e.clientX - lastLookX
+      const dy = e.clientY - lastLookY
+      lastLookX = e.clientX
+      lastLookY = e.clientY
+      const touchSens = (e.pointerType === 'touch' ? 0.0056 : 0.0036) * mouseSensRef.current
+      player.yaw -= dx * touchSens
+      player.pitch = THREE.MathUtils.clamp(player.pitch - dy * touchSens, -1.42, 1.42)
+    }
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (e.pointerId === lookPointerId) {
+        lookPointerId = null
+      }
+    }
+
     const onMouseDown = (e: MouseEvent) => {
       if (menuOpenRef.current || wardrobeOpenRef.current || chatOpenRef.current || emoteWheelOpenRef.current) return
       audioEngine.unlock()
@@ -1862,6 +1973,10 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
     window.addEventListener('mousemove', onMouseMove)
+    renderer.domElement.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+    window.addEventListener('pointercancel', onPointerUp)
     renderer.domElement.addEventListener('mousedown', onMouseDown)
     renderer.domElement.addEventListener('contextmenu', onContextMenu)
     document.addEventListener('pointerlockchange', onPointerLockChange)
@@ -2687,8 +2802,12 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('pointercancel', onPointerUp)
       window.removeEventListener('resize', onResize)
       document.removeEventListener('pointerlockchange', onPointerLockChange)
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown)
       renderer.domElement.removeEventListener('mousedown', onMouseDown)
       renderer.domElement.removeEventListener('contextmenu', onContextMenu)
       mp.disconnect()
@@ -2697,6 +2816,8 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
       localRig.dispose()
       bots.forEach((b) => b.rig.dispose())
       remotePeers.forEach((p) => p.rig.dispose())
+      envTex.dispose()
+      pmrem.dispose()
       renderer.dispose()
       if (document.pointerLockElement === renderer.domElement) {
         document.exitPointerLock?.()
@@ -2724,31 +2845,110 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
   return (
     <div
       className="relative w-full overflow-hidden bg-slate-950 select-none"
-      style={{ height: viewportHeight ? `${viewportHeight}px` : '100dvh' }}
+      style={{ height: viewportHeight ? `${viewportHeight}px` : '100dvh', overscrollBehavior: 'none' }}
     >
-      {/* 3D WebGL Canvas Mount */}
-      <div ref={mountRef} className="absolute inset-0 h-full w-full" />
+      {/* 3D WebGL Canvas Mount (touch-action: none for full 360° finger camera look!) */}
+      <div ref={mountRef} className="absolute inset-0 h-full w-full" style={{ touchAction: 'none' }} />
 
-      {/* Top HUD Bar */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 p-2.5 sm:p-3.5">
-        {/* Left: Menu + Mode Switcher + Solo Bots Toggle */}
-        <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
+      {/* Top HUD Bar — Clean, single-row, zero overlap on 360px mobile landscape! */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-1.5 sm:gap-2"
+        style={{
+          paddingTop: 'max(0.45rem, calc(env(safe-area-inset-top) + 0.3rem))',
+          paddingLeft: 'max(0.55rem, calc(env(safe-area-inset-left) + 0.35rem))',
+          paddingRight: 'max(0.55rem, calc(env(safe-area-inset-right) + 0.35rem))',
+        }}
+      >
+        {/* Left: Menu + Collapsible Mode Pill on Mobile / Full Bar on Desktop */}
+        <div
+          className="pointer-events-auto relative flex items-center gap-1.5"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
           <button
             type="button"
             onClick={() => {
               sfx.playClick()
               exitLock()
+              setModeMenuOpen(false)
               setMenuOpen(true)
             }}
-            className="flex h-9 items-center gap-1.5 rounded-xl border border-sky-400/30 bg-slate-950/80 px-2.5 text-xs font-extrabold text-white backdrop-blur-md hover:bg-slate-900 cursor-pointer"
+            className="flex h-8 sm:h-9 items-center gap-1.5 rounded-xl border border-sky-400/35 bg-slate-950/82 px-2 sm:px-2.5 text-xs font-extrabold text-white backdrop-blur-md hover:bg-slate-900 cursor-pointer"
           >
             <Menu className="h-4 w-4 text-sky-400" />
-            <span className="hidden sm:inline">Menu</span>
-            <span className="rounded bg-white/10 px-1 py-0.5 font-mono text-[9px] text-sky-200">ESC</span>
+            <span className="hidden lg:inline">Menu</span>
+            <span className="hidden lg:inline rounded bg-white/10 px-1 py-0.5 font-mono text-[9px] text-sky-200">ESC</span>
           </button>
 
-          {/* 4-Mode Selector incl. Solo Training (Zero Bots!) */}
-          <div className="flex items-center gap-1 rounded-xl border border-white/15 bg-slate-950/80 p-1 backdrop-blur-md">
+          {/* Compact Dropdown Mode Switcher for Mobile & Small Screens (< lg) — leaves 85% of screen unobstructed! */}
+          <div className="relative lg:hidden">
+            <button
+              type="button"
+              onClick={() => {
+                sfx.playClick()
+                setModeMenuOpen((o) => !o)
+              }}
+              className="flex h-8 items-center gap-1 rounded-xl border border-white/18 bg-slate-950/84 px-2.5 text-[11px] font-extrabold text-white backdrop-blur-md cursor-pointer"
+            >
+              <span className="h-2 w-2 rounded-full" style={{ background: modeMeta[arenaMode].color }} />
+              <span className="max-w-[96px] truncate">
+                {lang === 'pl' ? modeMeta[arenaMode].pl : modeMeta[arenaMode].en}
+              </span>
+              <ChevronDown className={`h-3.5 w-3.5 text-slate-300 transition-transform ${modeMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {modeMenuOpen && (
+              <div className="absolute left-0 top-10 z-40 w-44 rounded-2xl border border-white/15 bg-slate-950/95 p-1.5 shadow-2xl backdrop-blur-xl space-y-1">
+                {(Object.keys(modeMeta) as ArenaModeId[]).map((mId) => {
+                  const active = arenaMode === mId
+                  return (
+                    <button
+                      key={mId}
+                      type="button"
+                      onClick={() => {
+                        sfx.playClick()
+                        actionsRef.current?.switchMode(mId)
+                        setModeMenuOpen(false)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-[11px] font-extrabold transition cursor-pointer"
+                      style={{
+                        background: active ? modeMeta[mId].color : 'transparent',
+                        color: active ? '#09111F' : '#E2E8F0',
+                      }}
+                    >
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ background: active ? '#09111F' : modeMeta[mId].color }}
+                      />
+                      <span>{lang === 'pl' ? modeMeta[mId].pl : modeMeta[mId].en}</span>
+                    </button>
+                  )
+                })}
+                {arenaMode !== 'solo_train' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sfx.playClick()
+                      setBotsEnabled((b) => !b)
+                    }}
+                    className={`mt-1 flex w-full items-center justify-between rounded-xl border px-2.5 py-1.5 text-[11px] font-extrabold cursor-pointer ${
+                      botsEnabled
+                        ? 'border-emerald-400/40 bg-emerald-500/20 text-emerald-200'
+                        : 'border-white/10 bg-white/5 text-slate-300'
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <Bot className="h-3.5 w-3.5" />
+                      {lang === 'pl' ? 'Boty AI' : 'AI Bots'}
+                    </span>
+                    <span>{botsEnabled ? 'ON' : 'OFF'}</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Full 4-Mode Bar on Desktop (lg+) */}
+          <div className="hidden lg:flex items-center gap-1 rounded-xl border border-white/15 bg-slate-950/80 p-1 backdrop-blur-md">
             {(Object.keys(modeMeta) as ArenaModeId[]).map((mId) => {
               const active = arenaMode === mId
               return (
@@ -2759,7 +2959,7 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
                     sfx.playClick()
                     actionsRef.current?.switchMode(mId)
                   }}
-                  className="rounded-lg px-2 py-1 text-[10px] sm:text-[11px] font-extrabold transition cursor-pointer"
+                  className="rounded-lg px-2 py-1 text-[11px] font-extrabold transition cursor-pointer"
                   style={{
                     background: active ? modeMeta[mId].color : 'transparent',
                     color: active ? '#09111F' : '#CBD5E1',
@@ -2778,7 +2978,7 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
                 sfx.playClick()
                 setBotsEnabled((b) => !b)
               }}
-              className={`flex h-8 items-center gap-1 rounded-xl border px-2.5 text-[11px] font-extrabold backdrop-blur-md cursor-pointer ${
+              className={`hidden lg:flex h-8 items-center gap-1 rounded-xl border px-2.5 text-[11px] font-extrabold backdrop-blur-md cursor-pointer ${
                 botsEnabled
                   ? 'border-emerald-400/40 bg-emerald-500/20 text-emerald-200'
                   : 'border-white/15 bg-slate-950/75 text-slate-400'
@@ -2791,40 +2991,38 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
           )}
         </div>
 
-        {/* Center: Timer / Solo Training Stats Pill */}
-        <div className="hidden md:flex items-center gap-3 rounded-2xl border border-sky-400/30 bg-slate-950/82 px-4 py-1.5 backdrop-blur-md shadow-xl">
+        {/* Center: Compact Timer / Score Pill (also visible on mobile landscape!) */}
+        <div className="flex items-center gap-2 sm:gap-3 rounded-xl sm:rounded-2xl border border-sky-400/30 bg-slate-950/82 px-2.5 sm:px-4 py-1 sm:py-1.5 backdrop-blur-md shadow-xl">
           {arenaMode === 'solo_train' ? (
             <>
-              <span className="inline-flex items-center gap-1 text-xs font-extrabold text-cyan-300">
-                <Target className="h-4 w-4" />
-                {soloTargetsHit} {lang === 'pl' ? 'tarcz' : 'targets'}
+              <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-extrabold text-cyan-300">
+                <Target className="h-3.5 w-3.5" />
+                {soloTargetsHit}
               </span>
-              <span className="h-3.5 w-px bg-white/15" />
-              <span className="font-mono text-xs font-black text-amber-300">MAX {peakSpeedHud} km/h</span>
-              <span className="h-3.5 w-px bg-white/15" />
-              <span className="font-mono text-xs font-bold text-sky-300">
-                🌀 {portalWarpsCount}
-              </span>
+              <span className="h-3 w-px bg-white/15" />
+              <span className="font-mono text-[11px] sm:text-xs font-black text-amber-300">{speedKmh} km/h</span>
+              <span className="hidden sm:inline h-3.5 w-px bg-white/15" />
+              <span className="hidden sm:inline font-mono text-xs font-bold text-sky-300">🌀 {portalWarpsCount}</span>
             </>
           ) : (
             <>
-              <span className="font-mono text-sm font-black text-white">{formatTimer(roundSecondsLeft)}</span>
-              <span className="h-3.5 w-px bg-white/15" />
-              <span className="inline-flex items-center gap-1 text-xs font-extrabold text-amber-300">
+              <span className="font-mono text-xs sm:text-sm font-black text-white">{formatTimer(roundSecondsLeft)}</span>
+              <span className="h-3 w-px bg-white/15" />
+              <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-extrabold text-amber-300">
                 <Trophy className="h-3.5 w-3.5" />
-                {myScore} pkt
+                {myScore}
               </span>
-              <span className="inline-flex items-center gap-1 text-xs font-extrabold text-orange-300">
+              <span className="hidden sm:inline-flex items-center gap-1 text-xs font-extrabold text-orange-300">
                 <Flame className="h-3.5 w-3.5" />
                 {myElims}
               </span>
               {coreTimerHud !== null && (
-                <span className="rounded-md bg-orange-500/25 px-2 py-0.5 font-mono text-xs font-black text-orange-200">
-                  CORE {coreTimerHud}s
+                <span className="rounded-md bg-orange-500/25 px-1.5 py-0.5 font-mono text-[10px] sm:text-xs font-black text-orange-200">
+                  {coreTimerHud}s
                 </span>
               )}
               {speedKingName && arenaMode === 'speed_king' && (
-                <span className="rounded-md bg-amber-400/25 px-2 py-0.5 text-[11px] font-black text-amber-200">
+                <span className="hidden md:inline rounded-md bg-amber-400/25 px-2 py-0.5 text-[11px] font-black text-amber-200">
                   👑 {speedKingName}
                 </span>
               )}
@@ -2832,12 +3030,15 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
           )}
         </div>
 
-        {/* Right: Quick Action Pills (FPP/TPP, Clear Portals, Wardrobe, Chat, Players) */}
-        <div className="pointer-events-auto flex items-center gap-1.5">
+        {/* Right: Compact Action Pills (h-8 on mobile so ZERO collision with bottom buttons!) */}
+        <div
+          className="pointer-events-auto flex items-center gap-1 sm:gap-1.5"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
           <button
             type="button"
             onClick={() => setCameraView((v) => (v === 'fpp' ? 'tpp' : 'fpp'))}
-            className="flex h-9 items-center gap-1 rounded-xl border border-white/15 bg-slate-950/80 px-2.5 text-[11px] font-extrabold text-sky-200 backdrop-blur-md hover:bg-slate-900 cursor-pointer"
+            className="flex h-8 sm:h-9 items-center gap-1 rounded-xl border border-white/15 bg-slate-950/82 px-2 sm:px-2.5 text-[10px] sm:text-[11px] font-extrabold text-sky-200 backdrop-blur-md hover:bg-slate-900 cursor-pointer"
             title={lang === 'pl' ? 'Przełącz kamerę FPP / TPP [V]' : 'Toggle FPP / TPP camera [V]'}
           >
             <Eye className="h-3.5 w-3.5" />
@@ -2847,11 +3048,11 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
           <button
             type="button"
             onClick={() => actionsRef.current?.clearPortals()}
-            className="flex h-9 items-center gap-1 rounded-xl border border-white/15 bg-slate-950/80 px-2.5 text-[11px] font-extrabold text-slate-200 backdrop-blur-md hover:bg-slate-900 cursor-pointer"
+            className="flex h-8 w-8 sm:h-9 sm:w-auto sm:px-2.5 items-center justify-center gap-1 rounded-xl border border-white/15 bg-slate-950/82 text-[11px] font-extrabold text-slate-200 backdrop-blur-md hover:bg-slate-900 cursor-pointer"
             title={lang === 'pl' ? 'Wyczyść portale [R]' : 'Clear portals [R]'}
           >
             <RefreshCw className="h-3.5 w-3.5 text-cyan-300" />
-            <span className="hidden sm:inline">[R]</span>
+            <span className="hidden lg:inline">[R]</span>
           </button>
 
           <button
@@ -2860,10 +3061,10 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
               exitLock()
               setWardrobeOpen(true)
             }}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/15 bg-slate-950/80 text-sky-300 backdrop-blur-md hover:bg-slate-900 cursor-pointer"
+            className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border border-white/15 bg-slate-950/82 text-sky-300 backdrop-blur-md hover:bg-slate-900 cursor-pointer"
             title={lang === 'pl' ? 'Szatnia 3D [I]' : '3D Wardrobe [I]'}
           >
-            <Shirt className="h-4 w-4" />
+            <Shirt className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
           </button>
 
           <button
@@ -2872,13 +3073,13 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
               exitLock()
               setChatOpen((c) => !c)
             }}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/15 bg-slate-950/80 text-sky-300 backdrop-blur-md hover:bg-slate-900 cursor-pointer"
+            className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border border-white/15 bg-slate-950/82 text-sky-300 backdrop-blur-md hover:bg-slate-900 cursor-pointer"
             title="Chat [Enter]"
           >
-            <MessageSquare className="h-4 w-4" />
+            <MessageSquare className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
           </button>
 
-          <div className="hidden sm:flex h-9 items-center gap-1.5 rounded-xl border border-emerald-400/25 bg-slate-950/80 px-2.5 font-mono text-xs font-bold text-emerald-300 backdrop-blur-md">
+          <div className="hidden md:flex h-9 items-center gap-1.5 rounded-xl border border-emerald-400/25 bg-slate-950/80 px-2.5 font-mono text-xs font-bold text-emerald-300 backdrop-blur-md">
             <Users className="h-3.5 w-3.5" />
             <span>{humanCount}</span>
           </div>
@@ -3032,34 +3233,66 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
               },
             }}
           />
-          <div className="pointer-events-auto absolute right-3 bottom-36 z-30 flex flex-col gap-2">
+          {/* Ergonomic 2x2 Portal Action Cluster — side-by-side beside Jump on landscape, or neatly above Jump on narrow portrait! */}
+          <div
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerMove={(e) => e.stopPropagation()}
+            style={{
+              touchAction: 'none',
+              bottom:
+                viewportWidth < 560
+                  ? 'max(10.2rem, calc(env(safe-area-inset-bottom) + 9.6rem))'
+                  : 'max(0.95rem, calc(env(safe-area-inset-bottom) + 0.55rem))',
+              right:
+                viewportWidth < 560
+                  ? 'max(0.85rem, calc(env(safe-area-inset-right) + 0.5rem))'
+                  : viewportHeight < 460
+                    ? '156px'
+                    : '176px',
+            }}
+            className="pointer-events-auto absolute z-30 grid grid-cols-2 gap-1.5"
+          >
             <button
               type="button"
-              onClick={() => actionsRef.current?.shootPortal('cyan')}
-              className="flex h-12 w-12 items-center justify-center rounded-2xl border-2 border-cyan-300 bg-cyan-500/35 text-[11px] font-black text-white shadow-lg backdrop-blur active:scale-90"
+              onPointerDown={(e) => {
+                e.stopPropagation()
+                actionsRef.current?.shootPortal('cyan')
+              }}
+              className={`flex ${viewportHeight < 460 ? 'h-10 w-10 text-[10px]' : 'h-11 w-11 text-[11px]'} items-center justify-center rounded-2xl border-2 border-cyan-300 bg-cyan-500/40 font-black text-white shadow-lg backdrop-blur-md active:scale-90`}
             >
               P1
             </button>
             <button
               type="button"
-              onClick={() => actionsRef.current?.shootPortal('orange')}
-              className="flex h-12 w-12 items-center justify-center rounded-2xl border-2 border-orange-300 bg-orange-500/35 text-[11px] font-black text-white shadow-lg backdrop-blur active:scale-90"
+              onPointerDown={(e) => {
+                e.stopPropagation()
+                actionsRef.current?.shootPortal('orange')
+              }}
+              className={`flex ${viewportHeight < 460 ? 'h-10 w-10 text-[10px]' : 'h-11 w-11 text-[11px]'} items-center justify-center rounded-2xl border-2 border-orange-300 bg-orange-500/40 font-black text-white shadow-lg backdrop-blur-md active:scale-90`}
             >
               P2
             </button>
             <button
               type="button"
-              onClick={() => actionsRef.current?.throwDisc()}
-              className="flex h-11 w-11 items-center justify-center rounded-2xl border border-amber-300 bg-amber-500/30 text-amber-100 shadow backdrop-blur active:scale-90"
+              onPointerDown={(e) => {
+                e.stopPropagation()
+                actionsRef.current?.throwDisc()
+              }}
+              className={`flex ${viewportHeight < 460 ? 'h-10 w-10' : 'h-11 w-11'} items-center justify-center rounded-2xl border border-amber-300 bg-amber-500/35 text-amber-100 shadow-lg backdrop-blur-md active:scale-90`}
+              aria-label="Portal Disc"
             >
-              <Disc className="h-5 w-5" />
+              <Disc className="h-4 w-4 sm:h-5 sm:w-5" />
             </button>
             <button
               type="button"
-              onClick={() => actionsRef.current?.gravityPulse()}
-              className="flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-300 bg-sky-500/30 text-sky-100 shadow backdrop-blur active:scale-90"
+              onPointerDown={(e) => {
+                e.stopPropagation()
+                actionsRef.current?.gravityPulse()
+              }}
+              className={`flex ${viewportHeight < 460 ? 'h-10 w-10' : 'h-11 w-11'} items-center justify-center rounded-2xl border border-sky-300 bg-sky-500/35 text-sky-100 shadow-lg backdrop-blur-md active:scale-90`}
+              aria-label="Gravity Pulse"
             >
-              <Zap className="h-5 w-5" />
+              <Zap className="h-4 w-4 sm:h-5 sm:w-5" />
             </button>
           </div>
         </>

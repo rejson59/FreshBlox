@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import {
   Bot,
+  ChevronDown,
   Crosshair,
   Crown,
   Disc,
@@ -275,6 +277,7 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
   onOpenFeedback,
 }) => {
   const vp = useVisualViewport()
+  const viewportWidth = vp.width
   const viewportHeight = vp.height
   const mountRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -321,6 +324,7 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
   const [fpsDisplay, setFpsDisplay] = useState(60)
 
   // Menus & Prefs
+  const [modeMenuOpen, setModeMenuOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuTab, setMenuTab] = useState<MenuDrawerTab>('overview')
   const [wardrobeOpen, setWardrobeOpen] = useState(false)
@@ -446,7 +450,7 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
     if (!container) return
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color('#0B1221')
+    scene.background = new THREE.Color('#DCEBFF')
 
     const camera = new THREE.PerspectiveCamera(
       fovRef.current,
@@ -464,15 +468,21 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
     renderer.shadowMap.enabled = qualityRef.current !== 'low'
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 1.08
+    renderer.toneMappingExposure = 1.12
+    renderer.domElement.style.touchAction = 'none'
     container.innerHTML = ''
     container.appendChild(renderer.domElement)
     canvasRef.current = renderer.domElement
 
-    // === ARENA LIGHTING ===
-    const hemi = new THREE.HemisphereLight('#FFF7ED', '#1E1B4B', 1.05)
+    // === PROCEDURAL STUDIO IBL ENVIRONMENT (Crisp reflections on brushed metal, neon glass & disc!) ===
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    scene.environment = envTex
+
+    // === BRIGHT CYBER-STADIUM LIGHTING (Energetic, readable & crisp — ZERO dark dungeon!) ===
+    const hemi = new THREE.HemisphereLight('#F8FAFC', '#64748B', 1.32)
     scene.add(hemi)
-    const dirLight = new THREE.DirectionalLight('#FFFFFF', 1.2)
+    const dirLight = new THREE.DirectionalLight('#FFFFFF', 1.35)
     dirLight.position.set(14, 19, 12)
     dirLight.castShadow = qualityRef.current !== 'low'
     dirLight.shadow.mapSize.set(1024, 1024)
@@ -482,56 +492,56 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
     dirLight.shadow.camera.bottom = -30
     scene.add(dirLight)
 
-    const warmLight = new THREE.PointLight('#F97316', 1.5, 42)
-    warmLight.position.set(-16, 14, -16)
+    const warmLight = new THREE.PointLight('#F97316', 1.8, 46)
+    warmLight.position.set(-16, 15, -16)
     scene.add(warmLight)
-    const coolLight = new THREE.PointLight('#22D3EE', 1.5, 42)
-    coolLight.position.set(16, 14, 16)
+    const coolLight = new THREE.PointLight('#22D3EE', 1.8, 46)
+    coolLight.position.set(16, 15, 16)
     scene.add(coolLight)
 
-    // === MATERIALS ===
+    // === MATERIALS (Bright Daylight Neon Sports Arena Palette) ===
     const floorTex = cloneFreshTexturesWithRepeat('facetTile', 10, 10)
     const wallTex = cloneFreshTexturesWithRepeat('facetTile', 8, 3)
     const metalTex = cloneFreshTexturesWithRepeat('fluted', 3, 2)
 
     const floorMat = new THREE.MeshStandardMaterial({
-      color: '#1E293B',
+      color: '#DFEBF7',
       map: floorTex.map,
       bumpMap: floorTex.bumpMap,
       bumpScale: 0.04,
-      roughness: 0.38,
-      metalness: 0.15,
+      roughness: 0.3,
+      metalness: 0.1,
     })
     const outerWallMat = new THREE.MeshStandardMaterial({
-      color: '#17253B',
+      color: '#CBD9EA',
       map: wallTex.map,
       bumpMap: wallTex.bumpMap,
       bumpScale: 0.04,
-      roughness: 0.35,
-      metalness: 0.25,
+      roughness: 0.32,
+      metalness: 0.15,
     })
     const innerWallMat = new THREE.MeshStandardMaterial({
-      color: '#334155',
+      color: '#64748B',
       map: metalTex.map,
-      roughness: 0.3,
-      metalness: 0.4,
+      roughness: 0.26,
+      metalness: 0.35,
     })
     const bankWallMat = new THREE.MeshStandardMaterial({
-      color: '#0F766E',
+      color: '#0D9488',
       emissive: '#14B8A6',
-      emissiveIntensity: 0.22,
-      roughness: 0.24,
-      metalness: 0.45,
+      emissiveIntensity: 0.35,
+      roughness: 0.22,
+      metalness: 0.38,
     })
     const rampMat = new THREE.MeshStandardMaterial({
-      color: '#475569',
-      roughness: 0.32,
-      metalness: 0.3,
+      color: '#CBD5E1',
+      roughness: 0.28,
+      metalness: 0.2,
     })
     const ceilingMat = new THREE.MeshStandardMaterial({
-      color: '#0F172A',
-      roughness: 0.5,
-      metalness: 0.35,
+      color: '#E2EDF8',
+      roughness: 0.4,
+      metalness: 0.15,
     })
 
     // === SEALED WINDING TRICK-SHOT ARENA (100% ENCLOSED BOX — ZERO ABYSS!) ===
@@ -576,6 +586,24 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
     addGlowStrip([ARENA_HALF - 0.08, 2.2, 0], [0.14, 0.25, ARENA_HALF * 2 - 4], '#F43F5E')
     addGlowStrip([0, 0.03, 0], [ARENA_HALF * 1.5, 0.04, 0.22], '#F97316')
     addGlowStrip([0, 0.03, 0], [0.22, 0.04, ARENA_HALF * 1.5], '#22D3EE')
+
+    // Bright stadium skylight LED panels overhead so the enclosed arena feels crisp & open!
+    const stadiumLightMat = new THREE.MeshBasicMaterial({ color: '#FFF7ED' })
+    const stadiumFrameMat = new THREE.MeshStandardMaterial({ color: '#94A3B8', roughness: 0.28, metalness: 0.45 })
+    for (const [lx, lz] of [
+      [-11, -11],
+      [11, -11],
+      [-11, 11],
+      [11, 11],
+    ]) {
+      const f = new THREE.Mesh(new THREE.BoxGeometry(10.5, 0.24, 10.5), stadiumFrameMat)
+      f.position.set(lx, ARENA_HEIGHT - 0.12, lz)
+      scene.add(f)
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(9.4, 9.4), stadiumLightMat)
+      p.rotation.x = Math.PI / 2
+      p.position.set(lx, ARENA_HEIGHT - 0.25, lz)
+      scene.add(p)
+    }
 
     // Helper: Solid Box Wall / Corridor Divider / Deck
     const addSolidBox = (
@@ -1540,6 +1568,46 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
       }
     }
 
+    // === MULTI-TOUCH & DRAG CAMERA LOOK (Full 360° touch aiming on phones & tablets!) ===
+    let lookPointerId: number | null = null
+    let lastLookX = 0
+    let lastLookY = 0
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (menuOpenRef.current || wardrobeOpenRef.current || chatOpenRef.current || emoteWheelOpenRef.current) return
+      audioEngine.unlock()
+      if (document.pointerLockElement === renderer.domElement) return
+      if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 2) return
+      if (e.pointerType === 'touch') e.preventDefault()
+      if (lookPointerId === null) {
+        lookPointerId = e.pointerId
+        lastLookX = e.clientX
+        lastLookY = e.clientY
+      }
+    }
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (lookPointerId === null || e.pointerId !== lookPointerId) return
+      if (document.pointerLockElement === renderer.domElement) return
+      if (menuOpenRef.current || wardrobeOpenRef.current || chatOpenRef.current || emoteWheelOpenRef.current) {
+        lookPointerId = null
+        return
+      }
+      const dx = e.clientX - lastLookX
+      const dy = e.clientY - lastLookY
+      lastLookX = e.clientX
+      lastLookY = e.clientY
+      const touchSens = (e.pointerType === 'touch' ? 0.0056 : 0.0036) * mouseSensRef.current
+      player.yaw -= dx * touchSens
+      player.pitch = THREE.MathUtils.clamp(player.pitch - dy * touchSens, -1.38, 1.38)
+    }
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (e.pointerId === lookPointerId) {
+        lookPointerId = null
+      }
+    }
+
     const onContextMenu = (e: MouseEvent) => e.preventDefault()
 
     const onPointerLockChange = () => {
@@ -1554,6 +1622,10 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
     window.addEventListener('mousemove', onMouseMove)
+    renderer.domElement.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+    window.addEventListener('pointercancel', onPointerUp)
     renderer.domElement.addEventListener('mousedown', onMouseDown)
     window.addEventListener('mouseup', onMouseUp)
     renderer.domElement.addEventListener('contextmenu', onContextMenu)
@@ -2485,9 +2557,13 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('pointercancel', onPointerUp)
       window.removeEventListener('mouseup', onMouseUp)
       window.removeEventListener('resize', onResize)
       document.removeEventListener('pointerlockchange', onPointerLockChange)
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown)
       renderer.domElement.removeEventListener('mousedown', onMouseDown)
       renderer.domElement.removeEventListener('contextmenu', onContextMenu)
       mp.disconnect()
@@ -2498,6 +2574,8 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
       ;(aimBounceMarker.material as THREE.Material).dispose()
       bots.forEach((b) => b.rig.dispose())
       remotePeers.forEach((p) => p.rig.dispose())
+      envTex.dispose()
+      pmrem.dispose()
       renderer.dispose()
       if (document.pointerLockElement === renderer.domElement) {
         document.exitPointerLock?.()
@@ -2516,29 +2594,124 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
   return (
     <div
       className="relative w-full overflow-hidden bg-slate-950 select-none"
-      style={{ height: viewportHeight ? `${viewportHeight}px` : '100dvh' }}
+      style={{ height: viewportHeight ? `${viewportHeight}px` : '100dvh', overscrollBehavior: 'none' }}
     >
-      <div ref={mountRef} className="absolute inset-0 h-full w-full" />
+      {/* 3D WebGL Canvas Mount (touch-action: none for smooth 360° touch aiming!) */}
+      <div ref={mountRef} className="absolute inset-0 h-full w-full" style={{ touchAction: 'none' }} />
 
-      {/* Top HUD Bar */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 p-2.5 sm:p-3.5">
-        {/* Left: Menu + Mode Switcher + Bots */}
-        <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
+      {/* Top HUD Bar — Clean, single-row, zero overlap on mobile landscape & portrait! */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-1.5 sm:gap-2"
+        style={{
+          paddingTop: 'max(0.45rem, calc(env(safe-area-inset-top) + 0.3rem))',
+          paddingLeft: 'max(0.55rem, calc(env(safe-area-inset-left) + 0.35rem))',
+          paddingRight: 'max(0.55rem, calc(env(safe-area-inset-right) + 0.35rem))',
+        }}
+      >
+        {/* Left: Menu + Compact Mode Dropdown on Mobile / Full Bar on Desktop */}
+        <div
+          className="pointer-events-auto relative flex items-center gap-1.5"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
           <button
             type="button"
             onClick={() => {
               sfx.playClick()
               exitLock()
+              setModeMenuOpen(false)
               setMenuOpen(true)
             }}
-            className="flex h-9 items-center gap-1.5 rounded-xl border border-orange-400/35 bg-slate-950/85 px-2.5 text-xs font-extrabold text-white backdrop-blur-md hover:bg-slate-900 cursor-pointer"
+            className="flex h-8 sm:h-9 items-center gap-1.5 rounded-xl border border-orange-400/35 bg-slate-950/85 px-2 sm:px-2.5 text-xs font-extrabold text-white backdrop-blur-md hover:bg-slate-900 cursor-pointer"
           >
             <Menu className="h-4 w-4 text-orange-400" />
-            <span className="hidden sm:inline">Menu</span>
-            <span className="rounded bg-white/10 px-1 py-0.5 font-mono text-[9px] text-orange-200">ESC</span>
+            <span className="hidden lg:inline">Menu</span>
+            <span className="hidden lg:inline rounded bg-white/10 px-1 py-0.5 font-mono text-[9px] text-orange-200">ESC</span>
           </button>
 
-          <div className="flex items-center gap-1 rounded-xl border border-white/15 bg-slate-950/82 p-1 backdrop-blur-md">
+          {/* Compact Dropdown Mode Switcher for Mobile & Small Screens (< lg) */}
+          <div className="relative lg:hidden">
+            <button
+              type="button"
+              onClick={() => {
+                sfx.playClick()
+                setModeMenuOpen((o) => !o)
+              }}
+              className="flex h-8 items-center gap-1 rounded-xl border border-white/18 bg-slate-950/84 px-2.5 text-[11px] font-extrabold text-white backdrop-blur-md cursor-pointer"
+            >
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ background: gameMode === 'match_3r' ? '#F97316' : '#22D3EE' }}
+              />
+              <span className="max-w-[92px] truncate">
+                {gameMode === 'match_3r'
+                  ? lang === 'pl'
+                    ? 'Mecz 3R'
+                    : '3-Round'
+                  : lang === 'pl'
+                    ? 'Trening'
+                    : 'Drill'}
+              </span>
+              <ChevronDown className={`h-3.5 w-3.5 text-slate-300 transition-transform ${modeMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {modeMenuOpen && (
+              <div className="absolute left-0 top-10 z-40 w-44 rounded-2xl border border-white/15 bg-slate-950/95 p-1.5 shadow-2xl backdrop-blur-xl space-y-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    sfx.playClick()
+                    actionsRef.current?.switchMode('match_3r')
+                    setModeMenuOpen(false)
+                  }}
+                  className="flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-[11px] font-extrabold cursor-pointer"
+                  style={{
+                    background: gameMode === 'match_3r' ? 'linear-gradient(135deg, #F97316, #FACC15)' : 'transparent',
+                    color: gameMode === 'match_3r' ? '#09111F' : '#E2E8F0',
+                  }}
+                >
+                  {lang === 'pl' ? 'Mecz 3 Rundy' : '3-Round Match'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    sfx.playClick()
+                    actionsRef.current?.switchMode('solo_trick')
+                    setModeMenuOpen(false)
+                  }}
+                  className="flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-[11px] font-extrabold cursor-pointer"
+                  style={{
+                    background: gameMode === 'solo_trick' ? '#22D3EE' : 'transparent',
+                    color: gameMode === 'solo_trick' ? '#09111F' : '#E2E8F0',
+                  }}
+                >
+                  {lang === 'pl' ? 'Trening Trików' : 'Solo Trick Drill'}
+                </button>
+                {gameMode === 'match_3r' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sfx.playClick()
+                      setBotsEnabled((b) => !b)
+                    }}
+                    className={`mt-1 flex w-full items-center justify-between rounded-xl border px-2.5 py-1.5 text-[11px] font-extrabold cursor-pointer ${
+                      botsEnabled
+                        ? 'border-emerald-400/40 bg-emerald-500/20 text-emerald-200'
+                        : 'border-white/10 bg-white/5 text-slate-300'
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <Bot className="h-3.5 w-3.5" />
+                      {lang === 'pl' ? 'Boty AI' : 'AI Bots'}
+                    </span>
+                    <span>{botsEnabled ? 'ON' : 'OFF'}</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Full Mode Bar on Desktop (lg+) */}
+          <div className="hidden lg:flex items-center gap-1 rounded-xl border border-white/15 bg-slate-950/82 p-1 backdrop-blur-md">
             <button
               type="button"
               onClick={() => {
@@ -2576,7 +2749,7 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
                 sfx.playClick()
                 setBotsEnabled((b) => !b)
               }}
-              className={`flex h-8 items-center gap-1 rounded-xl border px-2.5 text-[11px] font-extrabold backdrop-blur-md cursor-pointer ${
+              className={`hidden lg:flex h-8 items-center gap-1 rounded-xl border px-2.5 text-[11px] font-extrabold backdrop-blur-md cursor-pointer ${
                 botsEnabled
                   ? 'border-emerald-400/40 bg-emerald-500/20 text-emerald-200'
                   : 'border-white/15 bg-slate-950/75 text-slate-400'
@@ -2588,51 +2761,54 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
           )}
         </div>
 
-        {/* Center: 3-Round Match Scoreboard */}
-        <div className="hidden md:flex items-center gap-3 rounded-2xl border border-orange-400/35 bg-slate-950/85 px-4 py-1.5 backdrop-blur-md shadow-xl">
+        {/* Center: Compact Scoreboard (also visible cleanly on mobile!) */}
+        <div className="flex items-center gap-2 sm:gap-3 rounded-xl sm:rounded-2xl border border-orange-400/35 bg-slate-950/85 px-2.5 sm:px-4 py-1 sm:py-1.5 backdrop-blur-md shadow-xl">
           {gameMode === 'solo_trick' ? (
             <>
-              <span className="inline-flex items-center gap-1 text-xs font-extrabold text-cyan-300">
-                <Target className="h-4 w-4" />
-                {soloTargetsHit} {lang === 'pl' ? 'celów' : 'targets'}
+              <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-extrabold text-cyan-300">
+                <Target className="h-3.5 w-3.5" />
+                {soloTargetsHit}
               </span>
-              <span className="h-3.5 w-px bg-white/15" />
-              <span className="font-mono text-xs font-extrabold text-orange-300">
+              <span className="hidden sm:inline h-3.5 w-px bg-white/15" />
+              <span className="hidden sm:inline font-mono text-xs font-extrabold text-orange-300">
                 {lang === 'pl' ? '[R] Przywołaj Frisbee' : '[R] Recall Frisbee'}
               </span>
             </>
           ) : (
             <>
-              <span className="rounded-lg bg-orange-500/25 px-2 py-0.5 font-mono text-xs font-black text-orange-200">
-                {lang === 'pl' ? `RUNDA ${roundNum}/${TOTAL_ROUNDS}` : `ROUND ${roundNum}/${TOTAL_ROUNDS}`}
+              <span className="rounded-md bg-orange-500/25 px-1.5 py-0.5 font-mono text-[10px] sm:text-xs font-black text-orange-200">
+                R{roundNum}/{TOTAL_ROUNDS}
               </span>
-              <span className="font-mono text-sm font-black text-white">{roundTimeLeft}s</span>
-              <span className="h-3.5 w-px bg-white/15" />
-              <span className="inline-flex items-center gap-1 text-xs font-extrabold text-amber-300" title="Wygrane rundy">
+              <span className="font-mono text-xs sm:text-sm font-black text-white">{roundTimeLeft}s</span>
+              <span className="hidden sm:inline h-3.5 w-px bg-white/15" />
+              <span className="inline-flex items-center gap-0.5 text-[11px] sm:text-xs font-extrabold text-amber-300" title="Wygrane rundy">
                 <Crown className="h-3.5 w-3.5" />
                 {myRoundWins}
               </span>
-              <span className="inline-flex items-center gap-1 text-xs font-extrabold text-rose-400" title="Przecięcia">
+              <span className="hidden sm:inline-flex items-center gap-1 text-xs font-extrabold text-rose-400" title="Przecięcia">
                 <Flame className="h-3.5 w-3.5" />
                 {mySlices}
               </span>
-              <span className="inline-flex items-center gap-1 text-xs font-extrabold text-emerald-300" title="Złapania">
+              <span className="hidden md:inline-flex items-center gap-1 text-xs font-extrabold text-emerald-300" title="Złapania">
                 <Hand className="h-3.5 w-3.5" />
                 {myCatches}
               </span>
-              <span className="text-[11px] font-bold text-slate-300">
+              <span className="hidden md:inline text-[11px] font-bold text-slate-300">
                 {lang === 'pl' ? `Żywi: ${aliveCount}` : `Alive: ${aliveCount}`}
               </span>
             </>
           )}
         </div>
 
-        {/* Right: Controls */}
-        <div className="pointer-events-auto flex items-center gap-1.5">
+        {/* Right: Compact Controls */}
+        <div
+          className="pointer-events-auto flex items-center gap-1 sm:gap-1.5"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
           <button
             type="button"
             onClick={() => setCameraView((v) => (v === 'fpp' ? 'tpp' : 'fpp'))}
-            className="flex h-9 items-center gap-1 rounded-xl border border-white/15 bg-slate-950/80 px-2.5 text-[11px] font-extrabold text-sky-200 backdrop-blur-md cursor-pointer"
+            className="flex h-8 sm:h-9 items-center gap-1 rounded-xl border border-white/15 bg-slate-950/82 px-2 sm:px-2.5 text-[10px] sm:text-[11px] font-extrabold text-sky-200 backdrop-blur-md cursor-pointer"
           >
             <Eye className="h-3.5 w-3.5" />
             <span>{cameraView.toUpperCase()}</span>
@@ -2642,10 +2818,10 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
             <button
               type="button"
               onClick={() => actionsRef.current?.recallSoloFrisbee()}
-              className="flex h-9 items-center gap-1 rounded-xl border border-cyan-400/35 bg-cyan-500/20 px-2.5 text-[11px] font-extrabold text-cyan-200 cursor-pointer"
+              className="flex h-8 w-8 sm:h-9 sm:w-auto sm:px-2.5 items-center justify-center gap-1 rounded-xl border border-cyan-400/35 bg-cyan-500/20 text-[11px] font-extrabold text-cyan-200 cursor-pointer"
             >
               <RefreshCw className="h-3.5 w-3.5" />
-              <span>[R]</span>
+              <span className="hidden lg:inline">[R]</span>
             </button>
           )}
 
@@ -2655,9 +2831,9 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
               exitLock()
               setWardrobeOpen(true)
             }}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/15 bg-slate-950/80 text-sky-300 cursor-pointer"
+            className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border border-white/15 bg-slate-950/82 text-sky-300 cursor-pointer"
           >
-            <Shirt className="h-4 w-4" />
+            <Shirt className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
           </button>
 
           <button
@@ -2666,12 +2842,12 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
               exitLock()
               setChatOpen((c) => !c)
             }}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/15 bg-slate-950/80 text-sky-300 cursor-pointer"
+            className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border border-white/15 bg-slate-950/82 text-sky-300 cursor-pointer"
           >
-            <MessageSquare className="h-4 w-4" />
+            <MessageSquare className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
           </button>
 
-          <div className="hidden sm:flex h-9 items-center gap-1.5 rounded-xl border border-emerald-400/25 bg-slate-950/80 px-2.5 font-mono text-xs font-bold text-emerald-300">
+          <div className="hidden md:flex h-9 items-center gap-1.5 rounded-xl border border-emerald-400/25 bg-slate-950/80 px-2.5 font-mono text-xs font-bold text-emerald-300">
             <Users className="h-3.5 w-3.5" />
             <span>{humanCount}</span>
           </div>
@@ -2858,29 +3034,58 @@ export const FrisbeeKingWorld: React.FC<FrisbeeKingWorldProps> = ({
               },
             }}
           />
-          <div className="pointer-events-auto absolute right-3 bottom-36 z-30 flex flex-col gap-2">
+          {/* Ergonomic Frisbee Action Buttons — cleanly beside Jump on landscape, or neatly above Jump on portrait! */}
+          <div
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerMove={(e) => e.stopPropagation()}
+            style={{
+              touchAction: 'none',
+              bottom:
+                viewportWidth < 560
+                  ? 'max(10.2rem, calc(env(safe-area-inset-bottom) + 9.6rem))'
+                  : 'max(0.95rem, calc(env(safe-area-inset-bottom) + 0.55rem))',
+              right:
+                viewportWidth < 560
+                  ? 'max(0.85rem, calc(env(safe-area-inset-right) + 0.5rem))'
+                  : viewportHeight < 460
+                    ? '156px'
+                    : '176px',
+            }}
+            className="pointer-events-auto absolute z-30 flex items-center gap-2"
+          >
             {holdingFrisbee ? (
               <>
                 <button
                   type="button"
-                  onClick={() => actionsRef.current?.throwFrisbee(0, 0.5)}
-                  className="flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-orange-300 bg-orange-500/45 text-[11px] font-black text-white shadow-lg backdrop-blur active:scale-90"
+                  onPointerDown={(e) => {
+                    e.stopPropagation()
+                    actionsRef.current?.throwFrisbee(1, 0.45)
+                  }}
+                  className={`flex ${viewportHeight < 460 ? 'h-11 w-11 text-[10px]' : 'h-12 w-12 text-[11px]'} items-center justify-center rounded-2xl border border-cyan-300 bg-cyan-500/40 font-black text-white shadow-lg backdrop-blur-md active:scale-90`}
                 >
-                  RZUĆ
+                  TRIK
                 </button>
                 <button
                   type="button"
-                  onClick={() => actionsRef.current?.throwFrisbee(1, 0.4)}
-                  className="flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-300 bg-cyan-500/35 text-[10px] font-black text-white shadow backdrop-blur active:scale-90"
+                  onPointerDown={(e) => {
+                    e.stopPropagation()
+                    actionsRef.current?.throwFrisbee(0, 0.55)
+                  }}
+                  className={`flex ${viewportHeight < 460 ? 'h-13 w-13 text-[11px]' : 'h-14 w-14 text-xs'} items-center justify-center rounded-2xl border-2 border-orange-300 bg-orange-500/50 font-black text-white shadow-xl backdrop-blur-md active:scale-90`}
                 >
-                  TRIK
+                  RZUĆ
                 </button>
               </>
             ) : (
               <button
                 type="button"
-                onClick={() => actionsRef.current?.attemptCatch()}
-                className="flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-emerald-300 bg-emerald-500/45 text-[11px] font-black text-white shadow-lg backdrop-blur active:scale-90"
+                onPointerDown={(e) => {
+                  e.stopPropagation()
+                  actionsRef.current?.attemptCatch()
+                }}
+                className={`flex ${viewportHeight < 460 ? 'h-13 w-13 text-[11px]' : 'h-14 w-14 text-xs'} items-center justify-center rounded-2xl border-2 ${
+                  canCatchNow ? 'border-emerald-200 bg-emerald-500/70 animate-pulse' : 'border-emerald-300 bg-emerald-500/45'
+                } font-black text-white shadow-xl backdrop-blur-md active:scale-90`}
               >
                 ZŁAP
               </button>

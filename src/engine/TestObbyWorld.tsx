@@ -1041,6 +1041,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.08
+    renderer.domElement.style.touchAction = 'none'
     container.innerHTML = ''
     container.appendChild(renderer.domElement)
     rendererRef.current = renderer

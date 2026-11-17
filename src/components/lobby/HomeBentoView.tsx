@@ -243,14 +243,17 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
               }}
             />
 
-            {/* Top bar on Hero: LIVE status left + Spotlight switcher right */}
-            <div className="absolute inset-x-3.5 top-3.5 sm:inset-x-5 sm:top-4 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
-                <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950/75 px-2.5 py-1 text-[11px] font-extrabold text-emerald-300 backdrop-blur-md border border-emerald-400/25">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  {isFeaturedFrisbee ? 'NOWA GRA · LIVE' : isFeaturedArena ? 'UPDATE 2.0 · LIVE' : 'LIVE'}
+            {/* Top bar on Hero: crisp single-line LIVE badge left + non-clipping 4-world switcher right */}
+            <div className="absolute inset-x-3 top-3 sm:inset-x-5 sm:top-4 flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-950/78 px-2 py-1 sm:px-2.5 text-[10px] sm:text-[11px] font-extrabold text-emerald-300 backdrop-blur-md border border-emerald-400/25">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="sm:hidden">LIVE</span>
+                  <span className="hidden sm:inline">
+                    {isFeaturedFrisbee ? 'NOWA GRA · LIVE' : isFeaturedArena ? 'UPDATE 3.0 · LIVE' : 'LIVE'}
+                  </span>
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-lg bg-slate-950/70 px-2.5 py-1 font-mono text-[11px] font-bold text-slate-200 backdrop-blur-md border border-white/10">
+                <span className="hidden sm:inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-slate-950/72 px-2.5 py-1 font-mono text-[11px] font-bold text-slate-200 backdrop-blur-md border border-white/10">
                   {isFeaturedFrisbee
                     ? '#FRISBEE-1'
                     : isFeaturedArena
@@ -261,7 +264,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                 </span>
                 {isFeaturedObby && (
                   <span
-                    className="hidden sm:inline-flex items-center gap-1 rounded-lg bg-amber-500/20 px-2 py-1 text-[11px] font-extrabold text-amber-200 backdrop-blur-md border border-amber-400/30"
+                    className="hidden md:inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-500/20 px-2 py-1 text-[11px] font-extrabold text-amber-200 backdrop-blur-md border border-amber-400/30"
                     title={lang === 'pl' ? 'Nagroda: Korona Obby 100' : 'Reward: Obby 100 Crown'}
                   >
                     <Crown className="h-3.5 w-3.5 text-amber-300" />
@@ -270,55 +273,59 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                 )}
               </div>
 
-              {/* Switch Spotlight preview between real 3D worlds */}
-              <div className="flex items-center gap-1 rounded-xl bg-slate-950/75 p-1 backdrop-blur-md border border-white/10">
+              {/* Switch Spotlight preview between real 3D worlds (fits cleanly on 360px mobile!) */}
+              <div className="flex shrink-0 items-center gap-0.5 sm:gap-1 rounded-xl bg-slate-950/78 p-1 backdrop-blur-md border border-white/12">
                 <button
                   type="button"
                   onClick={() => setFeatured('frisbee')}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1 sm:px-2.5 text-[11px] font-extrabold transition cursor-pointer"
                   style={{
                     background: featured === 'frisbee' ? 'linear-gradient(135deg, #F97316, #FACC15)' : 'transparent',
-                    color: featured === 'frisbee' ? '#09111F' : '#94A3B8',
+                    color: featured === 'frisbee' ? '#09111F' : '#CBD5E1',
                   }}
+                  title="Frisbee King"
                 >
                   <Disc className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Frisbee King</span>
+                  <span className="hidden md:inline">Frisbee King</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setFeatured('arena')}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1 sm:px-2.5 text-[11px] font-extrabold transition cursor-pointer"
                   style={{
                     background: featured === 'arena' ? 'linear-gradient(135deg, #22D3EE, #F97316)' : 'transparent',
-                    color: featured === 'arena' ? '#09111F' : '#94A3B8',
+                    color: featured === 'arena' ? '#09111F' : '#CBD5E1',
                   }}
+                  title="Portal Arena"
                 >
                   <Orbit className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Portal Arena</span>
+                  <span className="hidden md:inline">Portal Arena</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setFeatured('lobby')}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1 sm:px-2.5 text-[11px] font-extrabold transition cursor-pointer"
                   style={{
                     background: featured === 'lobby' ? '#0EA5E9' : 'transparent',
-                    color: featured === 'lobby' ? '#FFFFFF' : '#94A3B8',
+                    color: featured === 'lobby' ? '#FFFFFF' : '#CBD5E1',
                   }}
+                  title="Lobby"
                 >
                   <Box className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Lobby</span>
+                  <span className="hidden md:inline">Lobby</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setFeatured('obby')}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1 sm:px-2.5 text-[11px] font-extrabold transition cursor-pointer"
                   style={{
                     background: featured === 'obby' ? '#F59E0B' : 'transparent',
-                    color: featured === 'obby' ? '#0F172A' : '#94A3B8',
+                    color: featured === 'obby' ? '#0F172A' : '#CBD5E1',
                   }}
+                  title="Obby 100"
                 >
                   <Flag className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Obby 100</span>
+                  <span className="hidden md:inline">Obby 100</span>
                 </button>
               </div>
             </div>
@@ -448,33 +455,42 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
 
         {/* === COMPACT WORLDS LIBRARY (4-COL DESKTOP LAUNCHER GRID) === */}
         <section className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Gamepad2 className="h-4 w-4" style={{ color: ARCTIC_SKY.skyMain }} />
-              <h2 className="text-xs font-extrabold uppercase tracking-wider" style={{ color: tokens.textPrimary }}>
-                {lang === 'pl' ? 'Światy' : 'Worlds'}
-              </h2>
-              <span
-                className="rounded-md px-1.5 py-0.5 font-mono text-[10px] font-extrabold"
-                style={{ background: subtleSurface, color: tokens.textSecondary }}
-              >
-                {filteredWorlds.length}
-              </span>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Gamepad2 className="h-4 w-4" style={{ color: ARCTIC_SKY.skyMain }} />
+                <h2 className="text-xs font-extrabold uppercase tracking-wider" style={{ color: tokens.textPrimary }}>
+                  {lang === 'pl' ? 'Światy' : 'Worlds'}
+                </h2>
+                <span
+                  className="rounded-md px-1.5 py-0.5 font-mono text-[10px] font-extrabold"
+                  style={{ background: subtleSurface, color: tokens.textSecondary }}
+                >
+                  {filteredWorlds.length}
+                </span>
+              </div>
+
+              {liveStats && (
+                <span className="sm:hidden inline-flex items-center gap-1.5 whitespace-nowrap font-mono text-[11px] font-bold" style={{ color: tokens.textSecondary }}>
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  {liveStats.platform_online} online
+                </span>
+              )}
             </div>
 
-            <div className="flex items-center gap-1.5">
+            <div className="grid grid-cols-2 sm:flex items-center gap-2 sm:gap-1.5">
               {onOpenParty && (
                 <button
                   type="button"
                   onClick={onOpenParty}
-                  className="inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-extrabold transition hover:brightness-110 cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-2 sm:py-1.5 text-[11px] font-extrabold transition hover:brightness-110 cursor-pointer"
                   style={{
                     borderColor: partyCode ? 'rgba(56,189,248,0.5)' : panelBorder,
                     background: partyCode ? 'rgba(14,165,233,0.16)' : panelSurface,
                     color: partyCode ? '#38BDF8' : tokens.textPrimary,
                   }}
                 >
-                  <Users className="h-3.5 w-3.5" />
+                  <Users className="h-3.5 w-3.5 shrink-0" />
                   <span>
                     {partyCode
                       ? `Party ${partyCode} (${partyCount})`
@@ -489,20 +505,20 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                 <button
                   type="button"
                   onClick={() => onOpenPrivateRoom(featured)}
-                  className="inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-extrabold transition hover:brightness-110 cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-2 sm:py-1.5 text-[11px] font-extrabold transition hover:brightness-110 cursor-pointer"
                   style={{
                     borderColor: panelBorder,
                     background: panelSurface,
                     color: tokens.textPrimary,
                   }}
                 >
-                  <Lock className="h-3.5 w-3.5 text-sky-400" />
+                  <Lock className="h-3.5 w-3.5 shrink-0 text-sky-400" />
                   <span>{lang === 'pl' ? 'Prywatny pokój' : 'Private Room'}</span>
                 </button>
               )}
 
               {liveStats && (
-                <span className="ml-1 inline-flex items-center gap-1.5 font-mono text-[11px] font-bold" style={{ color: tokens.textSecondary }}>
+                <span className="hidden sm:inline-flex ml-1 items-center gap-1.5 whitespace-nowrap font-mono text-[11px] font-bold" style={{ color: tokens.textSecondary }}>
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                   {liveStats.platform_online} online
                 </span>
