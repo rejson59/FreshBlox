@@ -204,19 +204,19 @@ export const PrivateRoomModal: React.FC<PrivateRoomModalProps> = ({
                   <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-sky-200/70">
                     {isPl ? 'Świat 3D' : '3D World'}
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(['lobby', 'obby'] as WorldKind[]).map((w) => (
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['lobby', 'obby', 'arena'] as WorldKind[]).map((w) => (
                       <button
                         key={w}
                         type="button"
                         onClick={() => setWorld(w)}
-                        className={`rounded-xl border px-3 py-2 text-xs font-extrabold transition cursor-pointer ${
+                        className={`rounded-xl border px-2 py-2 text-xs font-extrabold transition cursor-pointer ${
                           world === w
                             ? 'border-sky-400 bg-sky-500/20 text-white'
                             : 'border-white/10 bg-white/5 text-slate-300'
                         }`}
                       >
-                        {w === 'lobby' ? (isPl ? 'Lobby Główne' : 'Main Lobby') : 'Test Obby 100'}
+                        {w === 'lobby' ? (isPl ? 'Lobby' : 'Lobby') : w === 'obby' ? 'Obby 100' : 'Portal Arena'}
                       </button>
                     ))}
                   </div>

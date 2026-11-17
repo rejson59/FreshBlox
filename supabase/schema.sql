@@ -602,6 +602,52 @@ ALTER TABLE public.fb_direct_messages ENABLE ROW LEVEL SECURITY;
 -- send_direct_message(uuid, text, text, text), mark_dm_thread_read(uuid),
 -- get_obby_top_champions(int)
 
+-- =============================================================================
+-- WAVE 2 FEATURES (Portal Arena, Clans [TAG] P-03, Seasonal TOP 100 P-06)
+-- Applied live via upgrade_wave_2_arena_clans_seasons & allow_arena_in_create_private_room
+-- =============================================================================
+ALTER TABLE public.fb_profiles
+  ADD COLUMN IF NOT EXISTS arena_eliminations int NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS arena_wins int NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS arena_best_speed int NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS clan_id uuid,
+  ADD COLUMN IF NOT EXISTS clan_tag text;
+
+CREATE TABLE IF NOT EXISTS public.fb_clans (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tag text NOT NULL UNIQUE CHECK (char_length(tag) BETWEEN 2 AND 5),
+  name text NOT NULL CHECK (char_length(name) BETWEEN 3 AND 28),
+  accent_color text NOT NULL DEFAULT '#38BDF8',
+  invite_code text NOT NULL UNIQUE,
+  owner_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.fb_clans ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS public.fb_clan_members (
+  clan_id uuid NOT NULL REFERENCES public.fb_clans(id) ON DELETE CASCADE,
+  user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  role text NOT NULL DEFAULT 'member' CHECK (role IN ('leader', 'officer', 'member')),
+  joined_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.fb_clan_members ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS public.fb_clan_messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  clan_id uuid NOT NULL REFERENCES public.fb_clans(id) ON DELETE CASCADE,
+  sender_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  sender_username text NOT NULL,
+  content text NOT NULL CHECK (char_length(content) BETWEEN 1 AND 220),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.fb_clan_messages ENABLE ROW LEVEL SECURITY;
+
+-- Wave 2 RPCs applied live:
+-- create_clan(text, text, text), join_clan_by_code(text), leave_clan(),
+-- get_my_clan(), send_clan_message(text),
+-- get_seasonal_leaderboard(text, int), get_world_live_stats() (incl. arena_online/arena_total_wins/arena_total_elims)
+
+
 
 
 

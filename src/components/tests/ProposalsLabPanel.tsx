@@ -54,7 +54,13 @@ interface Wave2Proposal {
   icon: React.ComponentType<{ className?: string }>
 }
 
+const WAVE2_IMPLEMENTED_CODES = new Set(['A-01', 'A-02', 'A-03', 'A-04', 'P-01', 'P-02', 'P-03', 'P-06'])
+
 const WAVE1_IMPLEMENTED = [
+  'NOWA GRA: Portal Arena (FPP/TPP, wspólne portale, Meteoryt 95+ km/h, Rykoszet Q, Laser, 3 tryby, Boty treningowe)',
+  'A-01..A-04 (Audio 2.0: muzyka ambient/synthwave/arena, dźwięki przestrzenne 3D, dynamiczne kroki, 4-suwakowy Mikser Audio)',
+  'P-01 + P-02 (3D Skrzydła/Plecaki, 3D Towarzysze/Pety orbitujące za graczem i Ślady kroków/skoku)',
+  'P-03 + P-06 (System Klanów z [TAG] w 3D + czat klanowy oraz Sezonowy Ranking TOP 100 — Sezon 1)',
   'L-02 + W-01/W-02/W-03 (Szklany Sześcian 3D + tło mapy + pasek + status + tip)',
   'T-01..T-06 (6 Motywów kolorystycznych w TopBarze i lewym pasku)',
   'H-02 + U-01 (Esports Speedrun HUD + stoper 00:00.00 + zapis PB + 3D Duch PB)',
@@ -534,8 +540,8 @@ export const ProposalsLabPanel: React.FC<ProposalsLabPanelProps> = ({ mode, lang
             <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
             <span className="text-xs sm:text-sm font-extrabold text-emerald-400">
               {isPl
-                ? '✅ Fala 1 — Wszystkie 23 wybrane propozycje zostały wdrożone!'
-                : '✅ Wave 1 — All 23 selected proposals are live!'}
+                ? '✅ Fala 1 (23 funkcje) + Fala 2 (Portal Arena + A-01..A-04 + P-01, P-02, P-03, P-06) — WDROŻONE!'
+                : '✅ Wave 1 (23 features) + Wave 2 (Portal Arena + A-01..A-04 + P-01, P-02, P-03, P-06) — LIVE!'}
             </span>
           </div>
           <span className="text-[11px] font-bold text-emerald-300">
@@ -576,6 +582,7 @@ export const ProposalsLabPanel: React.FC<ProposalsLabPanelProps> = ({ mode, lang
               {items.map((item) => {
                 const Icon = item.icon
                 const isSel = selected.includes(item.code)
+                const isDone = WAVE2_IMPLEMENTED_CODES.has(item.code)
                 return (
                   <button
                     key={item.code}
@@ -583,8 +590,8 @@ export const ProposalsLabPanel: React.FC<ProposalsLabPanelProps> = ({ mode, lang
                     onClick={() => toggle(item.code)}
                     className="group flex flex-col justify-between rounded-2xl border p-4 text-left transition-all hover:-translate-y-0.5 cursor-pointer"
                     style={{
-                      background: isSel ? `${item.accent}18` : cardBg,
-                      borderColor: isSel ? item.accent : borderCol,
+                      background: isDone ? 'rgba(16, 185, 129, 0.08)' : isSel ? `${item.accent}18` : cardBg,
+                      borderColor: isDone ? 'rgba(16, 185, 129, 0.45)' : isSel ? item.accent : borderCol,
                       boxShadow: isSel ? `0 0 0 1px ${item.accent}66` : undefined,
                     }}
                   >
@@ -605,11 +612,15 @@ export const ProposalsLabPanel: React.FC<ProposalsLabPanelProps> = ({ mode, lang
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          {(isPl ? item.badgePl : item.badgeEn) && (
+                          {isDone ? (
+                            <span className="rounded-md border border-emerald-400/40 bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-black uppercase text-emerald-300">
+                              LIVE ✓
+                            </span>
+                          ) : (isPl ? item.badgePl : item.badgeEn) ? (
                             <span className="rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-amber-300">
                               {isPl ? item.badgePl : item.badgeEn}
                             </span>
-                          )}
+                          ) : null}
                           <span
                             className={`flex h-5 w-5 items-center justify-center rounded-md border transition ${
                               isSel ? 'border-transparent bg-emerald-400 text-slate-950' : 'border-white/20'

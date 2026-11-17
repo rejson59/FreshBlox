@@ -1,19 +1,50 @@
-// Audio / SFX intentionally disabled for now — sound design will be rebuilt later.
+import { audioEngine } from './audioEngine'
 
+// Audio 2.0 facade — keeps full backwards compatibility with all existing sfx.play*() calls
 class FreshSFX {
-  public muted = true
-
-  setEnabled(_enabled: boolean) {
-    this.muted = true
+  get muted() {
+    return audioEngine.getPrefs().muted
   }
 
-  playClick() {}
-  playJump() {}
-  playLedgeGrab() {}
-  playJumpPad() {}
-  playGemCollect() {}
-  playQuestClaim() {}
-  playChatPop() {}
+  set muted(val: boolean) {
+    audioEngine.setPrefs({ muted: val })
+  }
+
+  setEnabled(enabled: boolean) {
+    audioEngine.setPrefs({ muted: !enabled })
+  }
+
+  playClick() {
+    audioEngine.playClick()
+  }
+
+  playJump() {
+    audioEngine.playJump()
+  }
+
+  playLedgeGrab() {
+    audioEngine.playLedgeGrab()
+  }
+
+  playJumpPad() {
+    audioEngine.playJumpPad()
+  }
+
+  playCheckpoint() {
+    audioEngine.playCheckpoint()
+  }
+
+  playGemCollect() {
+    audioEngine.playGemCollect()
+  }
+
+  playQuestClaim() {
+    audioEngine.playQuestClaim()
+  }
+
+  playChatPop() {
+    audioEngine.playChatPop()
+  }
 }
 
 export const sfx = new FreshSFX()

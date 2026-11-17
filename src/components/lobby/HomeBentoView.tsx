@@ -4,9 +4,11 @@ import {
   CheckCircle2,
   Clock,
   Crown,
+  Flame,
   Flag,
   Gamepad2,
   Lock,
+  Orbit,
   Play,
   RefreshCw,
   Shirt,
@@ -76,6 +78,18 @@ const WORLD_CARDS: WorldCardSpec[] = [
     accent: '#F59E0B',
     fallbackBg: 'linear-gradient(135deg, #3B2308 0%, #F59E0B 100%)',
   },
+  {
+    id: 'arena',
+    worldKind: 'arena',
+    roomId: 'ARENA-1',
+    titlePl: 'Portal Arena',
+    titleEn: 'Portal Arena',
+    tagPl: 'Portale & Fizyka',
+    tagEn: 'Portals & Physics',
+    live: true,
+    accent: '#22D3EE',
+    fallbackBg: 'linear-gradient(135deg, #06182A 0%, #0E7490 50%, #F97316 100%)',
+  },
 ]
 
 export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
@@ -93,7 +107,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
   onClaimQuest,
   onFetchLeaderboard,
 }) => {
-  const [featured, setFeatured] = useState<'lobby' | 'obby'>('lobby')
+  const [featured, setFeatured] = useState<'lobby' | 'obby' | 'arena'>('arena')
   const [leaderboard, setLeaderboard] = useState<CloudPlayerSummary[]>([])
   const [loadingBoard, setLoadingBoard] = useState(false)
   const [liveStats, setLiveStats] = useState<WorldLiveStats | null>(null)
@@ -155,10 +169,13 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
 
   const lobbyOnline = liveStats?.lobby_online ?? 0
   const obbyOnline = liveStats?.obby_online ?? 0
+  const arenaOnline = liveStats?.arena_online ?? 0
+  const arenaTotalElims = liveStats?.arena_total_elims ?? 0
   const obbyClears = liveStats?.obby_100_clears ?? 0
   const totalPlayers = liveStats?.total_players ?? 0
 
   const isFeaturedObby = featured === 'obby'
+  const isFeaturedArena = featured === 'arena'
   const featuredThumb = thumbs[featured]
 
   const launchWorld = (world: WorldKind, roomId: string) => {
@@ -175,17 +192,23 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
         <section
           className="group relative overflow-hidden rounded-2xl border select-none"
           style={{
-            borderColor: isFeaturedObby ? 'rgba(245, 158, 11, 0.38)' : 'rgba(56, 189, 248, 0.36)',
-            background: isFeaturedObby
-              ? 'linear-gradient(135deg, #271605 0%, #92400E 100%)'
-              : 'linear-gradient(135deg, #07192E 0%, #0369A1 100%)',
+            borderColor: isFeaturedArena
+              ? 'rgba(34, 211, 238, 0.45)'
+              : isFeaturedObby
+                ? 'rgba(245, 158, 11, 0.38)'
+                : 'rgba(56, 189, 248, 0.36)',
+            background: isFeaturedArena
+              ? 'linear-gradient(135deg, #051326 0%, #0E7490 55%, #C2410C 100%)'
+              : isFeaturedObby
+                ? 'linear-gradient(135deg, #271605 0%, #92400E 100%)'
+                : 'linear-gradient(135deg, #07192E 0%, #0369A1 100%)',
           }}
         >
           <div className="relative h-[215px] sm:h-[240px] lg:h-[260px] w-full overflow-hidden">
             {featuredThumb && (
               <img
                 src={featuredThumb}
-                alt={isFeaturedObby ? 'Test Obby 100' : 'Lobby Główne'}
+                alt={isFeaturedArena ? 'Portal Arena' : isFeaturedObby ? 'Test Obby 100' : 'Lobby Główne'}
                 className="h-full w-full object-cover object-center transition-transform duration-700 ease-out group-hover:scale-[1.025]"
                 draggable={false}
               />
@@ -205,10 +228,10 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
               <div className="flex items-center gap-1.5">
                 <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950/75 px-2.5 py-1 text-[11px] font-extrabold text-emerald-300 backdrop-blur-md border border-emerald-400/25">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  LIVE
+                  {isFeaturedArena ? 'NOWA GRA · LIVE' : 'LIVE'}
                 </span>
                 <span className="inline-flex items-center gap-1 rounded-lg bg-slate-950/70 px-2.5 py-1 font-mono text-[11px] font-bold text-slate-200 backdrop-blur-md border border-white/10">
-                  {isFeaturedObby ? `${profile.obbyStage}/100` : '#PUBLIC-1'}
+                  {isFeaturedArena ? '#ARENA-1' : isFeaturedObby ? `${profile.obbyStage}/100` : '#PUBLIC-1'}
                 </span>
                 {isFeaturedObby && (
                   <span
@@ -223,6 +246,18 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
 
               {/* Switch Spotlight preview between real 3D worlds */}
               <div className="flex items-center gap-1 rounded-xl bg-slate-950/75 p-1 backdrop-blur-md border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setFeatured('arena')}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition cursor-pointer"
+                  style={{
+                    background: featured === 'arena' ? 'linear-gradient(135deg, #22D3EE, #F97316)' : 'transparent',
+                    color: featured === 'arena' ? '#09111F' : '#94A3B8',
+                  }}
+                >
+                  <Orbit className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Portal Arena</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setFeatured('lobby')}
@@ -254,10 +289,34 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
             <div className="absolute inset-x-3.5 bottom-3.5 sm:inset-x-5 sm:bottom-4 flex flex-wrap items-end justify-between gap-3">
               <div className="min-w-0">
                 <h1 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-white drop-shadow">
-                  {isFeaturedObby ? 'Test Obby 100' : lang === 'pl' ? 'Lobby Główne' : 'Main Lobby'}
+                  {isFeaturedArena
+                    ? 'Portal Arena'
+                    : isFeaturedObby
+                      ? 'Test Obby 100'
+                      : lang === 'pl'
+                        ? 'Lobby Główne'
+                        : 'Main Lobby'}
                 </h1>
 
-                {isFeaturedObby ? (
+                {isFeaturedArena ? (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs font-bold text-cyan-100/95">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${arenaOnline > 0 ? 'bg-emerald-400' : 'bg-slate-400'}`}
+                      />
+                      {arenaOnline} online
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-orange-300">
+                      <Flame className="h-3.5 w-3.5" />
+                      {arenaTotalElims} {lang === 'pl' ? 'eliminacji' : 'elims'}
+                    </span>
+                    <span className="hidden sm:inline text-cyan-200/85 font-semibold">
+                      {lang === 'pl'
+                        ? 'Zero karabinów · Meteoryt 95+ km/h · Rykoszet [Q] · Laser'
+                        : 'Zero guns · 95+ km/h Meteor · Ricochet [Q] · Portal Laser'}
+                    </span>
+                  </div>
+                ) : isFeaturedObby ? (
                   <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs font-bold text-amber-100/90">
                     <span className="inline-flex items-center gap-1.5">
                       <span
@@ -304,13 +363,20 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
 
               <button
                 type="button"
-                onClick={() => launchWorld(isFeaturedObby ? 'obby' : 'lobby', isFeaturedObby ? 'OBBY-1' : 'PUBLIC-1')}
+                onClick={() =>
+                  launchWorld(
+                    isFeaturedArena ? 'arena' : isFeaturedObby ? 'obby' : 'lobby',
+                    isFeaturedArena ? 'ARENA-1' : isFeaturedObby ? 'OBBY-1' : 'PUBLIC-1',
+                  )
+                }
                 className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-extrabold shadow-xl transition hover:brightness-110 active:scale-[0.98] cursor-pointer"
                 style={{
-                  background: isFeaturedObby
-                    ? 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)'
-                    : 'linear-gradient(135deg, #0EA5E9 0%, #0284C7 100%)',
-                  color: isFeaturedObby ? '#0F172A' : '#FFFFFF',
+                  background: isFeaturedArena
+                    ? 'linear-gradient(135deg, #22D3EE 0%, #F97316 100%)'
+                    : isFeaturedObby
+                      ? 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)'
+                      : 'linear-gradient(135deg, #0EA5E9 0%, #0284C7 100%)',
+                  color: isFeaturedArena || isFeaturedObby ? '#0F172A' : '#FFFFFF',
                 }}
               >
                 <Play className="h-4 w-4 fill-current" />
@@ -390,7 +456,13 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
               const title = lang === 'pl' ? world.titlePl : world.titleEn
               const tag = lang === 'pl' ? world.tagPl : world.tagEn
               const worldOnlineCount =
-                world.id === 'lobby' ? lobbyOnline : world.id === 'obby' ? obbyOnline : 0
+                world.id === 'lobby'
+                  ? lobbyOnline
+                  : world.id === 'obby'
+                    ? obbyOnline
+                    : world.id === 'arena'
+                      ? arenaOnline
+                      : 0
 
               return (
                 <div
@@ -456,8 +528,13 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                       <div
                         className="absolute bottom-2.5 right-2.5 inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-extrabold shadow-lg transition-all duration-200 sm:opacity-0 sm:translate-y-1 group-hover:opacity-100 group-hover:translate-y-0"
                         style={{
-                          background: world.id === 'obby' ? '#F59E0B' : '#0EA5E9',
-                          color: world.id === 'obby' ? '#0F172A' : '#FFFFFF',
+                          background:
+                            world.id === 'arena'
+                              ? 'linear-gradient(135deg, #22D3EE, #F97316)'
+                              : world.id === 'obby'
+                                ? '#F59E0B'
+                                : '#0EA5E9',
+                          color: world.id === 'obby' || world.id === 'arena' ? '#0F172A' : '#FFFFFF',
                         }}
                       >
                         <Play className="h-3 w-3 fill-current" />
@@ -516,6 +593,23 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                                 {obbyClears}
                               </span>
                             </span>
+                          ) : world.id === 'arena' ? (
+                            <span className="inline-flex items-center gap-2">
+                              <span
+                                className="inline-flex items-center gap-0.5 text-orange-400"
+                                title={lang === 'pl' ? 'Twoje eliminacje' : 'Your eliminations'}
+                              >
+                                <Flame className="h-3 w-3" />
+                                {profile.arenaEliminations}
+                              </span>
+                              <span
+                                className="inline-flex items-center gap-0.5 text-cyan-400"
+                                title={lang === 'pl' ? 'Twoje zwycięstwa' : 'Your Arena wins'}
+                              >
+                                <Trophy className="h-3 w-3" />
+                                {profile.arenaWins}
+                              </span>
+                            </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 text-[10px] opacity-80">
                               <Users className="h-3 w-3 text-sky-400" />
@@ -572,7 +666,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
               <div className="flex items-center gap-1.5">
                 <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
                 <span className="truncate text-sm font-extrabold" style={{ color: tokens.textPrimary }}>
-                  {profile.username}
+                  {profile.clanTag ? `[${profile.clanTag}] ${profile.username}` : profile.username}
                 </span>
                 {profile.role !== 'player' && (
                   <span

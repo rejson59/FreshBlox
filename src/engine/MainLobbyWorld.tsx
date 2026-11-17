@@ -10,6 +10,7 @@ import {
   MessageSquare,
   MessageSquarePlus,
   Music,
+  Orbit,
   PartyPopper,
   RefreshCw,
   RotateCw,
@@ -18,7 +19,16 @@ import {
   Users,
   X,
 } from 'lucide-react'
-import { FaceId, getRankForXp, HatId, OutfitId, R6AvatarConfig } from '../data/catalog'
+import {
+  BackId,
+  FaceId,
+  getRankForXp,
+  HatId,
+  OutfitId,
+  PetId,
+  R6AvatarConfig,
+  TrailId,
+} from '../data/catalog'
 import { Lang, LOCALES } from '../data/locales'
 import {
   LobbyChatMessage,
@@ -37,6 +47,7 @@ import { loadMousePrefs, saveMousePrefs, LobbyWeatherMode } from '../lib/mousePr
 import { fetchObbyTopChampions, formatSpeedrunTime } from '../lib/socialApi'
 import { useVisualViewport } from '../lib/useVisualViewport'
 import { sfx } from '../lib/sfx'
+import { audioEngine } from '../lib/audioEngine'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { FreshBloxLogo } from '../components/brand/FreshBloxBrand'
 import { MobileTouchControls } from '../components/hud/MobileTouchControls'
@@ -92,12 +103,16 @@ interface MainLobbyWorldProps {
   playerId: string
   authUserId: string | null
   username: string
+  clanTag?: string | null
   freshGems: number
   xp: number
   avatar: R6AvatarConfig
   unlockedOutfits: OutfitId[]
   unlockedHats: HatId[]
   unlockedFaces: FaceId[]
+  unlockedTrails?: TrailId[]
+  unlockedBacks?: BackId[]
+  unlockedPets?: PetId[]
   isFullscreen: boolean
   onChatSent: () => void
   onEmoteUsed: () => void
@@ -105,7 +120,8 @@ interface MainLobbyWorldProps {
   onReachTerrace: () => void
   onBackHome: () => void
   onEnterObby: () => void
-  onBuyAndEquip: (category: 'outfit' | 'hat' | 'face', itemId: string, price: number) => boolean
+  onEnterArena?: () => void
+  onBuyAndEquip: (category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet', itemId: string, price: number) => boolean
   onBuyBundle: (items: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; price: number }>) => boolean
   onSkinChange: (hex: string) => void
   feedbackOpen?: boolean
@@ -125,7 +141,7 @@ function detectDefaultQuality(): GraphicsQuality {
 const STEP_HEIGHT = 0.56 // Auto-step smoothly over walkways, plaza layers & low stairs without jumping!
 
 function avatarKey(a: R6AvatarConfig): string {
-  return `${a.outfitId}|${a.hatId}|${a.faceId}|${a.skinColor}`
+  return `${a.outfitId}|${a.hatId}|${a.faceId}|${a.skinColor}|${a.trailId ?? 'none'}|${a.backId ?? 'none'}|${a.petId ?? 'none'}`
 }
 
 export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
@@ -134,12 +150,16 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   playerId,
   authUserId,
   username,
+  clanTag = null,
   freshGems,
   xp,
   avatar,
   unlockedOutfits,
   unlockedHats,
   unlockedFaces,
+  unlockedTrails = ['none'],
+  unlockedBacks = ['none'],
+  unlockedPets = ['none'],
   isFullscreen,
   onChatSent,
   onEmoteUsed,
@@ -147,6 +167,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   onReachTerrace,
   onBackHome,
   onEnterObby,
+  onEnterArena,
   onBuyAndEquip,
   onBuyBundle,
   onSkinChange,
@@ -292,6 +313,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   const localRigKeyRef = useRef<string>(avatarKey(displayedAvatar))
   const usernameRef = useRef(username)
   usernameRef.current = username
+  const clanTagRef = useRef(clanTag)
+  clanTagRef.current = clanTag
   const rankRef = useRef(getRankForXp(xp).name)
   rankRef.current = getRankForXp(xp).name
   const worldTimeRef = useRef<WorldTimeMode>(worldTime)
@@ -314,8 +337,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
   const authUserIdRef = useRef(authUserId)
   authUserIdRef.current = authUserId
-  const nearPortalRef = useRef<{ name: string; action?: 'obby' } | null>(null)
-  const [nearPortalInfo, setNearPortalInfo] = useState<{ name: string; action?: 'obby' } | null>(null)
+  const nearPortalRef = useRef<{ name: string; action?: 'obby' | 'arena' } | null>(null)
+  const [nearPortalInfo, setNearPortalInfo] = useState<{ name: string; action?: 'obby' | 'arena' } | null>(null)
 
   const callbacksRef = useRef({
     onChatSent,
@@ -323,6 +346,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     onJumpPadUsed,
     onReachTerrace,
     onEnterObby,
+    onEnterArena,
     onOpenFeedback,
   })
   callbacksRef.current = {
@@ -331,8 +355,19 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     onJumpPadUsed,
     onReachTerrace,
     onEnterObby,
+    onEnterArena,
     onOpenFeedback,
   }
+
+  // Audio 2.0: ambient Lobby soundtrack & spatial cleanup
+  useEffect(() => {
+    audioEngine.setWorldMusic('lobby')
+    return () => {
+      audioEngine.setSpatialLoopLevel('fountain', 0)
+      audioEngine.setSpatialLoopLevel('portal', 0)
+      audioEngine.setWorldMusic('none')
+    }
+  }, [])
 
   // Track mobile orientation cleanly
   useEffect(() => {
@@ -431,6 +466,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     const freshRig = createR6Rig({
       avatar: displayedAvatar,
       username: usernameRef.current,
+      clanTag: clanTagRef.current,
       rank: rankRef.current,
       showNameplate: true,
       castShadow: qualityRef.current !== 'low',
@@ -951,10 +987,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     danceFloor.receiveShadow = true
     scene.add(danceFloor)
 
-    // Game Mode Portals (North side) — Test Obby 100 is LIVE!
-    const portalZones: Array<{ name: string; x: number; z: number; action?: 'obby' }> = [
+    // Game Mode Portals (North side) — Test Obby 100 & Portal Arena are LIVE!
+    const portalZones: Array<{ name: string; x: number; z: number; action?: 'obby' | 'arena' }> = [
       { name: 'Test Obby 100', x: -11, z: -26, action: 'obby' },
-      { name: 'Crystal Arena', x: 11, z: -26 },
+      { name: 'Portal Arena', x: 11, z: -26, action: 'arena' },
     ]
 
     const createPortalArch = (x: number, z: number, label: string, sub: string, color: string) => {
@@ -1006,7 +1042,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
     createPortalArch(-11, -26, 'TEST OBBY 100', lang === 'pl' ? '100 LEVELI • GRAJ' : '100 STAGES • PLAY', '#F59E0B')
     createPortalArch(0, -28, 'LOBBY GŁÓWNE', roomCode, '#0EA5E9')
-    createPortalArch(11, -26, 'Crystal Arena', lang === 'pl' ? 'WKRÓTCE' : 'COMING SOON', '#22D3EE')
+    createPortalArch(11, -26, 'PORTAL ARENA', lang === 'pl' ? 'PORTALE • GRAJ!' : 'PORTALS • PLAY!', '#22D3EE')
 
     // === U-13: 3D CHAMPIONS PODIUM (REAL SUPABASE TOP 3 OBBY 100) ===
     const podiumGroup = new THREE.Group()
@@ -1318,6 +1354,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     const localRig = createR6Rig({
       avatar: displayedAvatarRef.current,
       username: usernameRef.current,
+      clanTag: clanTagRef.current,
       rank: rankRef.current,
       showNameplate: true,
       castShadow: initQ !== 'low',
@@ -1458,6 +1495,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           const rig = createR6Rig({
             avatar: state.avatar,
             username: state.username,
+            clanTag: state.clanTag ?? null,
             rank: state.rank,
             showNameplate: true,
             castShadow: qualityRef.current !== 'low',
@@ -1467,7 +1505,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           remotePlayers.set(state.id, { state, rig, speechUntil: 0 })
         } else {
           // Live hot-swap remote player rig whenever a friend changes outfit/hat/face/skin in real time!
-          if (avatarKey(existing.state.avatar) !== avatarKey(state.avatar)) {
+          if (
+            avatarKey(existing.state.avatar) !== avatarKey(state.avatar) ||
+            (existing.state.clanTag ?? null) !== (state.clanTag ?? null)
+          ) {
             const pos = existing.rig.root.position.clone()
             const rotY = existing.rig.root.rotation.y
             scene.remove(existing.rig.root)
@@ -1475,6 +1516,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
             const swapped = createR6Rig({
               avatar: state.avatar,
               username: state.username,
+              clanTag: state.clanTag ?? null,
               rank: state.rank,
               showNameplate: true,
               castShadow: qualityRef.current !== 'low',
@@ -1746,6 +1788,9 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         if (nearPortalRef.current?.action === 'obby') {
           sfx.playJump()
           callbacksRef.current.onEnterObby()
+        } else if (nearPortalRef.current?.action === 'arena') {
+          audioEngine.playPortalWarp()
+          callbacksRef.current.onEnterArena?.()
         } else if (seatedBenchRef.current || nearBenchRef.current) {
           toggleSitActionRef.current()
         }
@@ -2276,7 +2321,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           setNearBench(closestBench)
         }
 
-        let foundPortal: { name: string; action?: 'obby' } | null = null
+        let foundPortal: { name: string; action?: 'obby' | 'arena' } | null = null
         for (const pz of portalZones) {
           const dSq = (player.x - pz.x) ** 2 + (player.z - pz.z) ** 2
           if (dSq < 4.4 * 4.4) {
@@ -2287,6 +2332,22 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         if (foundPortal?.name !== nearPortalRef.current?.name) {
           nearPortalRef.current = foundPortal
           setNearPortalInfo(foundPortal)
+        }
+      }
+
+      // Audio 2.0: Spatial Fountain & Portals + dynamic footsteps
+      const distFountain = Math.hypot(player.x, player.z)
+      audioEngine.setSpatialLoopLevel('fountain', Math.max(0, 1 - distFountain / 22))
+      const distNearestPortal = Math.min(
+        Math.hypot(player.x + 11, player.z + 26),
+        Math.hypot(player.x - 11, player.z + 26),
+      )
+      audioEngine.setSpatialLoopLevel('portal', Math.max(0, 1 - distNearestPortal / 16))
+      const horizSpeedLobby = Math.hypot(player.vx, player.vz)
+      if (player.grounded && horizSpeedLobby > 1.8 && !seatedBenchRef.current) {
+        const stepInterval = horizSpeedLobby > 10 ? 0.25 : 0.36
+        if (Math.floor(elapsed / stepInterval) !== Math.floor((elapsed - dt) / stepInterval)) {
+          audioEngine.playFootstep(Math.abs(player.x) > 17 || Math.abs(player.z) > 19 ? 'grass' : 'stone', horizSpeedLobby > 10)
         }
       }
 
@@ -2364,6 +2425,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         mp.broadcastState({
           id: playerId,
           username: usernameRef.current,
+          clanTag: clanTagRef.current,
           rank: rankRef.current,
           x: player.x,
           y: player.y,
@@ -2747,7 +2809,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         </div>
       </div>
 
-      {/* === LIVE IN-GAME WARDROBE DRAWER (Change outfits, hats, faces & skin without leaving 3D!) === */}
+      {/* === LIVE IN-GAME WARDROBE DRAWER (Change outfits, hats, faces, wings, pets & trails without leaving 3D!) === */}
       {wardrobeOpen && (
         <InGameWardrobeDrawer
           lang={lang}
@@ -2757,6 +2819,9 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           unlockedOutfits={unlockedOutfits}
           unlockedHats={unlockedHats}
           unlockedFaces={unlockedFaces}
+          unlockedTrails={unlockedTrails}
+          unlockedBacks={unlockedBacks}
+          unlockedPets={unlockedPets}
           onPreviewChange={setPreviewAvatar}
           onBuyAndEquip={onBuyAndEquip}
           onBuyBundle={onBuyBundle}
@@ -2816,6 +2881,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         onCopyInvite={handleCopyInvite}
         onResetPosition={() => resetSpawnActionRef.current()}
         onSwitchWorld={onEnterObby}
+        onSwitchToArena={onEnterArena}
         onLeaveToHome={onBackHome}
         onOpenFeedback={() => onOpenFeedback?.(`Lobby Główne (${roomCode})`)}
         onTeleportToMember={(memberId) => teleportToMemberRef.current(memberId)}
@@ -2925,6 +2991,22 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
               <Flag className="h-4 w-4 text-amber-200" />
               <span>{t.portalObbyPrompt}</span>
               <span className="hidden sm:inline rounded-md bg-white/15 border border-white/25 px-1.5 py-0.5 font-mono text-[10px] text-white">
+                E
+              </span>
+            </button>
+          ) : nearPortalInfo?.action === 'arena' ? (
+            <button
+              type="button"
+              onClick={() => {
+                audioEngine.playPortalWarp()
+                onEnterArena?.()
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="flex items-center gap-2 rounded-full border border-cyan-300/75 bg-gradient-to-r from-cyan-400 to-orange-500 px-5 py-2.5 text-xs sm:text-sm font-black text-slate-950 shadow-xl backdrop-blur-xl transition hover:brightness-110 active:scale-95 cursor-pointer"
+            >
+              <Orbit className="h-4 w-4" />
+              <span>{lang === 'pl' ? 'Wejdź do Portal Arena' : 'Enter Portal Arena'}</span>
+              <span className="hidden sm:inline rounded-md bg-slate-950/20 border border-slate-950/30 px-1.5 py-0.5 font-mono text-[10px] text-slate-950">
                 E
               </span>
             </button>

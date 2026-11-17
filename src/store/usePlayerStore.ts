@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  BACK_CATALOG,
+  BackId,
   DAILY_QUESTS,
   FaceId,
   GEMS_SYSTEM_IN_PROGRESS,
@@ -8,8 +10,12 @@ import {
   HAT_CATALOG,
   FACE_CATALOG,
   OutfitId,
+  PET_CATALOG,
+  PetId,
   QuestDef,
   R6AvatarConfig,
+  TRAIL_CATALOG,
+  TrailId,
   WorldKind,
 } from '../data/catalog'
 import { isSupabaseConfigured, supabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase'
@@ -93,12 +99,17 @@ export interface PlayerProfile {
   username: string
   freshTag: string
   role: AccountRole
+  clanId: string | null
+  clanTag: string | null
   freshGems: number
   xp: number
   avatar: R6AvatarConfig
   unlockedOutfits: OutfitId[]
   unlockedHats: HatId[]
   unlockedFaces: FaceId[]
+  unlockedTrails: TrailId[]
+  unlockedBacks: BackId[]
+  unlockedPets: PetId[]
   savedOutfits: SavedOutfitSlot[]
   badges: string[]
   pinnedBadge: string | null
@@ -108,6 +119,9 @@ export interface PlayerProfile {
   obbyBestStage: number
   obbyCompletions: number
   obbyBestTimeMs: number | null
+  arenaEliminations: number
+  arenaWins: number
+  arenaBestSpeed: number
 }
 
 export interface AuthUserInfo {
@@ -162,6 +176,8 @@ function createDefaultProfile(): PlayerProfile {
     username: `FreshPlayer${rnd.toString().slice(0, 2)}`,
     freshTag: `#FB-${rnd}`,
     role: 'player',
+    clanId: null,
+    clanTag: null,
     freshGems: 0,
     xp: 0,
     avatar: {
@@ -169,10 +185,16 @@ function createDefaultProfile(): PlayerProfile {
       faceId: 'fresh-smile',
       hatId: 'none',
       skinColor: '#FDE0B6',
+      trailId: 'none',
+      backId: 'none',
+      petId: 'none',
     },
     unlockedOutfits: ['fresh-creator', 'classic-remaster'],
     unlockedHats: ['none'],
     unlockedFaces: ['fresh-smile', 'wink-pro'],
+    unlockedTrails: TRAIL_CATALOG.filter((t) => !t.rewardOnly && t.price === 0).map((t) => t.id),
+    unlockedBacks: BACK_CATALOG.filter((b) => !b.rewardOnly && b.price === 0).map((b) => b.id),
+    unlockedPets: PET_CATALOG.filter((p) => !p.rewardOnly && p.price === 0).map((p) => p.id),
     savedOutfits: [],
     badges: ['pioneer'],
     pinnedBadge: null,
@@ -185,6 +207,9 @@ function createDefaultProfile(): PlayerProfile {
     obbyBestStage: 1,
     obbyCompletions: 0,
     obbyBestTimeMs: null,
+    arenaEliminations: 0,
+    arenaWins: 0,
+    arenaBestSpeed: 0,
   }
 }
 
@@ -194,7 +219,12 @@ function migrateOutfitId(id?: string): OutfitId {
   return 'fresh-creator'
 }
 
-function normalizeUnlocked(items: string[] | undefined, obbyCompleted = false) {
+function normalizeUnlocked(
+  items: string[] | undefined,
+  obbyCompleted = false,
+  arenaWins = 0,
+  arenaBestSpeed = 0,
+) {
   const set = new Set((items ?? []).map((x) => (x === 'midnight-neon' ? 'midnight-slate' : x)))
   const outfits = OUTFIT_CATALOG.filter((o) => (!o.rewardOnly && o.price === 0) || set.has(o.id)).map((o) => o.id)
   const hats = HAT_CATALOG.filter(
@@ -204,7 +234,20 @@ function normalizeUnlocked(items: string[] | undefined, obbyCompleted = false) {
       (h.rewardOnly === 'obby100' && obbyCompleted),
   ).map((h) => h.id)
   const faces = FACE_CATALOG.filter((f) => (!f.rewardOnly && f.price === 0) || set.has(f.id)).map((f) => f.id)
-  return { outfits, hats, faces }
+  const trails = TRAIL_CATALOG.filter(
+    (t) =>
+      (!t.rewardOnly && t.price === 0) ||
+      set.has(t.id) ||
+      (t.rewardOnly === 'arenaMeteor' && (arenaBestSpeed >= 95 || arenaWins >= 1)),
+  ).map((t) => t.id)
+  const backs = BACK_CATALOG.filter(
+    (b) =>
+      (!b.rewardOnly && b.price === 0) ||
+      set.has(b.id) ||
+      (b.rewardOnly === 'arenaWin' && arenaWins >= 1),
+  ).map((b) => b.id)
+  const pets = PET_CATALOG.filter((p) => (!p.rewardOnly && p.price === 0) || set.has(p.id)).map((p) => p.id)
+  return { outfits, hats, faces, trails, backs, pets }
 }
 
 function loadLocalProfile(): PlayerProfile {
@@ -215,6 +258,9 @@ function loadLocalProfile(): PlayerProfile {
     const def = createDefaultProfile()
     const obbyBestStage = Math.max(1, Math.min(100, Number(parsed.obbyBestStage) || 1))
     const obbyCompletions = Math.max(0, Number(parsed.obbyCompletions) || 0)
+    const arenaWins = Math.max(0, Number(parsed.arenaWins) || 0)
+    const arenaBestSpeed = Math.max(0, Number(parsed.arenaBestSpeed) || 0)
+    const arenaEliminations = Math.max(0, Number(parsed.arenaEliminations) || 0)
     const unlockedOutfits = Array.isArray(parsed.unlockedOutfits)
       ? Array.from(new Set(['fresh-creator', 'classic-remaster', ...parsed.unlockedOutfits.map((id) => migrateOutfitId(id))]))
       : def.unlockedOutfits
@@ -228,20 +274,45 @@ function loadLocalProfile(): PlayerProfile {
     const unlockedFaces = Array.isArray(parsed.unlockedFaces)
       ? Array.from(new Set(['fresh-smile', 'wink-pro', ...parsed.unlockedFaces])) as FaceId[]
       : def.unlockedFaces
+    const unlockedTrails = Array.from(
+      new Set([
+        ...def.unlockedTrails,
+        ...(Array.isArray(parsed.unlockedTrails) ? parsed.unlockedTrails : []),
+        ...(arenaBestSpeed >= 95 || arenaWins >= 1 ? (['golden-meteor'] as TrailId[]) : []),
+      ]),
+    ) as TrailId[]
+    const unlockedBacks = Array.from(
+      new Set([
+        ...def.unlockedBacks,
+        ...(Array.isArray(parsed.unlockedBacks) ? parsed.unlockedBacks : []),
+        ...(arenaWins >= 1 ? (['solar-halo-wings'] as BackId[]) : []),
+      ]),
+    ) as BackId[]
+    const unlockedPets = Array.from(
+      new Set([...def.unlockedPets, ...(Array.isArray(parsed.unlockedPets) ? parsed.unlockedPets : [])]),
+    ) as PetId[]
 
     return {
       ...def,
       ...parsed,
       role: normalizeAccountRole(parsed.role),
+      clanId: typeof parsed.clanId === 'string' ? parsed.clanId : null,
+      clanTag: typeof parsed.clanTag === 'string' ? parsed.clanTag : null,
       freshGems: GEMS_SYSTEM_IN_PROGRESS ? 0 : (parsed.freshGems ?? 0),
       unlockedOutfits: unlockedOutfits as OutfitId[],
       unlockedHats,
       unlockedFaces,
+      unlockedTrails,
+      unlockedBacks,
+      unlockedPets,
       avatar: {
         outfitId: migrateOutfitId(parsed.avatar?.outfitId),
         faceId: parsed.avatar?.faceId ?? def.avatar.faceId,
         hatId: parsed.avatar?.hatId ?? def.avatar.hatId,
         skinColor: parsed.avatar?.skinColor ?? def.avatar.skinColor,
+        trailId: parsed.avatar?.trailId ?? 'none',
+        backId: parsed.avatar?.backId ?? 'none',
+        petId: parsed.avatar?.petId ?? 'none',
       },
       quests: {
         progress: { ...DEFAULT_QUEST_PROGRESS.progress, ...(parsed.quests?.progress ?? {}) },
@@ -255,6 +326,9 @@ function loadLocalProfile(): PlayerProfile {
       obbyBestStage,
       obbyCompletions,
       obbyBestTimeMs: typeof parsed.obbyBestTimeMs === 'number' ? parsed.obbyBestTimeMs : null,
+      arenaEliminations,
+      arenaWins,
+      arenaBestSpeed,
     }
   } catch {
     return createDefaultProfile()
@@ -266,6 +340,8 @@ interface DbProfileRow {
   username: string
   fresh_tag: string
   role?: string | null
+  clan_id?: string | null
+  clan_tag?: string | null
   fresh_gems: number
   xp: number
   avatar_config: Partial<R6AvatarConfig> | null
@@ -278,6 +354,9 @@ interface DbProfileRow {
   obby_best_stage: number | null
   obby_completions: number | null
   obby_best_time_ms: number | null
+  arena_eliminations?: number | null
+  arena_wins?: number | null
+  arena_best_speed?: number | null
   last_world?: string | null
   last_room?: string | null
   last_seen?: string | null
@@ -341,7 +420,11 @@ export function usePlayerStore() {
         freshTag: matched?.fresh_tag,
         status: online ? 'in-lobby' : 'offline',
         roomCode: matched?.last_room ?? 'PUBLIC-1',
-        world: (matched?.last_world === 'obby' ? 'obby' : 'lobby') as WorldKind,
+        world: (matched?.last_world === 'obby'
+          ? 'obby'
+          : matched?.last_world === 'arena'
+            ? 'arena'
+            : 'lobby') as WorldKind,
         obbyBestStage: matched?.obby_best_stage ?? 1,
       }
     })
@@ -389,7 +472,10 @@ export function usePlayerStore() {
 
         if (data) {
           const obbyCompleted = (data.obby_best_stage ?? 1) >= 100 || (data.obby_completions ?? 0) >= 1
-          const unlocked = normalizeUnlocked(data.unlocked_items ?? undefined, obbyCompleted)
+          const arenaWins = Math.max(0, data.arena_wins ?? 0)
+          const arenaBestSpeed = Math.max(0, data.arena_best_speed ?? 0)
+          const arenaEliminations = Math.max(0, data.arena_eliminations ?? 0)
+          const unlocked = normalizeUnlocked(data.unlocked_items ?? undefined, obbyCompleted, arenaWins, arenaBestSpeed)
           const friends = await loadFriendsFromCloud(userId)
 
           hydratedFromCloudRef.current = true
@@ -398,6 +484,8 @@ export function usePlayerStore() {
             username: data.username,
             freshTag: data.fresh_tag,
             role: normalizeAccountRole(data.role),
+            clanId: data.clan_id ?? null,
+            clanTag: data.clan_tag ?? null,
             freshGems: GEMS_SYSTEM_IN_PROGRESS ? 0 : (data.fresh_gems ?? 0),
             xp: data.xp ?? 0,
             avatar: {
@@ -405,10 +493,16 @@ export function usePlayerStore() {
               faceId: (data.avatar_config?.faceId as FaceId) ?? 'fresh-smile',
               hatId: (data.avatar_config?.hatId as HatId) ?? 'none',
               skinColor: data.avatar_config?.skinColor ?? '#FDE0B6',
+              trailId: (data.avatar_config?.trailId as TrailId) ?? 'none',
+              backId: (data.avatar_config?.backId as BackId) ?? 'none',
+              petId: (data.avatar_config?.petId as PetId) ?? 'none',
             },
             unlockedOutfits: unlocked.outfits,
             unlockedHats: unlocked.hats,
             unlockedFaces: unlocked.faces,
+            unlockedTrails: unlocked.trails,
+            unlockedBacks: unlocked.backs,
+            unlockedPets: unlocked.pets,
             savedOutfits: Array.isArray(data.saved_outfits) ? data.saved_outfits.slice(0, 5) : [],
             badges: Array.isArray(data.badges) && data.badges.length > 0 ? data.badges : ['pioneer'],
             pinnedBadge: typeof data.pinned_badge === 'string' ? data.pinned_badge : null,
@@ -421,6 +515,9 @@ export function usePlayerStore() {
             obbyBestStage: Math.max(1, Math.min(100, data.obby_best_stage ?? 1)),
             obbyCompletions: Math.max(0, data.obby_completions ?? 0),
             obbyBestTimeMs: data.obby_best_time_ms ?? null,
+            arenaEliminations,
+            arenaWins,
+            arenaBestSpeed,
           })
           setCloudStatus('synced')
         }
@@ -490,7 +587,14 @@ export function usePlayerStore() {
     syncTimerRef.current = window.setTimeout(() => {
       if (!supabase || !authUserRef.current) return
       const unlockedItems = Array.from(
-        new Set([...profile.unlockedOutfits, ...profile.unlockedHats, ...profile.unlockedFaces]),
+        new Set([
+          ...profile.unlockedOutfits,
+          ...profile.unlockedHats,
+          ...profile.unlockedFaces,
+          ...profile.unlockedTrails,
+          ...profile.unlockedBacks,
+          ...profile.unlockedPets,
+        ]),
       )
       supabase
         .from('fb_profiles')
@@ -506,6 +610,9 @@ export function usePlayerStore() {
           obby_best_stage: profile.obbyBestStage,
           obby_completions: profile.obbyCompletions,
           obby_best_time_ms: profile.obbyBestTimeMs,
+          arena_eliminations: profile.arenaEliminations,
+          arena_wins: profile.arenaWins,
+          arena_best_speed: profile.arenaBestSpeed,
           last_seen: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
@@ -525,12 +632,20 @@ export function usePlayerStore() {
     profile.unlockedOutfits,
     profile.unlockedHats,
     profile.unlockedFaces,
+    profile.unlockedTrails,
+    profile.unlockedBacks,
+    profile.unlockedPets,
+    profile.savedOutfits,
     profile.badges,
+    profile.pinnedBadge,
     profile.quests,
     profile.obbyStage,
     profile.obbyBestStage,
     profile.obbyCompletions,
     profile.obbyBestTimeMs,
+    profile.arenaEliminations,
+    profile.arenaWins,
+    profile.arenaBestSpeed,
   ])
 
 const REGISTER_API_PATH = '/api/register-account'
@@ -877,22 +992,38 @@ async function postRegisterApi(
   }, [])
 
   const buyAndEquip = useCallback(
-    (category: 'outfit' | 'hat' | 'face', itemId: string, price: number): boolean => {
+    (category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet', itemId: string, price: number): boolean => {
       let ok = false
       setProfile((p) => {
         const listKey =
-          category === 'outfit' ? 'unlockedOutfits' : category === 'hat' ? 'unlockedHats' : 'unlockedFaces'
+          category === 'outfit'
+            ? 'unlockedOutfits'
+            : category === 'hat'
+              ? 'unlockedHats'
+              : category === 'face'
+                ? 'unlockedFaces'
+                : category === 'trail'
+                  ? 'unlockedTrails'
+                  : category === 'back'
+                    ? 'unlockedBacks'
+                    : 'unlockedPets'
         const currentList = p[listKey] as string[]
         const catalogDef =
           category === 'outfit'
             ? OUTFIT_CATALOG.find((x) => x.id === itemId)
             : category === 'hat'
               ? HAT_CATALOG.find((x) => x.id === itemId)
-              : FACE_CATALOG.find((x) => x.id === itemId)
+              : category === 'face'
+                ? FACE_CATALOG.find((x) => x.id === itemId)
+                : category === 'trail'
+                  ? TRAIL_CATALOG.find((x) => x.id === itemId)
+                  : category === 'back'
+                    ? BACK_CATALOG.find((x) => x.id === itemId)
+                    : PET_CATALOG.find((x) => x.id === itemId)
         const isRewardOnly = Boolean(catalogDef?.rewardOnly)
         const alreadyOwned = currentList.includes(itemId) || (!isRewardOnly && price === 0)
 
-        // Milestone-only rewards (like Obby 100 Crown) cannot be bought or equipped before unlocking!
+        // Milestone-only rewards (like Obby 100 Crown or Arena Wings) cannot be bought before unlocking!
         if (isRewardOnly && !alreadyOwned) {
           return p
         }
@@ -908,6 +1039,9 @@ async function postRegisterApi(
           ...(category === 'outfit' ? { outfitId: itemId as OutfitId } : {}),
           ...(category === 'hat' ? { hatId: itemId as HatId } : {}),
           ...(category === 'face' ? { faceId: itemId as FaceId } : {}),
+          ...(category === 'trail' ? { trailId: itemId as TrailId } : {}),
+          ...(category === 'back' ? { backId: itemId as BackId } : {}),
+          ...(category === 'pet' ? { petId: itemId as PetId } : {}),
         }
 
         return {
@@ -1063,7 +1197,7 @@ async function postRegisterApi(
       obbyBestStage: r.obby_best_stage ?? 1,
       obbyCompletions: r.obby_completions ?? 0,
       obbyBestTimeMs: r.obby_best_time_ms ?? null,
-      lastWorld: (r.last_world === 'obby' ? 'obby' : 'lobby') as WorldKind,
+      lastWorld: (r.last_world === 'obby' ? 'obby' : r.last_world === 'arena' ? 'arena' : 'lobby') as WorldKind,
       lastRoom: r.last_room ?? 'PUBLIC-1',
       isOnline: isRecentlyOnline(r.last_seen),
     }))
@@ -1087,7 +1221,7 @@ async function postRegisterApi(
       obbyBestStage: r.obby_best_stage ?? 1,
       obbyCompletions: r.obby_completions ?? 0,
       obbyBestTimeMs: r.obby_best_time_ms ?? null,
-      lastWorld: (r.last_world === 'obby' ? 'obby' : 'lobby') as WorldKind,
+      lastWorld: (r.last_world === 'obby' ? 'obby' : r.last_world === 'arena' ? 'arena' : 'lobby') as WorldKind,
       lastRoom: r.last_room ?? 'PUBLIC-1',
       isOnline: isRecentlyOnline(r.last_seen),
     }))
@@ -1131,6 +1265,47 @@ async function postRegisterApi(
     })
   }, [])
 
+  const recordArenaProgress = useCallback(
+    (opts: { eliminationsDelta?: number; win?: boolean; peakSpeedKmh?: number; meteorKill?: boolean }) => {
+      const elimsDelta = Math.max(0, Math.floor(opts.eliminationsDelta ?? 0))
+      const peak = Math.max(0, Math.round(opts.peakSpeedKmh ?? 0))
+      setProfile((p) => {
+        const nextElims = p.arenaEliminations + elimsDelta
+        const nextWins = p.arenaWins + (opts.win ? 1 : 0)
+        const nextBestSpeed = Math.max(p.arenaBestSpeed, peak)
+        const badges = new Set(p.badges)
+        const unlockedTrails = new Set(p.unlockedTrails)
+        const unlockedBacks = new Set(p.unlockedBacks)
+
+        if (opts.meteorKill || nextBestSpeed >= 98) {
+          badges.add('arena_meteor')
+          unlockedTrails.add('golden-meteor')
+        }
+        if (opts.win) {
+          badges.add('arena_winner')
+          unlockedBacks.add('solar-halo-wings')
+        }
+
+        const bonusXp = elimsDelta * 25 + (opts.win ? 140 : 0)
+        return {
+          ...p,
+          arenaEliminations: nextElims,
+          arenaWins: nextWins,
+          arenaBestSpeed: nextBestSpeed,
+          xp: p.xp + bonusXp,
+          badges: Array.from(badges),
+          unlockedTrails: Array.from(unlockedTrails) as TrailId[],
+          unlockedBacks: Array.from(unlockedBacks) as BackId[],
+        }
+      })
+    },
+    [],
+  )
+
+  const setClanInfo = useCallback((clanId: string | null, clanTag: string | null) => {
+    setProfile((p) => ({ ...p, clanId, clanTag }))
+  }, [])
+
   const refreshProfile = useCallback(async () => {
     const user = authUserRef.current
     if (!user) return
@@ -1156,6 +1331,8 @@ async function postRegisterApi(
     saveOutfitSlot,
     deleteOutfitSlot,
     recordObbySpeedrun,
+    recordArenaProgress,
+    setClanInfo,
     incrementQuest,
     claimQuest,
     recordObbyStage,

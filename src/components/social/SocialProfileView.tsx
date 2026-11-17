@@ -32,6 +32,7 @@ import {
   sendDirectMessage,
 } from '../../lib/socialApi'
 import { sfx } from '../../lib/sfx'
+import { ClansAndSeasonsSection } from './ClansAndSeasonsSection'
 
 interface SocialProfileViewProps {
   profile: PlayerProfile
@@ -42,6 +43,7 @@ interface SocialProfileViewProps {
   initialDmUsername?: string | null
   onConsumedInitialDm?: () => void
   onPinBadge?: (badgeId: string | null) => void
+  onClanChanged?: (clanId: string | null, clanTag: string | null) => void
   onChangeUsername: (name: string) => Promise<{ ok: boolean; error?: string }>
   onAddFriend: (name: string) => Promise<{ ok: boolean; error?: string }>
   onRefreshFriends: () => Promise<void>
@@ -59,6 +61,7 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
   initialDmUsername,
   onConsumedInitialDm,
   onPinBadge,
+  onClanChanged,
   onChangeUsername,
   onAddFriend,
   onRefreshFriends,
@@ -633,6 +636,14 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* P-03 Clans & P-06 Seasonal TOP 100 Leaderboards */}
+      <ClansAndSeasonsSection
+        playerId={profile.playerId}
+        mode={mode}
+        lang={lang}
+        onClanChanged={(cid, ctag) => onClanChanged?.(cid, ctag)}
+      />
 
       {/* U-09: Direct Message 1-on-1 Modal */}
       {dmTarget && (

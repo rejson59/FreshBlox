@@ -25,11 +25,14 @@ import {
   Users,
 } from 'lucide-react'
 import {
+  BackId,
   FaceId,
   getRankForXp,
   HatId,
   OutfitId,
+  PetId,
   R6AvatarConfig,
+  TrailId,
 } from '../data/catalog'
 import { Lang, LOCALES } from '../data/locales'
 import {
@@ -41,6 +44,7 @@ import {
 } from '../lib/multiplayer'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { sfx } from '../lib/sfx'
+import { audioEngine } from '../lib/audioEngine'
 import { createR6Rig, R6RigHandle } from './r6Builder'
 import { cloneFreshTexturesWithRepeat, FreshSurfaceKind, getFreshTexturePair } from './freshTextures'
 import { generateTestObbyCourse, OBBY_ZONES, ObbyBlockDef } from './obbyCourse'
@@ -105,12 +109,16 @@ interface TestObbyWorldProps {
   playerId: string
   authUserId: string | null
   username: string
+  clanTag?: string | null
   freshGems: number
   xp: number
   avatar: R6AvatarConfig
   unlockedOutfits: OutfitId[]
   unlockedHats: HatId[]
   unlockedFaces: FaceId[]
+  unlockedTrails?: TrailId[]
+  unlockedBacks?: BackId[]
+  unlockedPets?: PetId[]
   initialStage: number
   bestStage: number
   bestTimeMs?: number | null
@@ -118,7 +126,8 @@ interface TestObbyWorldProps {
   isFullscreen: boolean
   onBackHome: () => void
   onSwitchToLobby: () => void
-  onBuyAndEquip: (category: 'outfit' | 'hat' | 'face', itemId: string, price: number) => boolean
+  onSwitchToArena?: () => void
+  onBuyAndEquip: (category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet', itemId: string, price: number) => boolean
   onBuyBundle: (items: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; price: number }>) => boolean
   onSkinChange: (hex: string) => void
   onStageReached: (stage: number, elapsedMs?: number) => void
@@ -257,12 +266,16 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   playerId,
   authUserId,
   username,
+  clanTag = null,
   freshGems,
   xp,
   avatar,
   unlockedOutfits,
   unlockedHats,
   unlockedFaces,
+  unlockedTrails = ['none'],
+  unlockedBacks = ['none'],
+  unlockedPets = ['none'],
   initialStage,
   bestStage,
   bestTimeMs = null,
@@ -270,6 +283,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   isFullscreen,
   onBackHome,
   onSwitchToLobby,
+  onSwitchToArena,
   onBuyAndEquip,
   onBuyBundle,
   onSkinChange,
@@ -506,6 +520,17 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     applyTimeOfDayRef.current?.(worldTime)
   }, [worldTime])
 
+  const clanTagRef = useRef(clanTag)
+  clanTagRef.current = clanTag
+
+  // Audio 2.0: synthwave Obby soundtrack
+  useEffect(() => {
+    audioEngine.setWorldMusic('obby')
+    return () => {
+      audioEngine.setWorldMusic('none')
+    }
+  }, [])
+
   // Live 0ms hot-swap of local R6 rig inside Test Obby
   useEffect(() => {
     const scene = sceneRef.current
@@ -517,6 +542,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     const newRig = createR6Rig({
       avatar: displayedAvatar,
       username,
+      clanTag,
       rank: rank.name,
       showNameplate: true,
       castShadow: qualityRef.current !== 'low',
@@ -532,7 +558,11 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     displayedAvatar.hatId,
     displayedAvatar.faceId,
     displayedAvatar.skinColor,
+    displayedAvatar.trailId,
+    displayedAvatar.backId,
+    displayedAvatar.petId,
     username,
+    clanTag,
     rank.name,
   ])
 
@@ -1451,6 +1481,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     const localRig = createR6Rig({
       avatar: displayedAvatarRef.current,
       username: usernameRef.current,
+      clanTag: clanTagRef.current,
       rank: rankRef.current,
       showNameplate: true,
       castShadow: qualityRef.current !== 'low',
@@ -1752,7 +1783,8 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
 
     // === MULTIPLAYER SYNC (Supabase Realtime + BroadcastChannel) ===
     const remotes = new Map<string, RemoteObbyEntity>()
-    const avatarKeyOf = (a: R6AvatarConfig) => `${a.outfitId}|${a.hatId}|${a.faceId}|${a.skinColor}`
+    const avatarKeyOf = (a: R6AvatarConfig) =>
+      `${a.outfitId}|${a.hatId}|${a.faceId}|${a.skinColor}|${a.trailId ?? 'none'}|${a.backId ?? 'none'}|${a.petId ?? 'none'}`
 
     const rebuildRoster = () => {
       const list = [
@@ -1786,6 +1818,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           const rig = createR6Rig({
             avatar: state.avatar,
             username: state.username,
+            clanTag: state.clanTag ?? null,
             rank: state.rank,
             showNameplate: true,
             castShadow: qualityRef.current !== 'low',
@@ -1816,6 +1849,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
             const freshRig = createR6Rig({
               avatar: state.avatar,
               username: state.username,
+              clanTag: state.clanTag ?? null,
               rank: state.rank,
               showNameplate: true,
               castShadow: qualityRef.current !== 'low',
@@ -2727,12 +2761,22 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         ent.rig.update(dt, simTime + 0.8, ent.pose)
       }
 
+      // Audio 2.0: Obby plastic block footsteps
+      const obbyHoriz = Math.hypot(player.vx, player.vz)
+      if (player.grounded && obbyHoriz > 1.8) {
+        const stepInterval = obbyHoriz > 11 ? 0.24 : 0.34
+        if (Math.floor(simTime / stepInterval) !== Math.floor((simTime - dt) / stepInterval)) {
+          audioEngine.playFootstep('plastic', obbyHoriz > 11)
+        }
+      }
+
       // 6. Broadcast own state over Supabase Realtime + BroadcastChannel (~12 Hz)
       if (now - lastBroadcast > 85) {
         lastBroadcast = now
         mp.broadcastState({
           id: playerId,
           username: usernameRef.current,
+          clanTag: clanTagRef.current,
           rank: rankRef.current,
           x: player.x,
           y: player.y,
@@ -3122,6 +3166,9 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           unlockedOutfits={unlockedOutfits}
           unlockedHats={unlockedHats}
           unlockedFaces={unlockedFaces}
+          unlockedTrails={unlockedTrails}
+          unlockedBacks={unlockedBacks}
+          unlockedPets={unlockedPets}
           onPreviewChange={setPreviewAvatar}
           onBuyAndEquip={onBuyAndEquip}
           onBuyBundle={onBuyBundle}
@@ -3186,6 +3233,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         onCopyInvite={handleCopyInvite}
         onResetPosition={() => respawnToStageRef.current?.(currentStage)}
         onSwitchWorld={onSwitchToLobby}
+        onSwitchToArena={onSwitchToArena}
         onLeaveToHome={onBackHome}
         onOpenFeedback={() => onOpenFeedback?.(`Test Obby 100 · Stage ${currentStage}`)}
       />

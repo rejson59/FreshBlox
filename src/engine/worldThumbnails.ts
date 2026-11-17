@@ -4,7 +4,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { cloneFreshTexturesWithRepeat, FreshSurfaceKind } from './freshTextures'
 import { generateTestObbyCourse, OBBY_ZONES } from './obbyCourse'
 
-export type WorldPreviewKey = 'lobby' | 'obby'
+export type WorldPreviewKey = 'lobby' | 'obby' | 'arena'
 
 export type WorldThumbnailMap = Partial<Record<WorldPreviewKey, string>>
 
@@ -596,6 +596,113 @@ function renderObbyThumbnail(renderer: THREE.WebGLRenderer, width: number, heigh
   return url
 }
 
+/**
+ * 3. PORTAL ARENA — Authentic 3D dramatic aerial shot of Portal Arena (Cyan/Orange Portals, Central Laser, Abyss!)
+ */
+function renderArenaThumbnail(renderer: THREE.WebGLRenderer, width: number, height: number): string {
+  const scene = new THREE.Scene()
+  const tr = createTracker()
+  scene.background = new THREE.Color('#060D1E')
+  scene.fog = new THREE.FogExp2('#060D1E', 0.011)
+
+  const hemi = new THREE.HemisphereLight('#7DD3FC', '#0F172A', 1.25)
+  scene.add(hemi)
+  const sun = new THREE.DirectionalLight('#E0F2FE', 1.65)
+  sun.position.set(22, 38, 22)
+  sun.castShadow = true
+  sun.shadow.mapSize.set(1024, 1024)
+  scene.add(sun)
+
+  const cyanLight = new THREE.PointLight('#22D3EE', 3.5, 45)
+  cyanLight.position.set(-14, 10, -8)
+  scene.add(cyanLight)
+  const orangeLight = new THREE.PointLight('#F97316', 3.5, 45)
+  orangeLight.position.set(14, 10, 8)
+  scene.add(orangeLight)
+
+  const camera = new THREE.PerspectiveCamera(42, width / height, 0.5, 220)
+  camera.position.set(27, 22, 31)
+  camera.lookAt(0, 4.5, -2)
+
+  const whiteMat = tr.getSurfaceMat('marble', '#F1F8FF', 3, 3, 0.24, 0.08)
+  const addBox = (x: number, y: number, z: number, w: number, h: number, d: number, mat = whiteMat) => {
+    const m = new THREE.Mesh(tr.trackGeo(new RoundedBoxGeometry(w, h, d, 2, 0.12)), mat)
+    m.position.set(x, y, z)
+    m.castShadow = true
+    m.receiveShadow = true
+    scene.add(m)
+  }
+
+  // Main floating island + central pedestal
+  addBox(0, -1, -13, 32, 2, 16)
+  addBox(0, -1, 13, 32, 2, 16)
+  addBox(-13, -1, 0, 16, 2, 10)
+  addBox(13, -1, 0, 16, 2, 10)
+  addBox(0, -0.5, 0, 4.8, 1.2, 4.8)
+
+  // Tall portalable back wall + side towers
+  addBox(0, 10, -21, 20, 20, 1.8)
+  addBox(-15, 8, -14, 6.5, 16, 6.5)
+  addBox(15, 8, -14, 6.5, 16, 6.5)
+  addBox(-15, 8, 14, 6.5, 16, 6.5)
+  addBox(0, 9.5, -16, 22, 1.4, 4.5)
+
+  // Floating Abyss Rescue Rocks
+  const rockMat = tr.trackMat(new THREE.MeshStandardMaterial({ color: '#BAE6FD', emissive: '#0284C7', emissiveIntensity: 0.22 }))
+  addBox(-25, -5, 4, 5.5, 6, 5.5, rockMat)
+  addBox(25, -6, -6, 5.5, 6, 5.5, rockMat)
+
+  // Glowing Cyan & Orange Portals!
+  const addPortalRing = (x: number, y: number, z: number, rotY: number, hex: string, innerHex: string) => {
+    const g = new THREE.Group()
+    g.position.set(x, y, z)
+    g.rotation.y = rotY
+    const ring = new THREE.Mesh(
+      tr.trackGeo(new THREE.TorusGeometry(2.6, 0.26, 12, 32)),
+      tr.trackMat(new THREE.MeshBasicMaterial({ color: hex })),
+    )
+    ring.scale.set(0.84, 1.32, 1)
+    const core = new THREE.Mesh(
+      tr.trackGeo(new THREE.CircleGeometry(2.45, 28)),
+      tr.trackMat(new THREE.MeshBasicMaterial({ color: innerHex, side: THREE.DoubleSide })),
+    )
+    core.scale.set(0.84, 1.32, 1)
+    g.add(ring, core)
+    scene.add(g)
+  }
+  addPortalRing(-4.8, 8.2, -19.8, 0, '#22D3EE', '#083344')
+  addPortalRing(11.6, 7.6, -14, -Math.PI / 2, '#F97316', '#431407')
+
+  // Central Vertical Plasma Laser Beam + Redirected Beam
+  const laserMat = tr.trackMat(new THREE.MeshBasicMaterial({ color: '#FF2A5F' }))
+  const vLaser = new THREE.Mesh(tr.trackGeo(new THREE.CylinderGeometry(0.32, 0.32, 30, 12)), laserMat)
+  vLaser.position.set(0, 15, 0)
+  scene.add(vLaser)
+
+  // Glowing Energy Disc mid-flight!
+  const disc = new THREE.Mesh(
+    tr.trackGeo(new THREE.TorusGeometry(1.15, 0.2, 8, 22)),
+    tr.trackMat(new THREE.MeshBasicMaterial({ color: '#FACC15' })),
+  )
+  disc.rotation.x = Math.PI / 2.2
+  disc.position.set(2.5, 7.5, 4.5)
+  scene.add(disc)
+
+  // Abyss accretion ring below
+  const abyssRing = new THREE.Mesh(
+    tr.trackGeo(new THREE.RingGeometry(12, 22, 40)),
+    tr.trackMat(new THREE.MeshBasicMaterial({ color: '#0EA5E9', transparent: true, opacity: 0.32, side: THREE.DoubleSide })),
+  )
+  abyssRing.rotation.x = -Math.PI / 2
+  abyssRing.position.y = -15
+  scene.add(abyssRing)
+
+  renderer.render(scene, camera)
+  const url = renderer.domElement.toDataURL('image/webp', 0.9)
+  tr.disposeAll()
+  return url
+}
+
 export function generateWorldThumbnails(): Promise<WorldThumbnailMap> {
   if (cachedThumbnails) return Promise.resolve(cachedThumbnails)
   if (pendingPromise) return pendingPromise
@@ -627,6 +734,7 @@ export function generateWorldThumbnails(): Promise<WorldThumbnailMap> {
         const result: WorldThumbnailMap = {
           lobby: renderLobbyThumbnail(renderer, width, height),
           obby: renderObbyThumbnail(renderer, width, height),
+          arena: renderArenaThumbnail(renderer, width, height),
         }
 
         renderer.dispose()

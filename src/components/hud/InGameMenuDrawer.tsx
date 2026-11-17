@@ -34,6 +34,7 @@ import { FreshBloxLogo } from '../brand/FreshBloxBrand'
 import { Lang } from '../../data/locales'
 import { LobbyWeatherMode } from '../../lib/mousePrefs'
 import { sfx } from '../../lib/sfx'
+import { AudioMixerPanel } from './AudioMixerPopover'
 
 export type MenuQuality = 'low' | 'medium' | 'high'
 export type MenuWorldTime = 'day' | 'night'
@@ -52,7 +53,7 @@ export interface InGameMenuDrawerProps {
   activeTab?: MenuDrawerTab
   onTabChange?: (tab: MenuDrawerTab) => void
   onOpenShortcuts?: () => void
-  worldKind: 'lobby' | 'obby'
+  worldKind: 'lobby' | 'obby' | 'arena'
   lang: Lang
   roomCode: string
   username: string
@@ -97,6 +98,7 @@ export interface InGameMenuDrawerProps {
   onCopyInvite: () => void
   onResetPosition: () => void
   onSwitchWorld: () => void
+  onSwitchToArena?: () => void
   onLeaveToHome: () => void
   onOpenFeedback: () => void
   onTeleportToMember?: (memberId: string) => void
@@ -109,6 +111,7 @@ const COPY = {
     settings: 'Opcje',
     lobby: 'Lobby Główne',
     obby: 'Test Obby 100',
+    arena: 'Portal Arena',
     resume: 'Wznów',
     wardrobe: 'Szatnia',
     report: 'Zgłoś',
@@ -145,6 +148,7 @@ const COPY = {
     settings: 'Options',
     lobby: 'Main Lobby',
     obby: 'Test Obby 100',
+    arena: 'Portal Arena',
     resume: 'Resume',
     wardrobe: 'Wardrobe',
     report: 'Feedback',
@@ -225,6 +229,7 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
   onCopyInvite,
   onResetPosition,
   onSwitchWorld,
+  onSwitchToArena,
   onLeaveToHome,
   onOpenFeedback,
   onTeleportToMember,
@@ -266,7 +271,7 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
               </div>
               <div className="min-w-0">
                 <div className="truncate font-display text-sm font-black text-white">
-                  {worldKind === 'obby' ? t.obby : t.lobby}
+                  {worldKind === 'obby' ? t.obby : worldKind === 'arena' ? t.arena : t.lobby}
                 </div>
                 <div className="mt-0.5 flex items-center gap-1.5 text-[11px] font-semibold text-sky-200/75">
                   <span className="truncate max-w-[100px] text-white">{username}</span>
@@ -492,6 +497,21 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
                 )}
                 <span>{worldKind === 'lobby' ? t.toObby : t.toLobby}</span>
               </button>
+
+              {worldKind !== 'arena' && onSwitchToArena && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    sfx.playClick()
+                    onClose()
+                    onSwitchToArena()
+                  }}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-cyan-300/45 bg-gradient-to-r from-cyan-400 to-orange-500 py-3 px-4 text-xs font-black text-slate-950 shadow-md hover:brightness-110 active:scale-[0.98] transition cursor-pointer"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  <span>Portal Arena</span>
+                </button>
+              )}
 
               {!touchMode && !pointerLocked && (
                 <button
@@ -730,6 +750,11 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
                   )}
                 </div>
               )}
+
+              {/* A-04: Audio 2.0 4-Channel Mixer */}
+              <div className="rounded-2xl border border-sky-400/20 bg-white/[0.04] px-3 py-3">
+                <AudioMixerPanel lang={lang} compact />
+              </div>
 
               {/* Day / Night */}
               <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">

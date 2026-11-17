@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
-import { FaceId, HatId, OutfitId, R6AvatarConfig } from '../data/catalog'
+import { BackId, FaceId, HatId, OutfitId, PetId, R6AvatarConfig, TrailId } from '../data/catalog'
 import { PlayerPose } from '../lib/multiplayer'
 import { createEmptyPoseTarget, evaluateR6Pose } from './r6Animations'
 
@@ -200,31 +200,46 @@ function getChestLogoTexture(): THREE.CanvasTexture {
   return tex
 }
 
-function createNameplateTexture(username: string, rank: string): THREE.CanvasTexture {
+function createNameplateTexture(username: string, rank: string, clanTag?: string | null): THREE.CanvasTexture {
   const canvas = document.createElement('canvas')
-  canvas.width = 384
-  canvas.height = 96
+  canvas.width = 440
+  canvas.height = 104
   const ctx = canvas.getContext('2d')!
-  ctx.clearRect(0, 0, 384, 96)
+  ctx.clearRect(0, 0, 440, 104)
 
-  ctx.fillStyle = 'rgba(7, 17, 36, 0.78)'
+  ctx.fillStyle = 'rgba(7, 17, 36, 0.8)'
   ctx.beginPath()
-  ctx.roundRect(14, 12, 356, 72, 20)
+  ctx.roundRect(14, 12, 412, 80, 22)
   ctx.fill()
 
-  ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)'
+  ctx.strokeStyle = clanTag ? 'rgba(56, 189, 248, 0.78)' : 'rgba(56, 189, 248, 0.55)'
   ctx.lineWidth = 3
   ctx.stroke()
 
+  const displayTitle = clanTag ? `[${clanTag.toUpperCase()}] ${username.slice(0, 16)}` : username.slice(0, 18)
   ctx.fillStyle = '#F0F9FF'
-  ctx.font = '800 28px Inter, system-ui, sans-serif'
+  ctx.font = '800 26px Inter, system-ui, sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText(username.slice(0, 18), 192, 40)
+  if (clanTag) {
+    const tagStr = `[${clanTag.toUpperCase()}] `
+    const nameStr = username.slice(0, 16)
+    const tagW = ctx.measureText(tagStr).width
+    const nameW = ctx.measureText(nameStr).width
+    const startX = 220 - (tagW + nameW) / 2
+    ctx.textAlign = 'left'
+    ctx.fillStyle = '#38BDF8'
+    ctx.fillText(tagStr, startX, 42)
+    ctx.fillStyle = '#F0F9FF'
+    ctx.fillText(nameStr, startX + tagW, 42)
+    ctx.textAlign = 'center'
+  } else {
+    ctx.fillText(displayTitle, 220, 42)
+  }
 
   ctx.fillStyle = '#7DD3FC'
   ctx.font = '700 17px Inter, system-ui, sans-serif'
-  ctx.fillText(rank, 192, 68)
+  ctx.fillText(rank, 220, 72)
 
   const tex = new THREE.CanvasTexture(canvas)
   tex.colorSpace = THREE.SRGBColorSpace
@@ -550,13 +565,395 @@ function buildHatGroup(hatId: HatId, castShadow: boolean): { group: THREE.Group;
   return { group, disposables }
 }
 
+function buildBackAccessory(
+  backId: BackId,
+  castShadow: boolean,
+): {
+  group: THREE.Group
+  animate: (elapsed: number, pose: PlayerPose) => void
+  disposables: Array<{ dispose: () => void }>
+} {
+  const group = new THREE.Group()
+  const disposables: Array<{ dispose: () => void }> = []
+  let animate: (elapsed: number, pose: PlayerPose) => void = () => {}
+
+  if (backId === 'none') return { group, animate, disposables }
+
+  const trackGeo = <T extends THREE.BufferGeometry>(g: T): T => {
+    disposables.push(g)
+    return g
+  }
+  const trackMat = <T extends THREE.Material>(m: T): T => {
+    disposables.push(m)
+    return m
+  }
+
+  group.position.set(0, 0.08, -0.34)
+
+  if (backId === 'crystal-wings' || backId === 'solar-halo-wings') {
+    const isSolar = backId === 'solar-halo-wings'
+    const wingMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: isSolar ? '#FDE047' : '#38BDF8',
+        emissive: isSolar ? '#F59E0B' : '#0EA5E9',
+        emissiveIntensity: isSolar ? 0.55 : 0.42,
+        roughness: 0.16,
+        metalness: isSolar ? 0.55 : 0.25,
+        transparent: true,
+        opacity: 0.9,
+      }),
+    )
+    const coreMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: isSolar ? '#FFFBEB' : '#E0F2FE',
+        roughness: 0.18,
+        metalness: 0.4,
+      }),
+    )
+
+    const hub = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(0.32, 0.4, 0.14, 2, 0.04)), coreMat)
+    group.add(hub)
+
+    const leftWing = new THREE.Group()
+    leftWing.position.set(-0.14, 0.06, -0.02)
+    const rightWing = new THREE.Group()
+    rightWing.position.set(0.14, 0.06, -0.02)
+
+    const featherSpecs: Array<[number, number, number, number, number]> = [
+      [0.62, 0.28, 0.05, 0.54, 0.26],
+      [0.86, 0.22, 0.045, 0.72, 0.06],
+      [0.68, 0.18, 0.045, 0.54, -0.18],
+      [0.44, 0.14, 0.04, 0.34, -0.38],
+    ]
+    for (const [w, h, d, ox, oy] of featherSpecs) {
+      const geo = trackGeo(new RoundedBoxGeometry(w, h, d, 2, 0.02))
+      const lf = new THREE.Mesh(geo, wingMat)
+      lf.position.set(-ox, oy, -0.04)
+      lf.rotation.z = -0.18
+      lf.castShadow = castShadow
+      leftWing.add(lf)
+
+      const rf = new THREE.Mesh(geo, wingMat)
+      rf.position.set(ox, oy, -0.04)
+      rf.rotation.z = 0.18
+      rf.castShadow = castShadow
+      rightWing.add(rf)
+    }
+
+    if (isSolar) {
+      const halo = new THREE.Mesh(trackGeo(new THREE.TorusGeometry(0.55, 0.032, 8, 24)), wingMat)
+      halo.position.set(0, 0.22, -0.12)
+      group.add(halo)
+    }
+
+    group.add(leftWing, rightWing)
+    animate = (elapsed, pose) => {
+      const airBoost = pose === 'jump' || pose === 'fall' || pose === 'run' ? 2.6 : 1.15
+      const amp = pose === 'jump' || pose === 'fall' ? 0.38 : 0.16
+      const flap = Math.sin(elapsed * 3.4 * airBoost) * amp
+      leftWing.rotation.y = 0.28 + flap
+      rightWing.rotation.y = -0.28 - flap
+    }
+  } else if (backId === 'portal-jetpack') {
+    const bodyMat = trackMat(new THREE.MeshStandardMaterial({ color: '#0F172A', roughness: 0.28, metalness: 0.55 }))
+    const trimMat = trackMat(new THREE.MeshStandardMaterial({ color: '#E2E8F0', roughness: 0.22, metalness: 0.35 }))
+    const cyanMat = trackMat(
+      new THREE.MeshStandardMaterial({ color: '#22D3EE', emissive: '#06B6D4', emissiveIntensity: 0.9, roughness: 0.15 }),
+    )
+    const orangeMat = trackMat(
+      new THREE.MeshStandardMaterial({ color: '#FB923C', emissive: '#F97316', emissiveIntensity: 0.9, roughness: 0.15 }),
+    )
+
+    const bridge = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(0.76, 0.44, 0.22, 2, 0.05)), trimMat)
+    bridge.castShadow = castShadow
+    group.add(bridge)
+
+    const tankGeo = trackGeo(new THREE.CylinderGeometry(0.15, 0.17, 0.78, 12))
+    const flameGeo = trackGeo(new THREE.ConeGeometry(0.11, 0.42, 8))
+    const flames: THREE.Mesh[] = []
+
+    for (const [side, mat] of [
+      [-1, cyanMat],
+      [1, orangeMat],
+    ] as const) {
+      const tank = new THREE.Mesh(tankGeo, bodyMat)
+      tank.position.set(side * 0.28, -0.02, -0.08)
+      tank.castShadow = castShadow
+      group.add(tank)
+
+      const ring = new THREE.Mesh(trackGeo(new THREE.TorusGeometry(0.16, 0.03, 6, 16)), mat)
+      ring.rotation.x = Math.PI / 2
+      ring.position.set(side * 0.28, 0.1, -0.08)
+      group.add(ring)
+
+      const flame = new THREE.Mesh(flameGeo, mat)
+      flame.rotation.x = Math.PI
+      flame.position.set(side * 0.28, -0.58, -0.08)
+      group.add(flame)
+      flames.push(flame)
+    }
+
+    animate = (elapsed, pose) => {
+      const thrust = pose === 'jump' || pose === 'fall' ? 1.45 : pose === 'run' ? 1.05 : 0.45
+      for (let i = 0; i < flames.length; i++) {
+        const flicker = 0.82 + Math.sin(elapsed * 26 + i * 2) * 0.22
+        flames[i].scale.set(0.85, thrust * flicker, 0.85)
+      }
+    }
+  } else if (backId === 'arctic-backpack') {
+    const packMat = trackMat(new THREE.MeshStandardMaterial({ color: '#0284C7', roughness: 0.34, metalness: 0.08 }))
+    const pocketMat = trackMat(new THREE.MeshStandardMaterial({ color: '#E0F2FE', roughness: 0.26, metalness: 0.05 }))
+    const buckleMat = trackMat(new THREE.MeshStandardMaterial({ color: '#38BDF8', emissive: '#0EA5E9', emissiveIntensity: 0.35 }))
+
+    const mainBag = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(0.82, 0.94, 0.38, 2, 0.09)), packMat)
+    mainBag.position.set(0, -0.02, -0.14)
+    mainBag.castShadow = castShadow
+    group.add(mainBag)
+
+    const pocket = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(0.64, 0.4, 0.14, 2, 0.05)), pocketMat)
+    pocket.position.set(0, -0.2, -0.34)
+    group.add(pocket)
+
+    const clasp = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(0.24, 0.14, 0.08, 2, 0.03)), buckleMat)
+    clasp.position.set(0, 0.16, -0.34)
+    group.add(clasp)
+  } else if (backId === 'cyber-cape') {
+    const capeMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: '#312E81',
+        emissive: '#4F46E5',
+        emissiveIntensity: 0.28,
+        roughness: 0.32,
+        metalness: 0.25,
+      }),
+    )
+    const trimMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: '#38BDF8',
+        emissive: '#0EA5E9',
+        emissiveIntensity: 0.6,
+        roughness: 0.18,
+      }),
+    )
+
+    const capePivot = new THREE.Group()
+    capePivot.position.set(0, 0.48, 0.02)
+    group.add(capePivot)
+
+    const panel = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(0.98, 1.38, 0.05, 2, 0.02)), capeMat)
+    panel.position.set(0, -0.7, -0.06)
+    panel.castShadow = castShadow
+    capePivot.add(panel)
+
+    const bottomTrim = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(0.96, 0.09, 0.065, 2, 0.02)), trimMat)
+    bottomTrim.position.set(0, -1.35, -0.06)
+    capePivot.add(bottomTrim)
+
+    animate = (elapsed, pose) => {
+      const targetAngle =
+        pose === 'run' ? 0.56 : pose === 'walk' ? 0.3 : pose === 'jump' || pose === 'fall' ? 0.68 : 0.12
+      const flutter = Math.sin(elapsed * 7.5) * (pose === 'run' ? 0.12 : 0.04)
+      capePivot.rotation.x += (targetAngle + flutter - capePivot.rotation.x) * 0.18
+    }
+  }
+
+  return { group, animate, disposables }
+}
+
+function buildCompanionPet(
+  petId: PetId,
+  castShadow: boolean,
+): {
+  group: THREE.Group
+  animate: (elapsed: number, airHeight: number) => void
+  disposables: Array<{ dispose: () => void }>
+} {
+  const group = new THREE.Group()
+  const disposables: Array<{ dispose: () => void }> = []
+  let animate: (elapsed: number, airHeight: number) => void = () => {}
+
+  if (petId === 'none') return { group, animate, disposables }
+
+  const trackGeo = <T extends THREE.BufferGeometry>(g: T): T => {
+    disposables.push(g)
+    return g
+  }
+  const trackMat = <T extends THREE.Material>(m: T): T => {
+    disposables.push(m)
+    return m
+  }
+
+  const petBody = new THREE.Group()
+  group.add(petBody)
+
+  if (petId === 'frost-cube') {
+    const iceMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: '#7DD3FC',
+        emissive: '#0284C7',
+        emissiveIntensity: 0.25,
+        roughness: 0.14,
+        metalness: 0.1,
+        transparent: true,
+        opacity: 0.92,
+      }),
+    )
+    const eyeMat = trackMat(new THREE.MeshBasicMaterial({ color: '#0F172A' }))
+    const shineMat = trackMat(new THREE.MeshBasicMaterial({ color: '#FFFFFF' }))
+
+    const cube = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(0.46, 0.46, 0.46, 2, 0.08)), iceMat)
+    cube.castShadow = castShadow
+    petBody.add(cube)
+
+    const eyeGeo = trackGeo(new THREE.SphereGeometry(0.055, 8, 8))
+    const shineGeo = trackGeo(new THREE.SphereGeometry(0.022, 6, 6))
+    for (const side of [-1, 1]) {
+      const eye = new THREE.Mesh(eyeGeo, eyeMat)
+      eye.position.set(side * 0.11, 0.04, 0.22)
+      petBody.add(eye)
+      const shine = new THREE.Mesh(shineGeo, shineMat)
+      shine.position.set(side * 0.11 - 0.015, 0.06, 0.265)
+      petBody.add(shine)
+    }
+
+    const crown = new THREE.Mesh(
+      trackGeo(new THREE.OctahedronGeometry(0.11, 0)),
+      trackMat(new THREE.MeshStandardMaterial({ color: '#E0F2FE', emissive: '#38BDF8', emissiveIntensity: 0.6 })),
+    )
+    crown.position.y = 0.34
+    petBody.add(crown)
+
+    animate = (elapsed, airHeight) => {
+      petBody.position.set(1.28, 2.75 + airHeight * 0.65 + Math.sin(elapsed * 3.1) * 0.18, -0.15)
+      petBody.rotation.y = Math.sin(elapsed * 1.4) * 0.35
+      petBody.rotation.z = Math.sin(elapsed * 2.2) * 0.08
+      crown.rotation.y = elapsed * 2.2
+    }
+  } else if (petId === 'portal-drone') {
+    const core = new THREE.Mesh(
+      trackGeo(new THREE.SphereGeometry(0.24, 14, 12)),
+      trackMat(new THREE.MeshStandardMaterial({ color: '#0F172A', roughness: 0.2, metalness: 0.7 })),
+    )
+    petBody.add(core)
+
+    const lens = new THREE.Mesh(
+      trackGeo(new THREE.SphereGeometry(0.1, 10, 10)),
+      trackMat(new THREE.MeshStandardMaterial({ color: '#E0F2FE', emissive: '#38BDF8', emissiveIntensity: 1.0 })),
+    )
+    lens.position.z = 0.2
+    petBody.add(lens)
+
+    const ringCyan = new THREE.Mesh(
+      trackGeo(new THREE.TorusGeometry(0.36, 0.028, 8, 24)),
+      trackMat(new THREE.MeshStandardMaterial({ color: '#22D3EE', emissive: '#06B6D4', emissiveIntensity: 0.9 })),
+    )
+    const ringOrange = new THREE.Mesh(
+      trackGeo(new THREE.TorusGeometry(0.42, 0.024, 8, 24)),
+      trackMat(new THREE.MeshStandardMaterial({ color: '#FB923C', emissive: '#F97316', emissiveIntensity: 0.9 })),
+    )
+    petBody.add(ringCyan, ringOrange)
+
+    animate = (elapsed, airHeight) => {
+      petBody.position.set(1.32, 2.85 + airHeight * 0.65 + Math.sin(elapsed * 3.6) * 0.16, -0.1)
+      ringCyan.rotation.x = elapsed * 2.1
+      ringCyan.rotation.y = elapsed * 1.4
+      ringOrange.rotation.y = -elapsed * 2.3
+      ringOrange.rotation.z = elapsed * 1.1
+    }
+  } else if (petId === 'star-owl') {
+    const bodyMat = trackMat(new THREE.MeshStandardMaterial({ color: '#E0F2FE', roughness: 0.35 }))
+    const wingMat = trackMat(new THREE.MeshStandardMaterial({ color: '#38BDF8', roughness: 0.28 }))
+    const goldMat = trackMat(new THREE.MeshStandardMaterial({ color: '#FACC15', emissive: '#F59E0B', emissiveIntensity: 0.45 }))
+
+    const torsoOwl = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(0.42, 0.48, 0.38, 2, 0.09)), bodyMat)
+    torsoOwl.castShadow = castShadow
+    petBody.add(torsoOwl)
+
+    const beak = new THREE.Mesh(trackGeo(new THREE.ConeGeometry(0.06, 0.12, 4)), goldMat)
+    beak.rotation.x = Math.PI / 2
+    beak.position.set(0, 0.02, 0.22)
+    petBody.add(beak)
+
+    const eyeGeo = trackGeo(new THREE.SphereGeometry(0.06, 8, 8))
+    for (const side of [-1, 1]) {
+      const eye = new THREE.Mesh(eyeGeo, goldMat)
+      eye.position.set(side * 0.11, 0.1, 0.18)
+      petBody.add(eye)
+    }
+
+    const wingGeo = trackGeo(new RoundedBoxGeometry(0.28, 0.1, 0.24, 2, 0.03))
+    const lWing = new THREE.Mesh(wingGeo, wingMat)
+    lWing.position.set(-0.3, 0.04, 0)
+    const rWing = new THREE.Mesh(wingGeo, wingMat)
+    rWing.position.set(0.3, 0.04, 0)
+    petBody.add(lWing, rWing)
+
+    animate = (elapsed, airHeight) => {
+      petBody.position.set(1.25, 2.95 + airHeight * 0.65 + Math.sin(elapsed * 4.5) * 0.16, -0.05)
+      const f = Math.sin(elapsed * 11) * 0.52
+      lWing.rotation.z = f
+      rWing.rotation.z = -f
+    }
+  } else if (petId === 'plasma-orb') {
+    const crystal = new THREE.Mesh(
+      trackGeo(new THREE.OctahedronGeometry(0.25, 0)),
+      trackMat(new THREE.MeshStandardMaterial({ color: '#E879F9', emissive: '#A855F7', emissiveIntensity: 0.85, roughness: 0.12 })),
+    )
+    petBody.add(crystal)
+
+    const orbit1 = new THREE.Mesh(
+      trackGeo(new THREE.TorusGeometry(0.38, 0.022, 6, 22)),
+      trackMat(new THREE.MeshStandardMaterial({ color: '#C084FC', emissive: '#9333EA', emissiveIntensity: 0.8 })),
+    )
+    const orbit2 = new THREE.Mesh(
+      trackGeo(new THREE.TorusGeometry(0.46, 0.018, 6, 22)),
+      trackMat(new THREE.MeshStandardMaterial({ color: '#38BDF8', emissive: '#0284C7', emissiveIntensity: 0.7 })),
+    )
+    petBody.add(orbit1, orbit2)
+
+    animate = (elapsed, airHeight) => {
+      petBody.position.set(1.3, 2.8 + airHeight * 0.65 + Math.sin(elapsed * 2.8) * 0.2, -0.15)
+      crystal.rotation.y = elapsed * 2.5
+      crystal.rotation.x = Math.sin(elapsed * 1.8) * 0.4
+      orbit1.rotation.x = elapsed * 1.9
+      orbit1.rotation.z = elapsed * 1.2
+      orbit2.rotation.y = -elapsed * 2.1
+      orbit2.rotation.x = Math.PI / 3
+    }
+  }
+
+  return { group, animate, disposables }
+}
+
+interface TrailColors {
+  primary: string
+  secondary: string
+}
+
+function getTrailColors(trailId: TrailId): TrailColors | null {
+  switch (trailId) {
+    case 'arctic-sparks':
+      return { primary: '#38BDF8', secondary: '#E0F2FE' }
+    case 'portal-duality':
+      return { primary: '#22D3EE', secondary: '#F97316' }
+    case 'neon-comet':
+      return { primary: '#C084FC', secondary: '#F472B6' }
+    case 'emerald-pulse':
+      return { primary: '#10B981', secondary: '#6EE7B7' }
+    case 'golden-meteor':
+      return { primary: '#FACC15', secondary: '#FB923C' }
+    default:
+      return null
+  }
+}
+
 export interface R6RigHandle {
   root: THREE.Group
   comPivot: THREE.Group
   shadowBlob: THREE.Mesh
   update: (dt: number, elapsed: number, pose: PlayerPose) => void
   setSpeech: (text: string | null) => void
-  setNameplate: (username: string, rank: string) => void
+  setNameplate: (username: string, rank: string, clanTag?: string | null) => void
   dispose: () => void
 }
 
@@ -566,10 +963,11 @@ export function createR6Rig(opts: {
   avatar: R6AvatarConfig
   username?: string
   rank?: string
+  clanTag?: string | null
   showNameplate?: boolean
   castShadow?: boolean
 }): R6RigHandle {
-  const { avatar, username = 'FreshPlayer', rank = 'Crystal I', showNameplate = true, castShadow = true } = opts
+  const { avatar, username = 'FreshPlayer', rank = 'Crystal I', clanTag = null, showNameplate = true, castShadow = true } = opts
 
   const geos = getSharedR6Geometries()
   const disposables: Array<{ dispose: () => void }> = []
@@ -638,6 +1036,38 @@ export function createR6Rig(opts: {
     torso.add(emblem)
   }
 
+  // P-01: 3D Back Accessory (Wings, Jetpack, Backpack, Cape)
+  const backRes = buildBackAccessory(avatar.backId ?? 'none', castShadow)
+  torso.add(backRes.group)
+  disposables.push(...backRes.disposables)
+
+  // P-02: 3D Floating Companion Pet
+  const petRes = buildCompanionPet(avatar.petId ?? 'none', castShadow)
+  root.add(petRes.group)
+  disposables.push(...petRes.disposables)
+
+  // P-01: 3D Footstep Particle Trail Pool (zero-allocation local ring buffer)
+  const trailColors = getTrailColors(avatar.trailId ?? 'none')
+  const trailParticles: Array<{ mesh: THREE.Mesh; age: number; maxAge: number; vx: number; vy: number; vz: number }> = []
+  let trailSpawnAcc = 0
+  let trailCursor = 0
+  if (trailColors) {
+    const pGeo = new THREE.OctahedronGeometry(0.11, 0)
+    disposables.push(pGeo)
+    const matA = trackMat(
+      new THREE.MeshBasicMaterial({ color: trailColors.primary, transparent: true, opacity: 0.9 }),
+    )
+    const matB = trackMat(
+      new THREE.MeshBasicMaterial({ color: trailColors.secondary, transparent: true, opacity: 0.9 }),
+    )
+    for (let i = 0; i < 12; i++) {
+      const m = new THREE.Mesh(pGeo, i % 2 === 0 ? matA : matB)
+      m.visible = false
+      root.add(m)
+      trailParticles.push({ mesh: m, age: 99, maxAge: 0.55, vx: 0, vy: 0, vz: 0 })
+    }
+  }
+
   // Neck-based head pivot (natural nods, tilts & glances without head detaching!)
   const headPivot = new THREE.Group()
   headPivot.position.set(0, 1.34, 0) // neck base at world y=2.62
@@ -697,11 +1127,11 @@ export function createR6Rig(opts: {
   let nameplateSprite: THREE.Sprite | null = null
   let nameplateTex: THREE.CanvasTexture | null = null
   if (showNameplate) {
-    nameplateTex = createNameplateTexture(username, rank)
+    nameplateTex = createNameplateTexture(username, rank, clanTag)
     const npMat = trackMat(new THREE.SpriteMaterial({ map: nameplateTex, transparent: true, depthTest: false }))
     nameplateSprite = new THREE.Sprite(npMat)
     nameplateSprite.position.set(0, 4.18, 0)
-    nameplateSprite.scale.set(2.4, 0.6, 1)
+    nameplateSprite.scale.set(2.55, 0.62, 1)
     root.add(nameplateSprite)
   }
 
@@ -800,6 +1230,47 @@ export function createR6Rig(opts: {
     shadowBlob.scale.set(shadowScale, shadowScale, 1)
     shadowBlobMat.opacity = Math.max(0.28, 0.85 - airHeight * 0.25)
 
+    // P-01 & P-02: Animate 3D back accessory, companion pet & footstep trail particles
+    backRes.animate(elapsed, pose)
+    petRes.animate(elapsed, airHeight)
+
+    if (trailParticles.length > 0) {
+      const isMovingPose =
+        pose === 'walk' || pose === 'run' || pose === 'jump' || pose === 'fall' || pose === 'spin' || pose === 'backflip'
+      const rate = pose === 'run' || pose === 'jump' ? 0.045 : isMovingPose ? 0.075 : 0.22
+      trailSpawnAcc += dt
+      if (trailSpawnAcc >= rate) {
+        trailSpawnAcc = 0
+        const slot = trailParticles[trailCursor % trailParticles.length]
+        trailCursor++
+        slot.age = 0
+        slot.maxAge = isMovingPose ? 0.55 : 0.72
+        const side = (trailCursor % 2 === 0 ? 1 : -1) * 0.32
+        slot.mesh.position.set(side + (Math.random() - 0.5) * 0.16, 0.14 + Math.random() * 0.14, -0.25)
+        slot.vx = (Math.random() - 0.5) * 0.45
+        slot.vy = isMovingPose ? 0.9 + Math.random() * 0.55 : 0.65 + Math.random() * 0.35
+        slot.vz = isMovingPose ? -2.2 - Math.random() * 0.8 : -0.35
+        slot.mesh.visible = true
+      }
+
+      for (const p of trailParticles) {
+        if (!p.mesh.visible) continue
+        p.age += dt
+        if (p.age >= p.maxAge) {
+          p.mesh.visible = false
+          continue
+        }
+        const k = 1 - p.age / p.maxAge
+        p.mesh.position.x += p.vx * dt
+        p.mesh.position.y += p.vy * dt
+        p.mesh.position.z += p.vz * dt
+        p.mesh.rotation.y += dt * 4.5
+        p.mesh.rotation.x += dt * 3.1
+        const s = 0.25 + k * 0.95
+        p.mesh.scale.setScalar(s)
+      }
+    }
+
     // Keep overhead nameplate cleanly above the head during high jumps/flips
     if (nameplateSprite) {
       nameplateSprite.position.y = 4.18 + airHeight * 0.75
@@ -827,10 +1298,10 @@ export function createR6Rig(opts: {
     speechSprite.visible = true
   }
 
-  const setNameplate = (newUsername: string, newRank: string) => {
+  const setNameplate = (newUsername: string, newRank: string, newClanTag?: string | null) => {
     if (!nameplateSprite) return
     if (nameplateTex) nameplateTex.dispose()
-    nameplateTex = createNameplateTexture(newUsername, newRank)
+    nameplateTex = createNameplateTexture(newUsername, newRank, newClanTag)
     const mat = nameplateSprite.material as THREE.SpriteMaterial
     mat.map = nameplateTex
     mat.needsUpdate = true

@@ -31,6 +31,13 @@ const TIPS_PL: Record<WorldKind, string[]> = {
     'Wciśnij G, aby szybko wywołać koło emotek na mecie etapu 100.',
     'Jedno kliknięcie ESC otwiera mini-menu gry z ustawieniami FOV i czułości.',
   ],
+  arena: [
+    'Zero karabinów! LPM stawia portal Cyan, PPM portal Orange — zachowujesz pęd!',
+    'Przekrocz 95 km/h przez Działo Pętlowe, aby stać się Ludzkim Meteorytem!',
+    'Rzuć Dysk Energetyczny [Q] przez portale — każde przejście to +25% prędkości i OVERDRIVE!',
+    'Postaw portal pod centralnym Laserem, aby przekierować zabójczą wiązkę na rywali!',
+    'Spadasz w Otchłań? Strzel portalem w lewitującą skałę ratunkową, aby wrócić jak pocisk!',
+  ],
 }
 
 const TIPS_EN: Record<WorldKind, string[]> = {
@@ -48,6 +55,13 @@ const TIPS_EN: Record<WorldKind, string[]> = {
     'Press G to open the quick Emote Wheel.',
     'Adjust camera FOV (60°–100°) anytime in Settings (O).',
   ],
+  arena: [
+    'Zero guns! LMB places Cyan Portal, RMB places Orange Portal — speed is your weapon!',
+    'Exceed 95 km/h through portal loops to ignite as a Human Meteor!',
+    'Throw Energy Disc [Q] through portals — +25% speed per pass up to Red Overdrive!',
+    'Place a portal under the Central Laser to redirect the deadly beam across the arena!',
+    'Press V anytime to toggle between 1st-Person (FPP) and 3rd-Person (TPP) camera!',
+  ],
 }
 
 export const WorldTransitionOverlay: React.FC<WorldTransitionOverlayProps> = ({
@@ -63,8 +77,9 @@ export const WorldTransitionOverlay: React.FC<WorldTransitionOverlayProps> = ({
   const [progress, setProgress] = useState(18)
 
   const isPl = lang === 'pl'
-  const bgThumb = world === 'obby' ? thumbs.obby : thumbs.lobby
-  const worldTitle = world === 'obby' ? 'Test Obby 100' : isPl ? 'Lobby Główne' : 'Main Lobby'
+  const bgThumb = world === 'obby' ? thumbs.obby : world === 'arena' ? thumbs.arena : thumbs.lobby
+  const worldTitle =
+    world === 'obby' ? 'Test Obby 100' : world === 'arena' ? 'Portal Arena' : isPl ? 'Lobby Główne' : 'Main Lobby'
 
   const tip = useMemo(() => {
     const list = isPl ? TIPS_PL[world] : TIPS_EN[world]

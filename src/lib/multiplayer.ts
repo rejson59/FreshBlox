@@ -23,6 +23,7 @@ export interface RemotePlayerState {
   id: string
   username: string
   rank: string
+  clanTag?: string | null
   x: number
   y: number
   z: number
@@ -30,6 +31,9 @@ export interface RemotePlayerState {
   pose: PlayerPose
   avatar: R6AvatarConfig
   stage?: number
+  speedKmh?: number
+  isMeteor?: boolean
+  isKing?: boolean
   lastSeen: number
 }
 
@@ -42,15 +46,27 @@ export interface LobbyChatMessage {
   system?: boolean
 }
 
+export interface ArenaCustomPacket {
+  kind:
+    | 'portal_place'
+    | 'disc_throw'
+    | 'gravity_push'
+    | 'elim_notice'
+    | 'round_sync'
+    | 'meteor_hit'
+  payload: Record<string, unknown>
+}
+
 interface SyncPayload {
-  type: 'state' | 'chat' | 'leave'
+  type: 'state' | 'chat' | 'leave' | 'arena_event'
   senderId: string
   state?: RemotePlayerState
   chat?: LobbyChatMessage
+  arenaEvent?: ArenaCustomPacket
 }
 
 /**
- * Ephemeral, zero-database-write realtime multiplayer sync for Main Lobby & Test Obby 100:
+ * Ephemeral, zero-database-write realtime multiplayer sync for Main Lobby, Test Obby 100 & Portal Arena:
  * - Uses lightweight Supabase Realtime Broadcast (no Postgres INSERT/SELECT per chat message)
  * - Uses local BroadcastChannel so multiple tabs stay synced immediately
  * - Joining players start with a clean empty chat and receive only live messages sent during their session
@@ -66,6 +82,7 @@ export class LobbyMultiplayerClient {
   private onState: (p: RemotePlayerState) => void
   private onLeave: (id: string) => void
   private onChat: (msg: LobbyChatMessage) => void
+  private onArenaEvent?: (senderId: string, ev: ArenaCustomPacket) => void
 
   constructor(opts: {
     roomId: string
@@ -74,6 +91,7 @@ export class LobbyMultiplayerClient {
     onState: (p: RemotePlayerState) => void
     onLeave: (id: string) => void
     onChat: (msg: LobbyChatMessage) => void
+    onArenaEvent?: (senderId: string, ev: ArenaCustomPacket) => void
   }) {
     this.roomId = opts.roomId
     this.world = opts.world ?? 'lobby'
@@ -81,6 +99,7 @@ export class LobbyMultiplayerClient {
     this.onState = opts.onState
     this.onLeave = opts.onLeave
     this.onChat = opts.onChat
+    this.onArenaEvent = opts.onArenaEvent
   }
 
   private get channelKey() {
@@ -116,8 +135,18 @@ export class LobbyMultiplayerClient {
       this.onState({ ...data.state, lastSeen: Date.now() })
     } else if (data.type === 'chat' && data.chat) {
       this.onChat(data.chat)
+    } else if (data.type === 'arena_event' && data.arenaEvent) {
+      this.onArenaEvent?.(data.senderId, data.arenaEvent)
     } else if (data.type === 'leave') {
       this.onLeave(data.senderId)
+    }
+  }
+
+  broadcastArenaEvent(arenaEvent: ArenaCustomPacket) {
+    const payload: SyncPayload = { type: 'arena_event', senderId: this.selfId, arenaEvent }
+    this.bc?.postMessage(payload)
+    if (this.sbChannel && this.sbReady) {
+      this.sbChannel.send({ type: 'broadcast', event: 'sync', payload }).catch(() => {})
     }
   }
 

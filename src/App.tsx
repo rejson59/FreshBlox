@@ -32,6 +32,7 @@ import { getAccountRoleMeta, hasAdminAccess, usePlayerStore } from './store/useP
 import { HomeBentoView } from './components/lobby/HomeBentoView'
 import { MainLobbyWorld } from './engine/MainLobbyWorld'
 import { TestObbyWorld } from './engine/TestObbyWorld'
+import { PortalArenaWorld } from './engine/PortalArenaWorld'
 import { AvatarEditorView } from './components/avatar/AvatarEditorView'
 import { SocialProfileView } from './components/social/SocialProfileView'
 import { AdminPanelView } from './components/admin/AdminPanelView'
@@ -42,6 +43,7 @@ import { WorldTransitionOverlay } from './components/loading/WorldTransitionOver
 import { PartyBarModal } from './components/social/PartyBarModal'
 import { PrivateRoomModal } from './components/lobby/PrivateRoomModal'
 import { NotificationsPopover } from './components/hud/NotificationsPopover'
+import { AudioMixerPopover } from './components/hud/AudioMixerPopover'
 import { AuthScreen } from './components/auth/AuthScreen'
 import { FeedbackModal } from './components/feedback/FeedbackModal'
 import { fetchAdminPlatformStats, fetchWorldLiveStats } from './lib/adminApi'
@@ -56,13 +58,16 @@ import {
   isTouchMobileDevice,
 } from './lib/mobileFullscreen'
 
-type AppView = 'home' | 'world' | 'obby' | 'avatar' | 'social' | 'admin' | 'inbox' | 'tests'
+type AppView = 'home' | 'world' | 'obby' | 'arena' | 'avatar' | 'social' | 'admin' | 'inbox' | 'tests'
 
 function getInitialLaunchFromUrl(): { view: AppView; roomId: string; hasInvite: boolean } {
   if (typeof window === 'undefined') return { view: 'home', roomId: 'PUBLIC-1', hasInvite: false }
   const params = new URLSearchParams(window.location.search)
   const worldParam = params.get('world')?.toLowerCase()
   const room = params.get('room')?.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 12)
+  if (worldParam === 'arena') {
+    return { view: 'arena', roomId: room || 'ARENA-1', hasInvite: true }
+  }
   if (worldParam === 'obby') {
     return { view: 'obby', roomId: room || 'OBBY-1', hasInvite: true }
   }
@@ -151,6 +156,8 @@ export function App() {
     claimQuest,
     recordObbyStage,
     setObbyCurrentStage,
+    recordArenaProgress,
+    setClanInfo,
     buyAndEquip,
     buyBundle,
     addFriend,
@@ -204,11 +211,12 @@ export function App() {
     }
   }, [])
 
-  // Real-time presence heartbeat in Supabase (exact location: lobby / obby / launcher)
+  // Real-time presence heartbeat in Supabase (exact location: lobby / obby / arena / launcher)
   useEffect(() => {
     if (!authUser) return
-    const loc = view === 'obby' ? 'obby' : view === 'world' ? 'lobby' : 'launcher'
-    const room = view === 'world' || view === 'obby' ? activeRoomId : 'LAUNCHER'
+    const loc =
+      view === 'arena' ? 'arena' : view === 'obby' ? 'obby' : view === 'world' ? 'lobby' : 'launcher'
+    const room = view === 'world' || view === 'obby' || view === 'arena' ? activeRoomId : 'LAUNCHER'
     updatePresenceLocation(loc, room)
     const id = window.setInterval(() => {
       updatePresenceLocation(loc, room)
@@ -237,16 +245,21 @@ export function App() {
 
   // Smooth 3D world loading overlay combining L-02 + W-01 + W-02 + W-03 with real player count
   useEffect(() => {
-    if (!authUser || (view !== 'world' && view !== 'obby')) {
+    if (!authUser || (view !== 'world' && view !== 'obby' && view !== 'arena')) {
       setWorldTransition(null)
       return
     }
-    const worldKind: WorldKind = view === 'obby' ? 'obby' : 'lobby'
+    const worldKind: WorldKind = view === 'arena' ? 'arena' : view === 'obby' ? 'obby' : 'lobby'
     let alive = true
     setWorldTransition({ world: worldKind, room: activeRoomId, fading: false, onlineCount: null })
     void fetchWorldLiveStats().then((stats) => {
       if (!alive || !stats) return
-      const cnt = worldKind === 'obby' ? Math.max(1, stats.obby_online) : Math.max(1, stats.lobby_online)
+      const cnt =
+        worldKind === 'arena'
+          ? Math.max(1, stats.arena_online)
+          : worldKind === 'obby'
+            ? Math.max(1, stats.obby_online)
+            : Math.max(1, stats.lobby_online)
       setWorldTransition((prev) => (prev ? { ...prev, onlineCount: cnt } : null))
     })
     const tFade = window.setTimeout(() => {
@@ -264,7 +277,7 @@ export function App() {
 
   // Lock page scroll while inside 3D gameplay so mobile address bar / overscroll never clips HUD controls
   useEffect(() => {
-    const inGame = Boolean(authUser) && (view === 'world' || view === 'obby')
+    const inGame = Boolean(authUser) && (view === 'world' || view === 'obby' || view === 'arena')
     if (!inGame) return
     const prevBodyOverflow = document.body.style.overflow
     const prevHtmlOverflow = document.documentElement.style.overflow
@@ -341,14 +354,16 @@ export function App() {
     )
   }
 
-  const isIn3DGame = view === 'world' || view === 'obby'
+  const isIn3DGame = view === 'world' || view === 'obby' || view === 'arena'
 
   const navigateView = (nextView: AppView, roomId?: string) => {
-    const nextIs3D = nextView === 'world' || nextView === 'obby'
+    const nextIs3D = nextView === 'world' || nextView === 'obby' || nextView === 'arena'
     if (nextIs3D) {
       if (roomId) setActiveRoomId(roomId)
+      else if (nextView === 'arena' && !activeRoomId.startsWith('ARENA')) setActiveRoomId('ARENA-1')
       else if (nextView === 'obby' && !activeRoomId.startsWith('OBBY')) setActiveRoomId('OBBY-1')
-      else if (nextView === 'world' && activeRoomId.startsWith('OBBY')) setActiveRoomId('PUBLIC-1')
+      else if (nextView === 'world' && (activeRoomId.startsWith('OBBY') || activeRoomId.startsWith('ARENA')))
+        setActiveRoomId('PUBLIC-1')
 
       if (isTouchMobileDevice()) {
         enterGameFullscreenLandscape()
@@ -360,7 +375,7 @@ export function App() {
   }
 
   const handleEnterWorld = (world: WorldKind, roomId: string) => {
-    navigateView(world === 'obby' ? 'obby' : 'world', roomId)
+    navigateView(world === 'arena' ? 'arena' : world === 'obby' ? 'obby' : 'world', roomId)
   }
 
   // U-02: Party / Squad realtime session handlers
@@ -401,7 +416,13 @@ export function App() {
   }
 
   const handlePartyLaunchWorld = (world: WorldKind) => {
-    const room = partyCode ? `PTY-${partyCode.replace(/[^A-Z0-9]/g, '').slice(-4)}` : world === 'obby' ? 'OBBY-1' : 'PUBLIC-1'
+    const room = partyCode
+      ? `PTY-${partyCode.replace(/[^A-Z0-9]/g, '').slice(-4)}`
+      : world === 'arena'
+        ? 'ARENA-1'
+        : world === 'obby'
+          ? 'OBBY-1'
+          : 'PUBLIC-1'
     if (partyClientRef.current && partyIsLeader) {
       partyClientRef.current.broadcastLaunch(world, room)
     }
@@ -418,7 +439,9 @@ export function App() {
       .slice(0, 12)
     if (!clean) return
     sfx.playClick()
-    if (clean.startsWith('OBBY')) {
+    if (clean.startsWith('ARENA')) {
+      handleEnterWorld('arena', clean)
+    } else if (clean.startsWith('OBBY')) {
       handleEnterWorld('obby', clean)
     } else {
       handleEnterWorld('lobby', clean)
@@ -511,15 +534,20 @@ export function App() {
             playerId={profile.playerId}
             authUserId={authUser.id}
             username={profile.username}
+            clanTag={profile.clanTag}
             freshGems={profile.freshGems}
             xp={profile.xp}
             avatar={profile.avatar}
             unlockedOutfits={profile.unlockedOutfits}
             unlockedHats={profile.unlockedHats}
             unlockedFaces={profile.unlockedFaces}
+            unlockedTrails={profile.unlockedTrails}
+            unlockedBacks={profile.unlockedBacks}
+            unlockedPets={profile.unlockedPets}
             isFullscreen={isFullscreen}
             onBackHome={() => navigateView('home')}
             onEnterObby={() => handleEnterWorld('obby', 'OBBY-1')}
+            onEnterArena={() => handleEnterWorld('arena', 'ARENA-1')}
             onBuyAndEquip={buyAndEquip}
             onBuyBundle={buyBundle}
             onSkinChange={(hex) => updateAvatar({ skinColor: hex })}
@@ -542,12 +570,16 @@ export function App() {
             playerId={profile.playerId}
             authUserId={authUser.id}
             username={profile.username}
+            clanTag={profile.clanTag}
             freshGems={profile.freshGems}
             xp={profile.xp}
             avatar={profile.avatar}
             unlockedOutfits={profile.unlockedOutfits}
             unlockedHats={profile.unlockedHats}
             unlockedFaces={profile.unlockedFaces}
+            unlockedTrails={profile.unlockedTrails}
+            unlockedBacks={profile.unlockedBacks}
+            unlockedPets={profile.unlockedPets}
             initialStage={profile.obbyStage}
             bestStage={isStaff && labFlags.unlockAllObbyStages ? 100 : profile.obbyBestStage}
             bestTimeMs={profile.obbyBestTimeMs}
@@ -555,6 +587,7 @@ export function App() {
             isFullscreen={isFullscreen}
             onBackHome={() => navigateView('home')}
             onSwitchToLobby={() => handleEnterWorld('lobby', 'PUBLIC-1')}
+            onSwitchToArena={() => handleEnterWorld('arena', 'ARENA-1')}
             onBuyAndEquip={buyAndEquip}
             onBuyBundle={buyBundle}
             onSkinChange={(hex) => updateAvatar({ skinColor: hex })}
@@ -570,6 +603,33 @@ export function App() {
             onJumpPadUsed={() => incrementQuest('q_jumppad', 1)}
             feedbackOpen={feedbackOpen}
             onOpenFeedback={openFeedback}
+          />
+        )}
+
+        {view === 'arena' && (
+          <PortalArenaWorld
+            roomCode={activeRoomId}
+            playerId={profile.playerId}
+            username={profile.username}
+            clanTag={profile.clanTag}
+            rankName={rank.name}
+            freshGems={profile.freshGems}
+            avatar={profile.avatar}
+            unlockedOutfits={profile.unlockedOutfits}
+            unlockedHats={profile.unlockedHats}
+            unlockedFaces={profile.unlockedFaces}
+            unlockedTrails={profile.unlockedTrails}
+            unlockedBacks={profile.unlockedBacks}
+            unlockedPets={profile.unlockedPets}
+            lang={lang}
+            onBuyAndEquip={buyAndEquip}
+            onBuyBundle={buyBundle}
+            onSkinChange={(hex) => updateAvatar({ skinColor: hex })}
+            onArenaProgress={recordArenaProgress}
+            onLeave={() => navigateView('home')}
+            onSwitchToLobby={() => handleEnterWorld('lobby', 'PUBLIC-1')}
+            onSwitchToObby={() => handleEnterWorld('obby', 'OBBY-1')}
+            onOpenFeedback={() => openFeedback(`Portal Arena (${activeRoomId})`)}
           />
         )}
 
@@ -846,8 +906,11 @@ export function App() {
             </button>
           </div>
 
-          {/* Right: Notifications Bell + Theme Picker + Player Chip */}
+          {/* Right: Audio Mixer + Notifications Bell + Theme Picker + Player Chip */}
           <div className="flex shrink-0 items-center gap-1.5">
+            {/* A-04: Audio 2.0 Mixer Popover */}
+            <AudioMixerPopover lang={lang} />
+
             {/* U-14: Notifications Center Bell */}
             <button
               type="button"
@@ -930,7 +993,9 @@ export function App() {
               ) : (
                 <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
               )}
-              <span className="max-w-[84px] sm:max-w-[120px] truncate">{profile.username}</span>
+              <span className="max-w-[84px] sm:max-w-[140px] truncate">
+                {profile.clanTag ? `[${profile.clanTag}] ${profile.username}` : profile.username}
+              </span>
               {profile.role !== 'player' && (
                 <span
                   className="hidden md:inline-flex items-center rounded-md border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider"
@@ -1009,6 +1074,7 @@ export function App() {
               initialDmUsername={initialDmUsername}
               onConsumedInitialDm={() => setInitialDmUsername(null)}
               onPinBadge={setPinnedBadge}
+              onClanChanged={setClanInfo}
               onChangeUsername={setUsername}
               onAddFriend={addFriend}
               onRefreshFriends={refreshFriends}

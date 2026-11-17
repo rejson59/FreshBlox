@@ -19,13 +19,39 @@ export type HatId =
   | 'arctic-crown'
   | 'obby-crown'
 
-export type WorldKind = 'lobby' | 'obby'
+export type TrailId =
+  | 'none'
+  | 'arctic-sparks'
+  | 'portal-duality'
+  | 'neon-comet'
+  | 'emerald-pulse'
+  | 'golden-meteor'
+
+export type BackId =
+  | 'none'
+  | 'crystal-wings'
+  | 'portal-jetpack'
+  | 'arctic-backpack'
+  | 'cyber-cape'
+  | 'solar-halo-wings'
+
+export type PetId =
+  | 'none'
+  | 'frost-cube'
+  | 'portal-drone'
+  | 'star-owl'
+  | 'plasma-orb'
+
+export type WorldKind = 'lobby' | 'obby' | 'arena'
 
 export interface R6AvatarConfig {
   outfitId: OutfitId
   faceId: FaceId
   hatId: HatId
   skinColor: string
+  trailId?: TrailId
+  backId?: BackId
+  petId?: PetId
 }
 
 export interface CatalogItem<T extends string> {
@@ -37,7 +63,7 @@ export interface CatalogItem<T extends string> {
   price: number
   accent: string
   /** Optional milestone-only unlock (cannot be purchased with FreshGems) */
-  rewardOnly?: 'obby100'
+  rewardOnly?: 'obby100' | 'arenaWin' | 'arenaMeteor'
   rewardLabelPl?: string
   rewardLabelEn?: string
 }
@@ -225,6 +251,174 @@ export const SKIN_SWATCHES = [
   { hex: '#E0F2FE', namePl: 'Lodowy Duch', nameEn: 'Frost Spirit' },
 ]
 
+export const TRAIL_CATALOG: CatalogItem<TrailId>[] = [
+  {
+    id: 'none',
+    namePl: 'Brak śladu',
+    nameEn: 'No Trail',
+    descPl: 'Czysty krok bez efektów cząsteczkowych.',
+    descEn: 'Clean footsteps without particle trails.',
+    price: 0,
+    accent: '#94A3B8',
+  },
+  {
+    id: 'arctic-sparks',
+    namePl: 'Arktyczne Iskry',
+    nameEn: 'Arctic Sparks',
+    descPl: 'Błękitne kryształki lodu unoszące się za Twoimi krokami.',
+    descEn: 'Sky-blue frost sparks drifting behind your steps.',
+    price: 0,
+    accent: '#38BDF8',
+  },
+  {
+    id: 'portal-duality',
+    namePl: 'Dualizm Portalu',
+    nameEn: 'Portal Duality',
+    descPl: 'Naprzemienny ślad energetyczny Błękit ↔ Pomarańcz z Portal Arena.',
+    descEn: 'Alternating Cyan ↔ Orange portal energy ribbon.',
+    price: 0,
+    accent: '#F97316',
+  },
+  {
+    id: 'neon-comet',
+    namePl: 'Neonowa Kometa',
+    nameEn: 'Neon Comet',
+    descPl: 'Fioletowo-różowa smuga kwantowa jak w hyper-speed!',
+    descEn: 'Violet-magenta quantum trail built for hyper-speed!',
+    price: 0,
+    accent: '#C084FC',
+  },
+  {
+    id: 'emerald-pulse',
+    namePl: 'Szmaragdowy Impuls',
+    nameEn: 'Emerald Pulse',
+    descPl: 'Świecący szmaragdowy szlak energetyczny w 3D.',
+    descEn: 'Glowing 3D emerald kinetic particles.',
+    price: 0,
+    accent: '#10B981',
+  },
+  {
+    id: 'golden-meteor',
+    namePl: 'Złoty Meteoryt',
+    nameEn: 'Golden Meteor',
+    descPl: 'Płonący złoty szlak za osiągnięcie 100 km/h lub wygraną w Portal Arena.',
+    descEn: 'Blazing golden meteor trail earned by hitting 100 km/h or winning in Portal Arena.',
+    price: 0,
+    accent: '#FACC15',
+    rewardOnly: 'arenaMeteor',
+    rewardLabelPl: 'Nagroda: Meteoryt 100 km/h',
+    rewardLabelEn: 'Reward: 100 km/h Meteor',
+  },
+]
+
+export const BACK_CATALOG: CatalogItem<BackId>[] = [
+  {
+    id: 'none',
+    namePl: 'Brak dodatku',
+    nameEn: 'No Back Item',
+    descPl: 'Czyste plecy awatara.',
+    descEn: 'Clean avatar back silhouette.',
+    price: 0,
+    accent: '#94A3B8',
+  },
+  {
+    id: 'crystal-wings',
+    namePl: 'Kryształowe Skrzydła',
+    nameEn: 'Crystal Wings',
+    descPl: 'Animowane półprzezroczyste skrzydła z błękitnego kryształu.',
+    descEn: 'Animated translucent sky-crystal wings.',
+    price: 0,
+    accent: '#38BDF8',
+  },
+  {
+    id: 'portal-jetpack',
+    namePl: 'Plecak Portalowy',
+    nameEn: 'Portal Jetpack',
+    descPl: 'Podwójny reaktor grawitacyjny (Cyan + Orange) z Portal Arena.',
+    descEn: 'Dual Cyan + Orange gravity thruster pack from Portal Arena.',
+    price: 0,
+    accent: '#FB923C',
+  },
+  {
+    id: 'arctic-backpack',
+    namePl: 'Plecak Odkrywcy',
+    nameEn: 'Arctic Explorer Pack',
+    descPl: 'Lekki sportowy plecak z kryształową klamrą FreshBlox.',
+    descEn: 'Sleek explorer backpack with crystal FreshBlox clasp.',
+    price: 0,
+    accent: '#0EA5E9',
+  },
+  {
+    id: 'cyber-cape',
+    namePl: 'Kwantowa Peleryna',
+    nameEn: 'Quantum Cape',
+    descPl: 'Nowoczesna wielosegmentowa peleryna reagująca na bieg.',
+    descEn: 'Segmented futuristic cape that reacts to your sprint.',
+    price: 0,
+    accent: '#818CF8',
+  },
+  {
+    id: 'solar-halo-wings',
+    namePl: 'Skrzydła Mistrza Areny',
+    nameEn: 'Arena Champion Wings',
+    descPl: 'Złoto-platynowe skrzydła odblokowywane za zwycięstwo w Portal Arena!',
+    descEn: 'Gold-platinum wings unlocked by winning a round in Portal Arena!',
+    price: 0,
+    accent: '#F59E0B',
+    rewardOnly: 'arenaWin',
+    rewardLabelPl: 'Nagroda: Wygrana Areny',
+    rewardLabelEn: 'Reward: Arena Victory',
+  },
+]
+
+export const PET_CATALOG: CatalogItem<PetId>[] = [
+  {
+    id: 'none',
+    namePl: 'Brak kompana',
+    nameEn: 'No Pet',
+    descPl: 'Podróżujesz solo bez latającego kompana.',
+    descEn: 'Explore solo without a floating companion.',
+    price: 0,
+    accent: '#94A3B8',
+  },
+  {
+    id: 'frost-cube',
+    namePl: 'Frosty Cube',
+    nameEn: 'Frosty Cube',
+    descPl: 'Urocza lewitująca kostka lodu z wielkimi błyszczącymi oczami!',
+    descEn: 'Adorable levitating ice-cube buddy with bright glossy eyes!',
+    price: 0,
+    accent: '#38BDF8',
+  },
+  {
+    id: 'portal-drone',
+    namePl: 'Dron Portalowy',
+    nameEn: 'Portal Drone',
+    descPl: 'Miniaturowa sfera z pierścieniem Cyan/Orange krążąca przy ramieniu.',
+    descEn: 'Miniature Cyan/Orange portal sphere hovering beside your shoulder.',
+    price: 0,
+    accent: '#F97316',
+  },
+  {
+    id: 'star-owl',
+    namePl: 'Gwiezdna Sowa',
+    nameEn: 'Starlight Owl',
+    descPl: 'Klockowa sówka z machającymi skrzydełkami i złotymi oczkami.',
+    descEn: 'Blocky owl companion with flapping wings and golden eyes.',
+    price: 0,
+    accent: '#FACC15',
+  },
+  {
+    id: 'plasma-orb',
+    namePl: 'Plazmowy Kometek',
+    nameEn: 'Plasma Comet',
+    descPl: 'Orbitujący kryształ plazmy z dwoma pierścieniami grawitacji.',
+    descEn: 'Orbiting plasma crystal surrounded by twin gravity rings.',
+    price: 0,
+    accent: '#C084FC',
+  },
+]
+
 export interface QuestDef {
   id: 'q_obby' | 'q_chat' | 'q_emote' | 'q_tower' | 'q_jumppad'
   titlePl: string
@@ -335,6 +529,22 @@ export const BADGE_CATALOG: BadgeDef[] = [
     descEn: 'Climbed all the way to the Sky Observation Terrace.',
     icon: '🏔️',
   },
+  {
+    id: 'arena_meteor',
+    namePl: 'Ludzki Meteoryt',
+    nameEn: 'Human Meteor',
+    descPl: 'Osiągnięto ponad 100 km/h i wyeliminowano rywala pędem w Portal Arena!',
+    descEn: 'Hit 100+ km/h and eliminated a rival with momentum in Portal Arena!',
+    icon: '☄️',
+  },
+  {
+    id: 'arena_winner',
+    namePl: 'Władca Portali',
+    nameEn: 'Portal Sovereign',
+    descPl: 'Wygrano rundę w Portal Arena bez ani jednego karabinu!',
+    descEn: 'Won a match in Portal Arena using pure portals and physics!',
+    icon: '🌀',
+  },
 ]
 
 export interface SeasonRank {
@@ -422,18 +632,18 @@ export const LOBBY_ROOMS: LobbyRoomCard[] = [
     gradient: 'linear-gradient(135deg, #0284C7 0%, #0EA5E9 55%, #BAE6FD 100%)',
   },
   {
-    id: 'SOON-ARENA',
-    code: 'ARENA',
-    world: 'lobby',
-    titlePl: 'Crystal Arena (Mini-Gry)',
-    titleEn: 'Crystal Arena (Mini-Games)',
-    tagPl: 'Rywalizacja • Portal',
-    tagEn: 'Competitive • Portal',
+    id: 'ARENA-1',
+    code: 'ARENA-1',
+    world: 'arena',
+    titlePl: 'Portal Arena — Fizyka & Portale',
+    titleEn: 'Portal Arena — Physics & Portals',
+    tagPl: 'PvP • Portale • Zero Broni',
+    tagEn: 'PvP • Portals • Zero Guns',
     players: 0,
-    maxPlayers: 20,
-    rating: '—',
-    pingMs: 18,
-    status: 'soon',
-    gradient: 'linear-gradient(135deg, #1E3A8A 0%, #2563EB 55%, #93C5FD 100%)',
+    maxPlayers: 16,
+    rating: 'NEW',
+    pingMs: 11,
+    status: 'live',
+    gradient: 'linear-gradient(135deg, #0E7490 0%, #22D3EE 48%, #F97316 100%)',
   },
 ]

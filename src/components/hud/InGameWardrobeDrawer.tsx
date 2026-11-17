@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react'
 import {
+  Bot,
   Check,
   Crown,
   Eye,
+  Feather,
   Hand,
   Lock,
   Music,
@@ -17,6 +19,8 @@ import {
   X,
 } from 'lucide-react'
 import {
+  BACK_CATALOG,
+  BackId,
   CatalogItem,
   FACE_CATALOG,
   FaceId,
@@ -25,15 +29,19 @@ import {
   HatId,
   OUTFIT_CATALOG,
   OutfitId,
+  PET_CATALOG,
+  PetId,
   R6AvatarConfig,
   SKIN_SWATCHES,
+  TRAIL_CATALOG,
+  TrailId,
 } from '../../data/catalog'
 import { Lang, LOCALES } from '../../data/locales'
 import { PlayerPose } from '../../lib/multiplayer'
 import { sfx } from '../../lib/sfx'
 import { FreshGemShard } from '../brand/FreshBloxBrand'
 
-type TabId = 'outfits' | 'hats' | 'faces' | 'skin'
+type TabId = 'outfits' | 'hats' | 'faces' | 'backs' | 'pets' | 'trails' | 'skin'
 
 const OUTFIT_SWATCHES: Record<OutfitId, { torso: string; arms: string; legs: string }> = {
   'fresh-creator': { torso: '#0EA5E9', arms: '#38BDF8', legs: '#1E3A8A' },
@@ -52,8 +60,15 @@ interface InGameWardrobeDrawerProps {
   unlockedOutfits: OutfitId[]
   unlockedHats: HatId[]
   unlockedFaces: FaceId[]
+  unlockedBacks?: BackId[]
+  unlockedPets?: PetId[]
+  unlockedTrails?: TrailId[]
   onPreviewChange: (next: R6AvatarConfig) => void
-  onBuyAndEquip: (category: 'outfit' | 'hat' | 'face', itemId: string, price: number) => boolean
+  onBuyAndEquip: (
+    category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet',
+    itemId: string,
+    price: number,
+  ) => boolean
   onBuyBundle: (items: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; price: number }>) => boolean
   onSkinChange: (hex: string) => void
   onTestEmote: (pose: PlayerPose) => void
@@ -68,6 +83,9 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
   unlockedOutfits,
   unlockedHats,
   unlockedFaces,
+  unlockedBacks = BACK_CATALOG.filter((b) => !b.rewardOnly && b.price === 0).map((b) => b.id),
+  unlockedPets = PET_CATALOG.filter((p) => !p.rewardOnly && p.price === 0).map((p) => p.id),
+  unlockedTrails = TRAIL_CATALOG.filter((t) => !t.rewardOnly && t.price === 0).map((t) => t.id),
   onPreviewChange,
   onBuyAndEquip,
   onBuyBundle,
@@ -81,10 +99,10 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
 
   const triedUnowned = useMemo(() => {
     const list: Array<{
-      category: 'outfit' | 'hat' | 'face'
+      category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet'
       id: string
       price: number
-      rewardOnly?: 'obby100'
+      rewardOnly?: 'obby100' | 'arenaWin' | 'arenaMeteor'
     }> = []
     if (!unlockedOutfits.includes(previewAvatar.outfitId)) {
       const it = OUTFIT_CATALOG.find((x) => x.id === previewAvatar.outfitId)
@@ -98,20 +116,49 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
       const it = FACE_CATALOG.find((x) => x.id === previewAvatar.faceId)
       if (it) list.push({ category: 'face', id: it.id, price: it.price, rewardOnly: it.rewardOnly })
     }
+    const bId = (previewAvatar.backId ?? 'none') as BackId
+    if (!unlockedBacks.includes(bId)) {
+      const it = BACK_CATALOG.find((x) => x.id === bId)
+      if (it) list.push({ category: 'back', id: it.id, price: it.price, rewardOnly: it.rewardOnly })
+    }
+    const tId = (previewAvatar.trailId ?? 'none') as TrailId
+    if (!unlockedTrails.includes(tId)) {
+      const it = TRAIL_CATALOG.find((x) => x.id === tId)
+      if (it) list.push({ category: 'trail', id: it.id, price: it.price, rewardOnly: it.rewardOnly })
+    }
+    const pId = (previewAvatar.petId ?? 'none') as PetId
+    if (!unlockedPets.includes(pId)) {
+      const it = PET_CATALOG.find((x) => x.id === pId)
+      if (it) list.push({ category: 'pet', id: it.id, price: it.price, rewardOnly: it.rewardOnly })
+    }
     return list
-  }, [previewAvatar, unlockedOutfits, unlockedHats, unlockedFaces])
+  }, [previewAvatar, unlockedOutfits, unlockedHats, unlockedFaces, unlockedBacks, unlockedTrails, unlockedPets])
 
-  const purchasableTried = useMemo(() => triedUnowned.filter((i) => !i.rewardOnly), [triedUnowned])
+  const purchasableTried = useMemo(
+    () =>
+      triedUnowned.filter(
+        (i): i is { category: 'outfit' | 'hat' | 'face'; id: string; price: number } =>
+          !i.rewardOnly && (i.category === 'outfit' || i.category === 'hat' || i.category === 'face'),
+      ),
+    [triedUnowned],
+  )
   const hasRewardOnlyTried = useMemo(() => triedUnowned.some((i) => Boolean(i.rewardOnly)), [triedUnowned])
   const totalTryOnPrice = useMemo(() => purchasableTried.reduce((s, i) => s + i.price, 0), [purchasableTried])
 
-  const handleCardSelect = (category: 'outfit' | 'hat' | 'face', itemId: string, isOwned: boolean) => {
+  const handleCardSelect = (
+    category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet',
+    itemId: string,
+    isOwned: boolean,
+  ) => {
     sfx.playClick()
     const next: R6AvatarConfig = {
       ...previewAvatar,
       ...(category === 'outfit' ? { outfitId: itemId as OutfitId } : {}),
       ...(category === 'hat' ? { hatId: itemId as HatId } : {}),
       ...(category === 'face' ? { faceId: itemId as FaceId } : {}),
+      ...(category === 'back' ? { backId: itemId as BackId } : {}),
+      ...(category === 'trail' ? { trailId: itemId as TrailId } : {}),
+      ...(category === 'pet' ? { petId: itemId as PetId } : {}),
     }
     onPreviewChange(next)
     if (isOwned) {
@@ -121,7 +168,7 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
 
   const handleBuySingle = (
     e: React.MouseEvent,
-    category: 'outfit' | 'hat' | 'face',
+    category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet',
     itemId: string,
     price: number,
   ) => {
@@ -134,6 +181,9 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
         ...(category === 'outfit' ? { outfitId: itemId as OutfitId } : {}),
         ...(category === 'hat' ? { hatId: itemId as HatId } : {}),
         ...(category === 'face' ? { faceId: itemId as FaceId } : {}),
+        ...(category === 'back' ? { backId: itemId as BackId } : {}),
+        ...(category === 'trail' ? { trailId: itemId as TrailId } : {}),
+        ...(category === 'pet' ? { petId: itemId as PetId } : {}),
       })
     }
   }
@@ -149,6 +199,9 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
     { id: 'outfits', label: t.tabs.outfits, icon: Shirt },
     { id: 'hats', label: t.tabs.hats, icon: Crown },
     { id: 'faces', label: t.tabs.faces, icon: Smile },
+    { id: 'backs', label: lang === 'pl' ? 'Skrzydła & Plecaki' : 'Wings & Backs', icon: Feather },
+    { id: 'pets', label: lang === 'pl' ? 'Pety 3D' : '3D Pets', icon: Bot },
+    { id: 'trails', label: lang === 'pl' ? 'Ślady stóp' : 'Trails', icon: Sparkles },
     { id: 'skin', label: t.tabs.skin, icon: Palette },
   ]
 
@@ -160,7 +213,7 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
   ]
 
   const renderGrid = <T extends string>(
-    category: 'outfit' | 'hat' | 'face',
+    category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet',
     items: CatalogItem<T>[],
     unlocked: T[],
     equippedOwnedId: T,
@@ -240,6 +293,12 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
                 >
                   {category === 'hat' ? (
                     <Crown className="h-4.5 w-4.5 text-white" />
+                  ) : category === 'back' ? (
+                    <Feather className="h-4.5 w-4.5 text-white" />
+                  ) : category === 'pet' ? (
+                    <Bot className="h-4.5 w-4.5 text-white" />
+                  ) : category === 'trail' ? (
+                    <Sparkles className="h-4.5 w-4.5 text-white" />
                   ) : (
                     <Smile className="h-4.5 w-4.5 text-white" />
                   )}
@@ -313,7 +372,7 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
       </div>
 
       {/* Icon-Only Category Tabs */}
-      <div className="grid shrink-0 grid-cols-4 gap-1 border-b border-white/10 bg-slate-950/50 p-1.5">
+      <div className="grid shrink-0 grid-cols-7 gap-1 border-b border-white/10 bg-slate-950/50 p-1.5">
         {tabs.map((tb) => {
           const Icon = tb.icon
           const active = tab === tb.id
@@ -345,6 +404,30 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
           renderGrid('hat', HAT_CATALOG, unlockedHats, ownedAvatar.hatId, previewAvatar.hatId)}
         {tab === 'faces' &&
           renderGrid('face', FACE_CATALOG, unlockedFaces, ownedAvatar.faceId, previewAvatar.faceId)}
+        {tab === 'backs' &&
+          renderGrid(
+            'back',
+            BACK_CATALOG,
+            unlockedBacks,
+            (ownedAvatar.backId ?? 'none') as BackId,
+            (previewAvatar.backId ?? 'none') as BackId,
+          )}
+        {tab === 'pets' &&
+          renderGrid(
+            'pet',
+            PET_CATALOG,
+            unlockedPets,
+            (ownedAvatar.petId ?? 'none') as PetId,
+            (previewAvatar.petId ?? 'none') as PetId,
+          )}
+        {tab === 'trails' &&
+          renderGrid(
+            'trail',
+            TRAIL_CATALOG,
+            unlockedTrails,
+            (ownedAvatar.trailId ?? 'none') as TrailId,
+            (previewAvatar.trailId ?? 'none') as TrailId,
+          )}
         {tab === 'skin' && (
           <div className="grid grid-cols-4 gap-2">
             {SKIN_SWATCHES.map((sw) => {

@@ -188,17 +188,17 @@ export const PartyBarModal: React.FC<PartyBarModalProps> = ({
                       ? 'Uruchom grę — cała drużyna wejdzie razem do tego samego pokoju:'
                       : 'Launch a world — everyone in your party joins together:'}
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
                       onClick={() => {
                         onLaunchWorld('lobby')
                         onClose()
                       }}
-                      className="flex items-center justify-center gap-1.5 rounded-xl bg-sky-500 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-sky-400 cursor-pointer"
+                      className="flex items-center justify-center gap-1 rounded-xl bg-sky-500 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-sky-400 cursor-pointer"
                     >
                       <Play className="h-3.5 w-3.5 fill-slate-950" />
-                      {isPl ? 'Lobby Główne' : 'Main Lobby'}
+                      Lobby
                     </button>
                     <button
                       type="button"
@@ -206,10 +206,21 @@ export const PartyBarModal: React.FC<PartyBarModalProps> = ({
                         onLaunchWorld('obby')
                         onClose()
                       }}
-                      className="flex items-center justify-center gap-1.5 rounded-xl bg-amber-400 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-amber-300 cursor-pointer"
+                      className="flex items-center justify-center gap-1 rounded-xl bg-amber-400 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-amber-300 cursor-pointer"
                     >
                       <Play className="h-3.5 w-3.5 fill-slate-950" />
-                      Test Obby 100
+                      Obby 100
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onLaunchWorld('arena')
+                        onClose()
+                      }}
+                      className="flex items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-cyan-400 to-orange-400 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-110 cursor-pointer"
+                    >
+                      <Play className="h-3.5 w-3.5 fill-slate-950" />
+                      Arena
                     </button>
                   </div>
                 </div>

@@ -4,9 +4,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import {
   Bookmark,
+  Bot,
   Check,
   Crown,
   Eye,
+  Feather,
   Lock,
   Moon,
   Palette,
@@ -16,6 +18,7 @@ import {
   Shirt,
   ShoppingBag,
   Smile,
+  Sparkles,
   Sun,
   Trash2,
   Trophy,
@@ -23,14 +26,20 @@ import {
 import { ARCTIC_SKY, getThemeTokens, ThemeMode } from '../../data/brandTheme'
 import { Lang, LOCALES } from '../../data/locales'
 import {
+  BACK_CATALOG,
+  BackId,
   CatalogItem,
   FACE_CATALOG,
   GEMS_SYSTEM_IN_PROGRESS,
   HAT_CATALOG,
   OUTFIT_CATALOG,
   OutfitId,
+  PET_CATALOG,
+  PetId,
   R6AvatarConfig,
   SKIN_SWATCHES,
+  TRAIL_CATALOG,
+  TrailId,
 } from '../../data/catalog'
 import { PlayerProfile } from '../../store/usePlayerStore'
 import { FreshGemShard } from '../brand/FreshBloxBrand'
@@ -43,7 +52,11 @@ interface AvatarEditorViewProps {
   profile: PlayerProfile
   mode: ThemeMode
   lang: Lang
-  onBuyAndEquip: (category: 'outfit' | 'hat' | 'face', itemId: string, price: number) => boolean
+  onBuyAndEquip: (
+    category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet',
+    itemId: string,
+    price: number,
+  ) => boolean
   onBuyBundle: (items: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; price: number }>) => boolean
   onSkinChange: (hex: string) => void
   onSaveOutfitSlot?: (slot: number, name: string, avatar: R6AvatarConfig) => void
@@ -52,7 +65,7 @@ interface AvatarEditorViewProps {
   onEnterLobby: () => void
 }
 
-type EditorTab = 'outfits' | 'hats' | 'faces' | 'skin' | 'presets'
+type EditorTab = 'outfits' | 'hats' | 'faces' | 'backs' | 'pets' | 'trails' | 'skin' | 'presets'
 type StudioLighting = 'day' | 'night'
 
 const OUTFIT_SWATCHES: Record<OutfitId, { torso: string; arms: string; legs: string }> = {
@@ -107,11 +120,11 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
   // Compute unowned items currently being tried on
   const triedUnowned = useMemo(() => {
     const list: Array<{
-      category: 'outfit' | 'hat' | 'face'
+      category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet'
       id: string
       name: string
       price: number
-      rewardOnly?: 'obby100'
+      rewardOnly?: 'obby100' | 'arenaWin' | 'arenaMeteor'
     }> = []
 
     if (!profile.unlockedOutfits.includes(previewAvatar.outfitId)) {
@@ -147,10 +160,62 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
           rewardOnly: it.rewardOnly,
         })
     }
+    const backId = (previewAvatar.backId ?? 'none') as BackId
+    if (!profile.unlockedBacks.includes(backId)) {
+      const it = BACK_CATALOG.find((x) => x.id === backId)
+      if (it)
+        list.push({
+          category: 'back',
+          id: it.id,
+          name: lang === 'pl' ? it.namePl : it.nameEn,
+          price: it.price,
+          rewardOnly: it.rewardOnly,
+        })
+    }
+    const trailId = (previewAvatar.trailId ?? 'none') as TrailId
+    if (!profile.unlockedTrails.includes(trailId)) {
+      const it = TRAIL_CATALOG.find((x) => x.id === trailId)
+      if (it)
+        list.push({
+          category: 'trail',
+          id: it.id,
+          name: lang === 'pl' ? it.namePl : it.nameEn,
+          price: it.price,
+          rewardOnly: it.rewardOnly,
+        })
+    }
+    const petId = (previewAvatar.petId ?? 'none') as PetId
+    if (!profile.unlockedPets.includes(petId)) {
+      const it = PET_CATALOG.find((x) => x.id === petId)
+      if (it)
+        list.push({
+          category: 'pet',
+          id: it.id,
+          name: lang === 'pl' ? it.namePl : it.nameEn,
+          price: it.price,
+          rewardOnly: it.rewardOnly,
+        })
+    }
     return list
-  }, [previewAvatar, profile.unlockedOutfits, profile.unlockedHats, profile.unlockedFaces, lang])
+  }, [
+    previewAvatar,
+    profile.unlockedOutfits,
+    profile.unlockedHats,
+    profile.unlockedFaces,
+    profile.unlockedBacks,
+    profile.unlockedTrails,
+    profile.unlockedPets,
+    lang,
+  ])
 
-  const purchasableTried = useMemo(() => triedUnowned.filter((i) => !i.rewardOnly), [triedUnowned])
+  const purchasableTried = useMemo(
+    () =>
+      triedUnowned.filter(
+        (i): i is { category: 'outfit' | 'hat' | 'face'; id: string; name: string; price: number } =>
+          !i.rewardOnly && (i.category === 'outfit' || i.category === 'hat' || i.category === 'face'),
+      ),
+    [triedUnowned],
+  )
   const hasRewardOnlyTried = useMemo(() => triedUnowned.some((i) => Boolean(i.rewardOnly)), [triedUnowned])
   const totalTryOnPrice = useMemo(() => purchasableTried.reduce((acc, i) => acc + i.price, 0), [purchasableTried])
 
@@ -481,11 +546,18 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
   const t = LOCALES[lang].avatar
   const tokens = getThemeTokens(mode)
 
-  const handleCardClick = (category: 'outfit' | 'hat' | 'face', itemId: string, isOwned: boolean) => {
+  const handleCardClick = (
+    category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet',
+    itemId: string,
+    isOwned: boolean,
+  ) => {
     sfx.playClick()
     if (category === 'outfit') setPreviewAvatar((p) => ({ ...p, outfitId: itemId as OutfitId }))
     if (category === 'hat') setPreviewAvatar((p) => ({ ...p, hatId: itemId as R6AvatarConfig['hatId'] }))
     if (category === 'face') setPreviewAvatar((p) => ({ ...p, faceId: itemId as R6AvatarConfig['faceId'] }))
+    if (category === 'back') setPreviewAvatar((p) => ({ ...p, backId: itemId as BackId }))
+    if (category === 'trail') setPreviewAvatar((p) => ({ ...p, trailId: itemId as TrailId }))
+    if (category === 'pet') setPreviewAvatar((p) => ({ ...p, petId: itemId as PetId }))
 
     if (isOwned) {
       onBuyAndEquip(category, itemId, 0)
@@ -494,7 +566,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
 
   const handleBuyItem = (
     e: React.MouseEvent,
-    category: 'outfit' | 'hat' | 'face',
+    category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet',
     itemId: string,
     price: number,
   ) => {
@@ -506,6 +578,9 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
       if (category === 'outfit') setPreviewAvatar((p) => ({ ...p, outfitId: itemId as OutfitId }))
       if (category === 'hat') setPreviewAvatar((p) => ({ ...p, hatId: itemId as R6AvatarConfig['hatId'] }))
       if (category === 'face') setPreviewAvatar((p) => ({ ...p, faceId: itemId as R6AvatarConfig['faceId'] }))
+      if (category === 'back') setPreviewAvatar((p) => ({ ...p, backId: itemId as BackId }))
+      if (category === 'trail') setPreviewAvatar((p) => ({ ...p, trailId: itemId as TrailId }))
+      if (category === 'pet') setPreviewAvatar((p) => ({ ...p, petId: itemId as PetId }))
     }
   }
 
@@ -524,12 +599,15 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
     { id: 'outfits', label: t.tabs.outfits, icon: Shirt },
     { id: 'hats', label: t.tabs.hats, icon: Crown },
     { id: 'faces', label: t.tabs.faces, icon: Smile },
+    { id: 'backs', label: lang === 'pl' ? 'Skrzydła & Plecaki 3D' : '3D Wings & Backs', icon: Feather },
+    { id: 'pets', label: lang === 'pl' ? 'Pety 3D (Kompani)' : '3D Companion Pets', icon: Bot },
+    { id: 'trails', label: lang === 'pl' ? 'Ślady stóp 3D' : '3D Footstep Trails', icon: Sparkles },
     { id: 'skin', label: t.tabs.skin, icon: Palette },
     { id: 'presets', label: lang === 'pl' ? 'Zapisane zestawy (5)' : 'Saved Outfits (5)', icon: Bookmark },
   ]
 
   const renderCatalogGrid = <T extends string>(
-    category: 'outfit' | 'hat' | 'face',
+    category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet',
     items: CatalogItem<T>[],
     unlocked: T[],
     equippedOwnedId: T,
@@ -590,6 +668,12 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
                 >
                   {category === 'hat' ? (
                     <Crown className="h-5 w-5 text-white drop-shadow" />
+                  ) : category === 'back' ? (
+                    <Feather className="h-5 w-5 text-white drop-shadow" />
+                  ) : category === 'pet' ? (
+                    <Bot className="h-5 w-5 text-white drop-shadow" />
+                  ) : category === 'trail' ? (
+                    <Sparkles className="h-5 w-5 text-white drop-shadow" />
                   ) : (
                     <Smile className="h-5 w-5 text-white drop-shadow" />
                   )}
@@ -619,11 +703,19 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
                     </span>
                   ) : isOwned ? null : isRewardOnly ? (
                     <span
-                      title={lang === 'pl' ? 'Nagroda za Stage 100 w Obby' : 'Stage 100 Obby Reward'}
+                      title={
+                        item.id === 'golden-meteor' || item.id === 'solar-halo-wings'
+                          ? lang === 'pl'
+                            ? 'Nagroda za grę w Portal Arena'
+                            : 'Portal Arena Reward'
+                          : lang === 'pl'
+                            ? 'Nagroda za Stage 100 w Obby'
+                            : 'Stage 100 Obby Reward'
+                      }
                       className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-amber-400/45 bg-amber-500/18 px-2 py-0.5 font-mono text-[10px] font-extrabold text-amber-300"
                     >
                       <Trophy className="h-3 w-3" />
-                      100
+                      {item.id === 'golden-meteor' || item.id === 'solar-halo-wings' ? 'ARENA' : '100'}
                     </span>
                   ) : GEMS_SYSTEM_IN_PROGRESS ? (
                     <span
@@ -840,8 +932,8 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
           className="min-w-0 flex flex-col rounded-3xl border p-4 sm:p-5 backdrop-blur-md lg:col-span-7"
           style={{ background: tokens.cardBg, borderColor: tokens.cardBorder }}
         >
-          <div className="mb-4 flex items-center justify-between gap-2.5">
-            <div className="grid grid-cols-5 gap-1.5 rounded-2xl border p-1" style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg }}>
+          <div className="mb-4 flex items-center justify-between gap-2.5 flex-wrap">
+            <div className="flex flex-wrap gap-1 rounded-2xl border p-1" style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg }}>
               {tabs.map((tb) => {
                 const Icon = tb.icon
                 const active = tab === tb.id
@@ -852,7 +944,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
                     title={tb.label}
                     aria-label={tb.label}
                     onClick={() => setTab(tb.id)}
-                    className="flex h-9 w-10 sm:w-12 items-center justify-center rounded-xl transition cursor-pointer"
+                    className="flex h-9 w-9 sm:w-10 items-center justify-center rounded-xl transition cursor-pointer"
                     style={{
                       background: active ? tokens.buttonGradient : 'transparent',
                       color: active ? '#FFFFFF' : tokens.textSecondary,
@@ -902,6 +994,30 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
                 profile.unlockedFaces,
                 profile.avatar.faceId,
                 previewAvatar.faceId,
+              )}
+            {tab === 'backs' &&
+              renderCatalogGrid(
+                'back',
+                BACK_CATALOG,
+                profile.unlockedBacks,
+                (profile.avatar.backId ?? 'none') as BackId,
+                (previewAvatar.backId ?? 'none') as BackId,
+              )}
+            {tab === 'pets' &&
+              renderCatalogGrid(
+                'pet',
+                PET_CATALOG,
+                profile.unlockedPets,
+                (profile.avatar.petId ?? 'none') as PetId,
+                (previewAvatar.petId ?? 'none') as PetId,
+              )}
+            {tab === 'trails' &&
+              renderCatalogGrid(
+                'trail',
+                TRAIL_CATALOG,
+                profile.unlockedTrails,
+                (profile.avatar.trailId ?? 'none') as TrailId,
+                (previewAvatar.trailId ?? 'none') as TrailId,
               )}
             {tab === 'skin' && (
               <div className="grid gap-3 sm:grid-cols-3">
