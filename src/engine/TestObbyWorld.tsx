@@ -48,8 +48,10 @@ import { MobileTouchControls } from '../components/hud/MobileTouchControls'
 import { InGameWardrobeDrawer } from '../components/hud/InGameWardrobeDrawer'
 import { InGameMenuDrawer, MenuDrawerTab } from '../components/hud/InGameMenuDrawer'
 import { ShortcutsOverlayModal } from '../components/hud/ShortcutsOverlayModal'
+import { EmoteRadialWheel } from '../components/hud/EmoteRadialWheel'
 import { GameChatBox } from '../components/hud/GameChatBox'
 import { FreshBloxLogo } from '../components/brand/FreshBloxBrand'
+import { formatSpeedrunTime } from '../lib/socialApi'
 import {
   enterGameFullscreenLandscape,
   exitGameFullscreen,
@@ -111,6 +113,7 @@ interface TestObbyWorldProps {
   unlockedFaces: FaceId[]
   initialStage: number
   bestStage: number
+  bestTimeMs?: number | null
   completions: number
   isFullscreen: boolean
   onBackHome: () => void
@@ -199,11 +202,53 @@ function makeConveyorArrowTexture(dir: 'fwd' | 'back' | 'left' | 'right'): THREE
   return tex
 }
 
+interface GhostSample {
+  t: number
+  x: number
+  y: number
+  z: number
+  rotY: number
+}
+
+const GHOST_STORAGE_KEY = 'freshblox_obby_pb_ghost_v1'
+
+function loadPbGhostTrack(): { timeMs: number; samples: GhostSample[] } | null {
+  try {
+    const raw = localStorage.getItem(GHOST_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (
+      typeof parsed?.timeMs === 'number' &&
+      Array.isArray(parsed?.samples) &&
+      parsed.samples.length >= 2
+    ) {
+      return parsed
+    }
+  } catch {
+    // ignore
+  }
+  return null
+}
+
+function savePbGhostTrack(timeMs: number, samples: GhostSample[]) {
+  try {
+    if (samples.length < 2) return
+    const existing = loadPbGhostTrack()
+    if (existing && existing.timeMs <= timeMs) return
+    // Keep at most 1800 samples (~7.5 minutes at 250ms) to stay lightweight
+    const trimmed = samples.slice(0, 1800)
+    localStorage.setItem(GHOST_STORAGE_KEY, JSON.stringify({ timeMs, samples: trimmed }))
+  } catch {
+    // ignore quota errors
+  }
+}
+
 function formatTimeMs(ms: number): string {
-  const totalSec = Math.max(0, Math.floor(ms / 1000))
-  const m = Math.floor(totalSec / 60)
-  const s = totalSec % 60
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  const safe = Math.max(0, Math.floor(ms))
+  const m = Math.floor(safe / 60000)
+  const s = Math.floor((safe % 60000) / 1000)
+  const cs = Math.floor((safe % 1000) / 10)
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`
 }
 
 export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
@@ -220,6 +265,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   unlockedFaces,
   initialStage,
   bestStage,
+  bestTimeMs = null,
   completions,
   isFullscreen,
   onBackHome,
@@ -259,6 +305,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   const [hubOpen, setHubOpen] = useState<boolean>(false)
   const [hubTab, setHubTab] = useState<MenuDrawerTab>('overview')
   const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false)
+  const [emoteWheelOpen, setEmoteWheelOpen] = useState<boolean>(false)
   const [wardrobeOpen, setWardrobeOpen] = useState<boolean>(false)
   const [previewAvatar, setPreviewAvatar] = useState<R6AvatarConfig>(() => ({ ...avatar }))
   const [chatOpen, setChatOpen] = useState<boolean>(false)
@@ -305,6 +352,8 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   hubTabRef.current = hubTab
   const shortcutsOpenRef = useRef<boolean>(shortcutsOpen)
   shortcutsOpenRef.current = shortcutsOpen
+  const emoteWheelOpenRef = useRef<boolean>(emoteWheelOpen)
+  emoteWheelOpenRef.current = emoteWheelOpen
   const wasLockedBeforeUiRef = useRef<boolean>(false)
   const touchModeRef = useRef<boolean>(touchMode)
   touchModeRef.current = touchMode
@@ -318,6 +367,10 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   shiftLockAlignRef.current = mousePrefs.shiftLockAlign
   const mouseSensRef = useRef<number>(mousePrefs.sensitivity)
   mouseSensRef.current = mousePrefs.sensitivity
+  const fovRef = useRef<number>(mousePrefs.fov)
+  fovRef.current = mousePrefs.fov
+  const showGhostRef = useRef<boolean>(mousePrefs.showGhost)
+  showGhostRef.current = mousePrefs.showGhost
   const usernameRef = useRef(username)
   usernameRef.current = username
   const rankRef = useRef(rank.name)
@@ -348,10 +401,10 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
 
   // Release pointer lock cleanly whenever any overlay opens
   useEffect(() => {
-    if ((hubOpen || wardrobeOpen || shortcutsOpen || feedbackOpen || Boolean(finishedBanner)) && document.pointerLockElement) {
+    if ((hubOpen || wardrobeOpen || shortcutsOpen || emoteWheelOpen || feedbackOpen || Boolean(finishedBanner)) && document.pointerLockElement) {
       exitPointerLockSilently()
     }
-  }, [hubOpen, wardrobeOpen, shortcutsOpen, feedbackOpen, finishedBanner, exitPointerLockSilently])
+  }, [hubOpen, wardrobeOpen, shortcutsOpen, emoteWheelOpen, feedbackOpen, finishedBanner, exitPointerLockSilently])
 
   const updateMousePrefs = useCallback((patch: Partial<typeof mousePrefs>) => {
     setMousePrefs((prev) => {
@@ -407,13 +460,13 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     }, 2400)
   }, [])
 
-  // Session run timer
+  // Session speedrun timer (00:00.00 live precision)
   useEffect(() => {
     const id = window.setInterval(() => {
       if (!finishedBanner) {
         setElapsedMs(Date.now() - runStartTimeRef.current)
       }
-    }, 500)
+    }, 65)
     return () => window.clearInterval(id)
   }, [finishedBanner])
 
@@ -546,6 +599,10 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         if (performance.now() - pointerLockReleasedAtRef.current < 240) {
           return
         }
+        if (emoteWheelOpenRef.current) {
+          setEmoteWheelOpen(false)
+          return
+        }
         if (shortcutsOpenRef.current) {
           setShortcutsOpen(false)
           sfx.playClick()
@@ -602,6 +659,12 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           e.preventDefault()
           keysRef.current.clear()
           shortcutActionsRef.current.openFeedback()
+          return
+        }
+        if (code === 'KeyG') {
+          e.preventDefault()
+          keysRef.current.clear()
+          setEmoteWheelOpen((v) => !v)
           return
         }
         if (code === 'KeyK' || code === 'F1' || e.key === '?') {
@@ -1447,6 +1510,42 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       camState.pitch = 0.14
     }
 
+    // U-01: Personal Best 3D Ghost Runner (translucent cyan hologram racing your best run)
+    const ghostTrack = loadPbGhostTrack()
+    const recordedRunSamples: GhostSample[] = []
+    let lastGhostSampleMs = -999
+    let ghostRig: R6RigHandle | null = null
+    if (ghostTrack) {
+      ghostRig = createR6Rig({
+        avatar: avatarRef.current,
+        username: `PB ${formatTimeMs(ghostTrack.timeMs)}`,
+        rank: 'GHOST',
+        showNameplate: true,
+        castShadow: false,
+      })
+      ghostRig.root.traverse((obj) => {
+        if ((obj as THREE.Mesh).isMesh) {
+          const mesh = obj as THREE.Mesh
+          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+          const ghostMats = mats.map((m) => {
+            const c = m.clone() as THREE.MeshStandardMaterial
+            if (c.color) c.color.set('#38BDF8')
+            if ('emissive' in c && c.emissive) {
+              c.emissive.set('#0EA5E9')
+              c.emissiveIntensity = 0.45
+            }
+            c.transparent = true
+            c.opacity = 0.36
+            c.depthWrite = false
+            return c
+          })
+          mesh.material = Array.isArray(mesh.material) ? ghostMats : ghostMats[0]
+        }
+      })
+      ghostRig.root.visible = showGhostRef.current
+      scene.add(ghostRig.root)
+    }
+
     const respawnToStage = (stage: number, resetTimer = false) => {
       const cp = course.checkpoints[Math.max(0, Math.min(99, stage - 1))]
       if (!cp) return
@@ -1468,6 +1567,8 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       updateZoneVisibility(stage)
       if (resetTimer) {
         runStartTimeRef.current = Date.now()
+        recordedRunSamples.length = 0
+        lastGhostSampleMs = -999
       }
     }
     respawnToStageRef.current = respawnToStage
@@ -1976,6 +2077,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
             const nowElapsed = Date.now() - runStartTimeRef.current
             if (stg === 100) {
               sfx.playQuestClaim()
+              savePbGhostTrack(nowElapsed, recordedRunSamples)
               setFinishedBanner({ elapsedMs: nowElapsed })
               callbacksRef.current.onStageReached(100, nowElapsed)
               showToast(`👑 ${t.obbyFinishedTitle}`)
@@ -2643,6 +2745,46 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         })
       }
 
+      // U-01: Record run samples for Personal Best Ghost (every 250ms) & replay PB Ghost
+      const runElapsedNow = Date.now() - runStartTimeRef.current
+      if (!finishedBannerRef.current && runElapsedNow - lastGhostSampleMs >= 250 && recordedRunSamples.length < 1800) {
+        lastGhostSampleMs = runElapsedNow
+        recordedRunSamples.push({
+          t: runElapsedNow,
+          x: Number(player.x.toFixed(2)),
+          y: Number(player.y.toFixed(2)),
+          z: Number(player.z.toFixed(2)),
+          rotY: Number(player.rotY.toFixed(2)),
+        })
+      }
+      if (ghostRig && ghostTrack) {
+        const shouldShow = showGhostRef.current
+        ghostRig.root.visible = shouldShow
+        if (shouldShow && ghostTrack.samples.length >= 2) {
+          const samples = ghostTrack.samples
+          const loopT = runElapsedNow % Math.max(1000, ghostTrack.timeMs + 1500)
+          let idx = 0
+          while (idx < samples.length - 2 && samples[idx + 1].t < loopT) idx++
+          const a = samples[idx]
+          const b = samples[Math.min(samples.length - 1, idx + 1)]
+          const span = Math.max(1, b.t - a.t)
+          const f = Math.min(1, Math.max(0, (loopT - a.t) / span))
+          ghostRig.root.position.set(
+            a.x + (b.x - a.x) * f,
+            a.y + (b.y - a.y) * f,
+            a.z + (b.z - a.z) * f,
+          )
+          ghostRig.root.rotation.y = a.rotY + (b.rotY - a.rotY) * f
+          ghostRig.update(dt, simTime, f > 0.01 ? 'run' : 'idle')
+        }
+      }
+
+      // U-11: Live camera FOV update
+      if (Math.abs(camera.fov - fovRef.current) > 0.1) {
+        camera.fov = fovRef.current
+        camera.updateProjectionMatrix()
+      }
+
       renderer.render(scene, camera)
     }
 
@@ -2650,6 +2792,10 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
 
     return () => {
       cancelAnimationFrame(rafId)
+      if (ghostRig) {
+        scene.remove(ghostRig.root)
+        ghostRig.dispose()
+      }
       ro.disconnect()
       if (document.pointerLockElement === dom) {
         exitPointerLockSilently()
@@ -2792,9 +2938,9 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           </button>
         </div>
 
-        {/* Center: Clean single-row Stage pill with thin integrated progress bar */}
+        {/* Center: H-02 Esports Speedrun HUD (Stage · Live 00:00.00 · PB · Respawn) */}
         <div
-          className="pointer-events-auto relative flex h-10 items-center gap-1 sm:gap-1.5 overflow-hidden rounded-2xl border border-white/15 bg-slate-950/75 px-1.5 sm:px-2 text-white shadow-lg backdrop-blur-xl"
+          className="pointer-events-auto relative flex h-10 items-center gap-1 sm:gap-1.5 overflow-hidden rounded-2xl border border-sky-300/25 bg-slate-950/82 px-1.5 sm:px-2 text-white shadow-xl backdrop-blur-xl"
           title={`${stageTitle} · ${lang === 'pl' ? currentZone.namePl : currentZone.nameEn} (${
             lang === 'pl' ? currentZone.difficultyPl : currentZone.difficultyEn
           })`}
@@ -2810,19 +2956,33 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
             <ChevronLeft className="h-4 w-4" />
           </button>
 
-          <div className="flex items-center gap-1.5 px-1">
-            <span
-              className="h-2 w-2 shrink-0 rounded-full"
-              style={{ background: currentZone.difficultyColor }}
-            />
-            <Flag className="hidden xs:inline h-3.5 w-3.5 text-sky-400 shrink-0" />
-            <span className="font-mono text-xs sm:text-sm font-black tracking-tight">
-              <span className="text-sky-300">{currentStage}</span>
-              <span className="text-white/45">/100</span>
-            </span>
-            <span className="hidden md:inline font-mono text-[10px] font-bold text-sky-200/75 border-l border-white/15 pl-1.5">
+          <div className="flex items-center gap-2 px-1">
+            <div className="flex items-center gap-1.5">
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ background: currentZone.difficultyColor }}
+              />
+              <span className="hidden lg:inline text-[9px] font-black uppercase tracking-wider text-sky-300/80">
+                {lang === 'pl' ? 'ETAP' : 'STAGE'}
+              </span>
+              <span className="font-mono text-xs sm:text-sm font-black tracking-tight">
+                <span className="text-sky-300">{currentStage}</span>
+                <span className="text-white/45">/100</span>
+              </span>
+            </div>
+
+            <div className="h-4 w-[1px] bg-white/15" />
+
+            <span className="font-mono text-xs font-black tracking-tight text-cyan-300 tabular-nums">
               {formatTimeMs(elapsedMs)}
             </span>
+
+            {bestTimeMs !== null && (
+              <span className="hidden md:inline-flex items-center gap-1 rounded-lg border border-amber-400/30 bg-amber-500/12 px-1.5 py-0.5 font-mono text-[10px] font-black text-amber-300 tabular-nums">
+                <Trophy className="h-2.5 w-2.5" />
+                PB {formatSpeedrunTime(bestTimeMs)}
+              </span>
+            )}
           </div>
 
           <button
@@ -2859,7 +3019,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           {/* Thin progress indicator along bottom edge */}
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[2.5px] bg-white/10">
             <div
-              className="h-full bg-gradient-to-r from-sky-400 to-emerald-400 transition-all duration-300"
+              className="h-full bg-gradient-to-r from-sky-400 via-cyan-300 to-emerald-400 transition-all duration-300"
               style={{ width: `${progressPct}%` }}
             />
           </div>
@@ -2994,10 +3154,14 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         clickToLock={mousePrefs.clickToLock}
         shiftLockAlign={mousePrefs.shiftLockAlign}
         mouseSensitivity={mousePrefs.sensitivity}
+        fov={mousePrefs.fov}
+        showGhost={mousePrefs.showGhost}
         onTogglePointerLock={() => toggleShiftLockRef.current?.()}
         onChangeClickToLock={(enabled) => updateMousePrefs({ clickToLock: enabled })}
         onChangeShiftLockAlign={(enabled) => updateMousePrefs({ shiftLockAlign: enabled })}
         onChangeMouseSensitivity={(sensitivity) => updateMousePrefs({ sensitivity })}
+        onChangeFov={(fov) => updateMousePrefs({ fov })}
+        onChangeShowGhost={(showGhost) => updateMousePrefs({ showGhost })}
         worldTime={worldTime}
         quality={quality}
         isFullscreen={isFullscreen}
@@ -3239,6 +3403,15 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           </div>
         </div>
       )}
+
+      {/* === U-03: RADIAL EMOTE WHEEL (G) === */}
+      <EmoteRadialWheel
+        open={emoteWheelOpen}
+        lang={lang}
+        activeEmote={activeEmoteUi}
+        onSelect={(pose) => triggerEmote(pose)}
+        onClose={() => setEmoteWheelOpen(false)}
+      />
 
       {/* === MOUSE LOCK / SHIFT-LOCK RETICLE (Desktop) === */}
       {shiftLockActive && !touchMode && (

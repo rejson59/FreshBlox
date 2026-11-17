@@ -33,7 +33,8 @@ import {
   isDocumentFullscreen,
   isTouchMobileDevice,
 } from '../lib/mobileFullscreen'
-import { loadMousePrefs, saveMousePrefs } from '../lib/mousePrefs'
+import { loadMousePrefs, saveMousePrefs, LobbyWeatherMode } from '../lib/mousePrefs'
+import { fetchObbyTopChampions, formatSpeedrunTime } from '../lib/socialApi'
 import { useVisualViewport } from '../lib/useVisualViewport'
 import { sfx } from '../lib/sfx'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -42,6 +43,7 @@ import { MobileTouchControls } from '../components/hud/MobileTouchControls'
 import { InGameWardrobeDrawer } from '../components/hud/InGameWardrobeDrawer'
 import { InGameMenuDrawer, MenuDrawerTab } from '../components/hud/InGameMenuDrawer'
 import { ShortcutsOverlayModal } from '../components/hud/ShortcutsOverlayModal'
+import { EmoteRadialWheel } from '../components/hud/EmoteRadialWheel'
 import { GameChatBox } from '../components/hud/GameChatBox'
 import { createR6Rig, R6RigHandle } from './r6Builder'
 import { cloneFreshTexturesWithRepeat, FreshSurfaceKind } from './freshTextures'
@@ -221,12 +223,21 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   const focusWardrobeCamRef = useRef<() => void>(() => {})
 
   const [mousePrefs, setMousePrefs] = useState(() => loadMousePrefs())
+  const [emoteWheelOpen, setEmoteWheelOpen] = useState(false)
+  const emoteWheelOpenRef = useRef(false)
+  emoteWheelOpenRef.current = emoteWheelOpen
   const clickToLockRef = useRef(mousePrefs.clickToLock)
   clickToLockRef.current = mousePrefs.clickToLock
   const shiftLockAlignRef = useRef(mousePrefs.shiftLockAlign)
   shiftLockAlignRef.current = mousePrefs.shiftLockAlign
   const mouseSensRef = useRef(mousePrefs.sensitivity)
   mouseSensRef.current = mousePrefs.sensitivity
+  const fovRef = useRef(mousePrefs.fov)
+  fovRef.current = mousePrefs.fov
+  const weatherRef = useRef<LobbyWeatherMode>(mousePrefs.weather)
+  weatherRef.current = mousePrefs.weather
+  const autoDayCycleRef = useRef<boolean>(mousePrefs.autoDayCycle)
+  autoDayCycleRef.current = mousePrefs.autoDayCycle
 
   const updateMousePrefs = useCallback((patch: Partial<typeof mousePrefs>) => {
     setMousePrefs((prev) => {
@@ -260,10 +271,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
   // Release pointer lock cleanly whenever any menu/modal opens
   useEffect(() => {
-    if ((hubOpen || wardrobeOpen || shortcutsOpen || feedbackOpen) && document.pointerLockElement) {
+    if ((hubOpen || wardrobeOpen || shortcutsOpen || emoteWheelOpen || feedbackOpen) && document.pointerLockElement) {
       exitPointerLockSilently()
     }
-  }, [hubOpen, wardrobeOpen, shortcutsOpen, feedbackOpen, exitPointerLockSilently])
+  }, [hubOpen, wardrobeOpen, shortcutsOpen, emoteWheelOpen, feedbackOpen, exitPointerLockSilently])
 
   const touchMoveRef = useRef<{ x: number; y: number; autoSprint: boolean }>({
     x: 0,
@@ -997,6 +1008,174 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     createPortalArch(0, -28, 'LOBBY GŁÓWNE', roomCode, '#0EA5E9')
     createPortalArch(11, -26, 'Crystal Arena', lang === 'pl' ? 'WKRÓTCE' : 'COMING SOON', '#22D3EE')
 
+    // === U-13: 3D CHAMPIONS PODIUM (REAL SUPABASE TOP 3 OBBY 100) ===
+    const podiumGroup = new THREE.Group()
+    podiumGroup.position.set(12.2, 0, -15.2)
+    podiumGroup.rotation.y = -0.34
+    scene.add(podiumGroup)
+
+    const podiumBase = new THREE.Mesh(
+      trackGeo(new RoundedBoxGeometry(9.6, 0.36, 3.8, 2, 0.08)),
+      getSurfaceMat('marble', '#E2E8F0', 3, 2, 0.34, 0.08),
+    )
+    podiumBase.position.set(0, 0.18, 0)
+    podiumBase.receiveShadow = true
+    podiumGroup.add(podiumBase)
+
+    const podiumSlots = [
+      { place: 1, x: 0, h: 1.75, color: '#F59E0B', pose: 'cheer' as PlayerPose },
+      { place: 2, x: -2.75, h: 1.25, color: '#94A3B8', pose: 'wave' as PlayerPose },
+      { place: 3, x: 2.75, h: 0.9, color: '#CD7F32', pose: 'dance' as PlayerPose },
+    ]
+    for (const slot of podiumSlots) {
+      const ped = new THREE.Mesh(
+        trackGeo(new RoundedBoxGeometry(2.35, slot.h, 2.35, 2, 0.1)),
+        trackMat(new THREE.MeshStandardMaterial({ color: slot.color, roughness: 0.28, metalness: 0.45 })),
+      )
+      ped.position.set(slot.x, 0.36 + slot.h / 2, 0)
+      ped.castShadow = true
+      ped.receiveShadow = true
+      podiumGroup.add(ped)
+
+      // Crisp place badge (#1 / #2 / #3) on front face
+      const badgeCanvas = document.createElement('canvas')
+      badgeCanvas.width = 128
+      badgeCanvas.height = 128
+      const bctx = badgeCanvas.getContext('2d')!
+      bctx.fillStyle = '#071124'
+      bctx.beginPath()
+      bctx.roundRect(12, 12, 104, 104, 24)
+      bctx.fill()
+      bctx.strokeStyle = slot.color
+      bctx.lineWidth = 6
+      bctx.stroke()
+      bctx.fillStyle = '#FFFFFF'
+      bctx.font = '900 54px Inter, system-ui, sans-serif'
+      bctx.textAlign = 'center'
+      bctx.textBaseline = 'middle'
+      bctx.fillText(`#${slot.place}`, 64, 68)
+      const badgeTex = trackTex(new THREE.CanvasTexture(badgeCanvas))
+      badgeTex.colorSpace = THREE.SRGBColorSpace
+      const badgeMesh = new THREE.Mesh(
+        trackGeo(new THREE.PlaneGeometry(0.82, 0.82)),
+        trackMat(new THREE.MeshBasicMaterial({ map: badgeTex, transparent: true })),
+      )
+      badgeMesh.position.set(slot.x, 0.36 + slot.h * 0.52, 1.2)
+      podiumGroup.add(badgeMesh)
+    }
+
+    // Podium overhead sign
+    const podiumSignCanvas = document.createElement('canvas')
+    podiumSignCanvas.width = 512
+    podiumSignCanvas.height = 112
+    const psctx = podiumSignCanvas.getContext('2d')!
+    psctx.fillStyle = 'rgba(7, 17, 36, 0.92)'
+    psctx.beginPath()
+    psctx.roundRect(8, 8, 496, 96, 22)
+    psctx.fill()
+    psctx.strokeStyle = '#F59E0B'
+    psctx.lineWidth = 5
+    psctx.stroke()
+    psctx.fillStyle = '#FDE047'
+    psctx.font = '900 32px Inter, system-ui, sans-serif'
+    psctx.textAlign = 'center'
+    psctx.fillText(lang === 'pl' ? '🏆 MISTRZOWIE OBBY 100' : '🏆 OBBY 100 CHAMPIONS', 256, 52)
+    psctx.fillStyle = '#BAE6FD'
+    psctx.font = '700 20px Inter, system-ui, sans-serif'
+    psctx.fillText('TOP 3 LIVE RANKING', 256, 86)
+    const podiumSignTex = trackTex(new THREE.CanvasTexture(podiumSignCanvas))
+    podiumSignTex.colorSpace = THREE.SRGBColorSpace
+    const podiumSignMesh = new THREE.Mesh(
+      trackGeo(new THREE.PlaneGeometry(5.6, 1.24)),
+      trackMat(new THREE.MeshBasicMaterial({ map: podiumSignTex, transparent: true, side: THREE.DoubleSide })),
+    )
+    podiumSignMesh.position.set(0, 6.75, -0.5)
+    podiumGroup.add(podiumSignMesh)
+
+    // Light collider around podium base so players walk cleanly around it
+    colliders.push({
+      minX: 7.4,
+      maxX: 16.9,
+      minY: 0,
+      maxY: 2.2,
+      minZ: -17.6,
+      maxZ: -12.8,
+    })
+
+    const championRigs: Array<{ rig: R6RigHandle; pose: PlayerPose; offset: number }> = []
+    let disposedFlag = false
+    void fetchObbyTopChampions(3).then((champs) => {
+      if (disposedFlag) return
+      champs.slice(0, 3).forEach((champ, idx) => {
+        const slot = podiumSlots[idx]
+        if (!slot) return
+        const subRank =
+          champ.obby_best_time_ms !== null
+            ? `#${idx + 1} · ${formatSpeedrunTime(champ.obby_best_time_ms)}`
+            : `#${idx + 1} · Stage ${champ.obby_best_stage}`
+        const rig = createR6Rig({
+          avatar: champ.avatar_config,
+          username: champ.username,
+          rank: subRank,
+          showNameplate: true,
+          castShadow: true,
+        })
+        rig.root.position.set(slot.x, 0.36 + slot.h, 0)
+        podiumGroup.add(rig.root)
+        championRigs.push({ rig, pose: slot.pose, offset: idx * 1.4 })
+      })
+    })
+
+    // === U-12: DYNAMIC WEATHER PARTICLES (ARCTIC SNOW & METEOR STARFALL) ===
+    const SNOW_COUNT = 420
+    const snowPositions = new Float32Array(SNOW_COUNT * 3)
+    for (let i = 0; i < SNOW_COUNT; i++) {
+      snowPositions[i * 3] = (Math.random() - 0.5) * 90
+      snowPositions[i * 3 + 1] = Math.random() * 34 + 1
+      snowPositions[i * 3 + 2] = (Math.random() - 0.5) * 90
+    }
+    const snowGeo = trackGeo(new THREE.BufferGeometry())
+    snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPositions, 3))
+    const snowMat = trackMat(
+      new THREE.PointsMaterial({
+        color: '#E0F2FE',
+        size: 0.36,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+      }),
+    )
+    const snowPoints = new THREE.Points(snowGeo, snowMat)
+    snowPoints.visible = weatherRef.current === 'snow'
+    scene.add(snowPoints)
+
+    const METEOR_COUNT = 220
+    const meteorPositions = new Float32Array(METEOR_COUNT * 3)
+    for (let i = 0; i < METEOR_COUNT; i++) {
+      meteorPositions[i * 3] = (Math.random() - 0.5) * 110
+      meteorPositions[i * 3 + 1] = Math.random() * 44 + 8
+      meteorPositions[i * 3 + 2] = (Math.random() - 0.5) * 110
+    }
+    const meteorGeo = trackGeo(new THREE.BufferGeometry())
+    meteorGeo.setAttribute('position', new THREE.BufferAttribute(meteorPositions, 3))
+    const meteorMat = trackMat(
+      new THREE.PointsMaterial({
+        color: '#FDE047',
+        size: 0.52,
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+      }),
+    )
+    const meteorPoints = new THREE.Points(meteorGeo, meteorMat)
+    meteorPoints.visible = weatherRef.current === 'stars'
+    scene.add(meteorPoints)
+
+    const daySkyCol = new THREE.Color('#7DD3FC')
+    const sunsetSkyCol = new THREE.Color('#FB923C')
+    const nightSkyCol = new THREE.Color('#0B1730')
+    const cycleSkyCol = new THREE.Color()
+
     // Sky Observation Terrace Parkour (East side)
     const terraceSteps = [
       { x: 16, y: 1.0, z: -7, w: 4.5, h: 0.7, d: 4.5, c: '#38BDF8' },
@@ -1442,6 +1621,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         if (performance.now() - pointerLockReleasedAtRef.current < 240) {
           return
         }
+        if (emoteWheelOpenRef.current) {
+          setEmoteWheelOpen(false)
+          return
+        }
         if (shortcutsOpenRef.current) {
           setShortcutsOpen(false)
           sfx.playClick()
@@ -1500,6 +1683,12 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           e.preventDefault()
           keys.clear()
           shortcutActionsRef.current.openFeedback()
+          return
+        }
+        if (code === 'KeyG') {
+          e.preventDefault()
+          keys.clear()
+          setEmoteWheelOpen((v) => !v)
           return
         }
         if (code === 'KeyK' || code === 'F1' || e.key === '?') {
@@ -2222,13 +2411,83 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       )
       camera.lookAt(lookTarget)
 
+      // U-13: Animate live TOP 3 Obby Champions on Podium
+      for (const ch of championRigs) {
+        ch.rig.update(dt, elapsed + ch.offset, ch.pose)
+      }
+
+      // U-12: Dynamic Weather particles (snow / meteor stars)
+      const activeWeather = weatherRef.current
+      snowPoints.visible = activeWeather === 'snow'
+      meteorPoints.visible = activeWeather === 'stars'
+      if (activeWeather === 'snow') {
+        const attr = snowGeo.getAttribute('position') as THREE.BufferAttribute
+        const arr = attr.array as Float32Array
+        for (let i = 0; i < SNOW_COUNT; i++) {
+          const idx = i * 3
+          arr[idx] += Math.sin(elapsed * 0.9 + i) * dt * 0.65
+          arr[idx + 1] -= dt * (2.6 + (i % 5) * 0.35)
+          if (arr[idx + 1] < 0.2) {
+            arr[idx + 1] = 34
+            arr[idx] = (Math.random() - 0.5) * 90
+            arr[idx + 2] = (Math.random() - 0.5) * 90
+          }
+        }
+        attr.needsUpdate = true
+      } else if (activeWeather === 'stars') {
+        const attr = meteorGeo.getAttribute('position') as THREE.BufferAttribute
+        const arr = attr.array as Float32Array
+        for (let i = 0; i < METEOR_COUNT; i++) {
+          const idx = i * 3
+          arr[idx] -= dt * 7.2
+          arr[idx + 1] -= dt * 5.8
+          arr[idx + 2] += dt * 2.1
+          if (arr[idx + 1] < 4) {
+            arr[idx] = (Math.random() - 0.5) * 110 + 20
+            arr[idx + 1] = 42 + Math.random() * 14
+            arr[idx + 2] = (Math.random() - 0.5) * 110
+          }
+        }
+        attr.needsUpdate = true
+      }
+
+      // U-12: Smooth Automatic Day / Sunset / Night Cycle (~90s full loop)
+      if (autoDayCycleRef.current) {
+        const phase = (elapsed * 0.07) % (Math.PI * 2)
+        const sunElev = Math.sin(phase) // -1 night .. +1 noon
+        if (sunElev >= 0) {
+          const tSunset = Math.pow(1 - sunElev, 2.2)
+          cycleSkyCol.copy(daySkyCol).lerp(sunsetSkyCol, tSunset * 0.8)
+        } else {
+          const tNight = Math.min(1, -sunElev * 1.4)
+          cycleSkyCol.copy(sunsetSkyCol).lerp(nightSkyCol, tNight)
+        }
+        scene.background = cycleSkyCol
+        if (scene.fog instanceof THREE.Fog) scene.fog.color.copy(cycleSkyCol)
+        sun.intensity = Math.max(0.28, 0.35 + Math.max(0, sunElev) * 0.9)
+        sun.position.set(Math.cos(phase) * 32, Math.max(6, 26 * Math.abs(sunElev) + 6), 18)
+        hemi.intensity = Math.max(0.45, 0.52 + Math.max(0, sunElev) * 0.55)
+        if (nightSkyGroupRef.current) nightSkyGroupRef.current.visible = sunElev < 0.08
+      }
+
+      // U-11: Live camera FOV update
+      if (Math.abs(camera.fov - fovRef.current) > 0.1) {
+        camera.fov = fovRef.current
+        camera.updateProjectionMatrix()
+      }
+
       renderer.render(scene, camera)
     }
 
     rafId = requestAnimationFrame(animate)
 
     return () => {
+      disposedFlag = true
       cancelAnimationFrame(rafId)
+      for (const ch of championRigs) {
+        podiumGroup.remove(ch.rig.root)
+        ch.rig.dispose()
+      }
       ro.disconnect()
       mp.disconnect()
       if (document.pointerLockElement === renderer.domElement) {
@@ -2526,16 +2785,25 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         clickToLock={mousePrefs.clickToLock}
         shiftLockAlign={mousePrefs.shiftLockAlign}
         mouseSensitivity={mousePrefs.sensitivity}
+        fov={mousePrefs.fov}
+        weather={mousePrefs.weather}
+        autoDayCycle={mousePrefs.autoDayCycle}
         onTogglePointerLock={() => toggleShiftLockRef.current()}
         onChangeClickToLock={(enabled) => updateMousePrefs({ clickToLock: enabled })}
         onChangeShiftLockAlign={(enabled) => updateMousePrefs({ shiftLockAlign: enabled })}
         onChangeMouseSensitivity={(sensitivity) => updateMousePrefs({ sensitivity })}
+        onChangeFov={(fov) => updateMousePrefs({ fov })}
+        onChangeWeather={(weather) => updateMousePrefs({ weather })}
+        onChangeAutoDayCycle={(autoDayCycle) => updateMousePrefs({ autoDayCycle })}
         worldTime={worldTime}
         quality={quality}
         isFullscreen={isFullscreen}
         supabaseConnected={isSupabaseConfigured}
         copiedInvite={copiedInvite}
-        onChangeWorldTime={setWorldTime}
+        onChangeWorldTime={(wt) => {
+          updateMousePrefs({ autoDayCycle: false })
+          setWorldTime(wt)
+        }}
         onChangeQuality={setQuality}
         onToggleTouchMode={() => setTouchMode((v) => !v)}
         onToggleFullscreen={handleToggleFullscreen}
@@ -2551,6 +2819,15 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         onLeaveToHome={onBackHome}
         onOpenFeedback={() => onOpenFeedback?.(`Lobby Główne (${roomCode})`)}
         onTeleportToMember={(memberId) => teleportToMemberRef.current(memberId)}
+      />
+
+      {/* === U-03: RADIAL EMOTE WHEEL (G) === */}
+      <EmoteRadialWheel
+        open={emoteWheelOpen}
+        lang={lang}
+        activeEmote={activeEmote}
+        onSelect={(pose) => triggerEmote(pose)}
+        onClose={() => setEmoteWheelOpen(false)}
       />
 
       {/* === PC KEYBOARD SHORTCUTS OVERLAY (K / ?) === */}

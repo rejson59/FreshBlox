@@ -565,5 +565,43 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.get_world_live_stats() TO authenticated;
 
+-- =============================================================================
+-- WAVE 1 FEATURES (Saved Outfits, Pinned Badge, Private Rooms, DMs, Champions)
+-- =============================================================================
+ALTER TABLE public.fb_profiles
+  ADD COLUMN IF NOT EXISTS saved_outfits jsonb NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS pinned_badge text;
+
+CREATE TABLE IF NOT EXISTS public.fb_private_rooms (
+  code text PRIMARY KEY,
+  host_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  host_username text NOT NULL,
+  world text NOT NULL DEFAULT 'lobby' CHECK (world IN ('lobby', 'obby')),
+  access_mode text NOT NULL DEFAULT 'password' CHECK (access_mode IN ('password', 'friends')),
+  pass_hash text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL DEFAULT (now() + interval '12 hours')
+);
+ALTER TABLE public.fb_private_rooms ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS public.fb_direct_messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sender_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  sender_username text NOT NULL,
+  recipient_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  body text NOT NULL CHECK (char_length(body) BETWEEN 1 AND 240),
+  invite_room text,
+  invite_world text CHECK (invite_world IS NULL OR invite_world IN ('lobby', 'obby')),
+  read_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.fb_direct_messages ENABLE ROW LEVEL SECURITY;
+
+-- RPCs applied live via upgrade_wave_1_features migration:
+-- create_private_room(text, text, text), verify_private_room_access(text, text),
+-- send_direct_message(uuid, text, text, text), mark_dm_thread_read(uuid),
+-- get_obby_top_champions(int)
+
+
 
 

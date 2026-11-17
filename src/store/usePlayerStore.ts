@@ -21,12 +21,19 @@ import {
 
 export interface FriendEntry {
   id: string
+  friendUserId?: string
   username: string
   freshTag?: string
   status: 'online' | 'in-lobby' | 'offline'
   roomCode?: string
   world?: WorldKind
   obbyBestStage?: number
+}
+
+export interface SavedOutfitSlot {
+  slot: number
+  name: string
+  avatar: R6AvatarConfig
 }
 
 export interface QuestProgressState {
@@ -92,7 +99,9 @@ export interface PlayerProfile {
   unlockedOutfits: OutfitId[]
   unlockedHats: HatId[]
   unlockedFaces: FaceId[]
+  savedOutfits: SavedOutfitSlot[]
   badges: string[]
+  pinnedBadge: string | null
   quests: QuestProgressState
   friends: FriendEntry[]
   obbyStage: number
@@ -164,7 +173,9 @@ function createDefaultProfile(): PlayerProfile {
     unlockedOutfits: ['fresh-creator', 'classic-remaster'],
     unlockedHats: ['none'],
     unlockedFaces: ['fresh-smile', 'wink-pro'],
+    savedOutfits: [],
     badges: ['pioneer'],
+    pinnedBadge: null,
     quests: {
       progress: { ...DEFAULT_QUEST_PROGRESS.progress },
       claimed: { ...DEFAULT_QUEST_PROGRESS.claimed },
@@ -237,7 +248,9 @@ function loadLocalProfile(): PlayerProfile {
         claimed: { ...DEFAULT_QUEST_PROGRESS.claimed, ...(parsed.quests?.claimed ?? {}) },
       },
       friends: Array.isArray(parsed.friends) ? parsed.friends : [],
+      savedOutfits: Array.isArray(parsed.savedOutfits) ? parsed.savedOutfits.slice(0, 5) : [],
       badges: Array.isArray(parsed.badges) ? parsed.badges : def.badges,
+      pinnedBadge: typeof parsed.pinnedBadge === 'string' ? parsed.pinnedBadge : null,
       obbyStage: Math.max(1, Math.min(100, Number(parsed.obbyStage) || 1)),
       obbyBestStage,
       obbyCompletions,
@@ -257,7 +270,9 @@ interface DbProfileRow {
   xp: number
   avatar_config: Partial<R6AvatarConfig> | null
   unlocked_items: string[] | null
+  saved_outfits?: SavedOutfitSlot[] | null
   badges: string[] | null
+  pinned_badge?: string | null
   quests: Partial<QuestProgressState> | null
   obby_stage: number | null
   obby_best_stage: number | null
@@ -321,6 +336,7 @@ export function usePlayerStore() {
       const online = isRecentlyOnline(matched?.last_seen)
       return {
         id: r.id,
+        friendUserId: matched?.id ?? r.friend_id ?? undefined,
         username: matched?.username ?? r.friend_username,
         freshTag: matched?.fresh_tag,
         status: online ? 'in-lobby' : 'offline',
@@ -393,7 +409,9 @@ export function usePlayerStore() {
             unlockedOutfits: unlocked.outfits,
             unlockedHats: unlocked.hats,
             unlockedFaces: unlocked.faces,
+            savedOutfits: Array.isArray(data.saved_outfits) ? data.saved_outfits.slice(0, 5) : [],
             badges: Array.isArray(data.badges) && data.badges.length > 0 ? data.badges : ['pioneer'],
+            pinnedBadge: typeof data.pinned_badge === 'string' ? data.pinned_badge : null,
             quests: {
               progress: { ...DEFAULT_QUEST_PROGRESS.progress, ...(data.quests?.progress ?? {}) },
               claimed: { ...DEFAULT_QUEST_PROGRESS.claimed, ...(data.quests?.claimed ?? {}) },
@@ -480,7 +498,9 @@ export function usePlayerStore() {
           xp: profile.xp,
           avatar_config: profile.avatar,
           unlocked_items: unlockedItems,
+          saved_outfits: profile.savedOutfits.slice(0, 5),
           badges: profile.badges,
+          pinned_badge: profile.pinnedBadge,
           quests: profile.quests,
           obby_stage: profile.obbyStage,
           obby_best_stage: profile.obbyBestStage,
@@ -1073,6 +1093,44 @@ async function postRegisterApi(
     }))
   }, [])
 
+  const saveOutfitSlot = useCallback((slot: number, name: string, avatarCfg: R6AvatarConfig) => {
+    const cleanSlot = Math.max(1, Math.min(5, slot))
+    const cleanName = name.trim().slice(0, 22) || `Zestaw #${cleanSlot}`
+    setProfile((p) => {
+      const filtered = p.savedOutfits.filter((s) => s.slot !== cleanSlot)
+      const next = [...filtered, { slot: cleanSlot, name: cleanName, avatar: { ...avatarCfg } }].sort(
+        (a, b) => a.slot - b.slot,
+      )
+      return { ...p, savedOutfits: next }
+    })
+  }, [])
+
+  const deleteOutfitSlot = useCallback((slot: number) => {
+    setProfile((p) => ({
+      ...p,
+      savedOutfits: p.savedOutfits.filter((s) => s.slot !== slot),
+    }))
+  }, [])
+
+  const setPinnedBadge = useCallback((badgeId: string | null) => {
+    setProfile((p) => ({ ...p, pinnedBadge: badgeId }))
+  }, [])
+
+  const recordObbySpeedrun = useCallback((elapsedMs: number) => {
+    if (!Number.isFinite(elapsedMs) || elapsedMs < 5000) return
+    const rounded = Math.round(elapsedMs)
+    setProfile((p) => {
+      const isNewPb = p.obbyBestTimeMs === null || rounded < p.obbyBestTimeMs
+      const badges = new Set(p.badges)
+      if (rounded <= 10 * 60 * 1000) badges.add('speedrunner')
+      return {
+        ...p,
+        obbyBestTimeMs: isNewPb ? rounded : p.obbyBestTimeMs,
+        badges: Array.from(badges),
+      }
+    })
+  }, [])
+
   const refreshProfile = useCallback(async () => {
     const user = authUserRef.current
     if (!user) return
@@ -1094,6 +1152,10 @@ async function postRegisterApi(
     updateAvatar,
     awardGemsAndXp,
     unlockBadge,
+    setPinnedBadge,
+    saveOutfitSlot,
+    deleteOutfitSlot,
+    recordObbySpeedrun,
     incrementQuest,
     claimQuest,
     recordObbyStage,

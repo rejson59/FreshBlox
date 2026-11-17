@@ -233,35 +233,80 @@ function createNameplateTexture(username: string, rank: string): THREE.CanvasTex
 
 function createSpeechTexture(text: string): THREE.CanvasTexture {
   const canvas = document.createElement('canvas')
-  canvas.width = 440
-  canvas.height = 112
+  canvas.width = 560
+  canvas.height = 148
   const ctx = canvas.getContext('2d')!
-  ctx.clearRect(0, 0, 440, 112)
+  ctx.clearRect(0, 0, 560, 148)
 
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.96)'
+  ctx.font = '700 24px Inter, system-ui, sans-serif'
+  const trimmed = text.trim().slice(0, 68)
+  const words = trimmed.split(/\s+/)
+  const lines: string[] = []
+  let current = ''
+  for (const w of words) {
+    const candidate = current ? `${current} ${w}` : w
+    if (ctx.measureText(candidate).width <= 460 || !current) {
+      current = candidate
+    } else {
+      lines.push(current)
+      current = w
+      if (lines.length >= 1) break
+    }
+  }
+  if (current) lines.push(current)
+  if (lines.length > 2) lines.length = 2
+  if (lines.length === 2 && ctx.measureText(lines[1]).width > 460) {
+    lines[1] = `${lines[1].slice(0, 28)}…`
+  }
+
+  const maxLineW = Math.max(150, ...lines.map((l) => ctx.measureText(l).width))
+  const boxW = Math.min(524, Math.max(210, maxLineW + 64))
+  const boxH = lines.length === 2 ? 98 : 74
+  const boxX = (560 - boxW) / 2
+  const boxY = lines.length === 2 ? 16 : 36
+
+  // Soft shadow
+  ctx.save()
+  ctx.shadowColor = 'rgba(2, 8, 23, 0.42)'
+  ctx.shadowBlur = 16
+  ctx.shadowOffsetY = 6
+  const grad = ctx.createLinearGradient(0, boxY, 0, boxY + boxH)
+  grad.addColorStop(0, 'rgba(255, 255, 255, 0.98)')
+  grad.addColorStop(1, 'rgba(240, 249, 255, 0.96)')
+  ctx.fillStyle = grad
   ctx.beginPath()
-  ctx.roundRect(12, 10, 416, 78, 22)
+  ctx.roundRect(boxX, boxY, boxW, boxH, 26)
   ctx.fill()
+  ctx.restore()
 
+  // Speech pointer tail
+  const tailTop = boxY + boxH - 2
+  ctx.fillStyle = 'rgba(240, 249, 255, 0.97)'
   ctx.beginPath()
-  ctx.moveTo(206, 88)
-  ctx.lineTo(220, 106)
-  ctx.lineTo(234, 88)
+  ctx.moveTo(266, tailTop)
+  ctx.lineTo(280, tailTop + 18)
+  ctx.lineTo(294, tailTop)
   ctx.closePath()
   ctx.fill()
 
-  ctx.strokeStyle = '#38BDF8'
+  // Crisp Arctic Sky outline
+  ctx.strokeStyle = 'rgba(14, 165, 233, 0.72)'
   ctx.lineWidth = 3.5
   ctx.beginPath()
-  ctx.roundRect(12, 10, 416, 78, 22)
+  ctx.roundRect(boxX, boxY, boxW, boxH, 26)
   ctx.stroke()
 
-  ctx.fillStyle = '#0F172A'
-  ctx.font = '700 22px Inter, system-ui, sans-serif'
+  // Text lines
+  ctx.fillStyle = '#0B162C'
+  ctx.font = '700 24px Inter, system-ui, sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  const clean = text.length > 34 ? `${text.slice(0, 32)}…` : text
-  ctx.fillText(clean, 220, 49)
+  if (lines.length === 1) {
+    ctx.fillText(lines[0], 280, boxY + boxH / 2 + 1)
+  } else {
+    ctx.fillText(lines[0], 280, boxY + 34)
+    ctx.fillText(lines[1], 280, boxY + 67)
+  }
 
   const tex = new THREE.CanvasTexture(canvas)
   tex.colorSpace = THREE.SRGBColorSpace
@@ -660,14 +705,15 @@ export function createR6Rig(opts: {
     root.add(nameplateSprite)
   }
 
-  // Speech bubble sprite
+  // Speech bubble sprite (U-04 upgraded 3D bubble with smooth pop-in)
   const speechMat = trackMat(new THREE.SpriteMaterial({ transparent: true, depthTest: false }))
   const speechSprite = new THREE.Sprite(speechMat)
-  speechSprite.position.set(0, 4.92, 0)
-  speechSprite.scale.set(3.2, 0.82, 1)
+  speechSprite.position.set(0, 5.05, 0)
+  speechSprite.scale.set(3.8, 1.0, 1)
   speechSprite.visible = false
   root.add(speechSprite)
   let speechTex: THREE.CanvasTexture | null = null
+  let speechPop = 0
 
   // Per-rig animation state (zero allocation!)
   const target = createEmptyPoseTarget()
@@ -759,19 +805,25 @@ export function createR6Rig(opts: {
       nameplateSprite.position.y = 4.18 + airHeight * 0.75
     }
     if (speechSprite.visible) {
-      speechSprite.position.y = 4.92 + airHeight * 0.75
+      speechPop = Math.min(1, speechPop + dt * 7.5)
+      const easeOutBack = 1 + 2.1 * Math.pow(speechPop - 1, 3) + 1.1 * Math.pow(speechPop - 1, 2)
+      const bob = Math.sin(elapsed * 2.6) * 0.04
+      speechSprite.scale.set(3.8 * easeOutBack, 1.0 * easeOutBack, 1)
+      speechSprite.position.y = 5.05 + airHeight * 0.75 + bob
     }
   }
 
   const setSpeech = (text: string | null) => {
     if (!text) {
       speechSprite.visible = false
+      speechPop = 0
       return
     }
     if (speechTex) speechTex.dispose()
     speechTex = createSpeechTexture(text)
     speechMat.map = speechTex
     speechMat.needsUpdate = true
+    speechPop = 0.08
     speechSprite.visible = true
   }
 

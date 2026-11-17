@@ -48,6 +48,7 @@ export const ShortcutsOverlayModal: React.FC<ShortcutsOverlayModalProps> = ({
       ? { keys: ['[', ']'], label: isPl ? 'Poprzedni / Następny odblokowany Stage' : 'Previous / Next unlocked Stage' }
       : { keys: ['E'], label: isPl ? 'Wejdź do portalu / Usiądź na ławce' : 'Enter portal / Sit on bench' },
     { keys: ['1 – 6'], label: isPl ? 'Emotki (machanie, taniec, salto...)' : 'Emotes (wave, dance, backflip...)' },
+    { keys: ['G'], label: isPl ? 'Koło Emotek (wybór na środku ekranu)' : 'Radial Emote Wheel' },
   ]
 
   const uiRows: ShortcutRow[] = [

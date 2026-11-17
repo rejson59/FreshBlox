@@ -1,11 +1,14 @@
 import React, { useState } from 'react'
 import {
   Check,
+  CloudSnow,
   Compass,
   Crosshair,
+  Eye,
   Flag,
   Gamepad2,
   Gauge,
+  Ghost,
   Keyboard,
   Lock,
   LogOut,
@@ -21,6 +24,7 @@ import {
   Share2,
   Shirt,
   Smartphone,
+  Sparkles,
   Sun,
   Users,
   Wifi,
@@ -28,6 +32,7 @@ import {
 } from 'lucide-react'
 import { FreshBloxLogo } from '../brand/FreshBloxBrand'
 import { Lang } from '../../data/locales'
+import { LobbyWeatherMode } from '../../lib/mousePrefs'
 import { sfx } from '../../lib/sfx'
 
 export type MenuQuality = 'low' | 'medium' | 'high'
@@ -65,10 +70,18 @@ export interface InGameMenuDrawerProps {
   clickToLock: boolean
   shiftLockAlign: boolean
   mouseSensitivity: number
+  fov?: number
+  weather?: LobbyWeatherMode
+  autoDayCycle?: boolean
+  showGhost?: boolean
   onTogglePointerLock: () => void
   onChangeClickToLock: (enabled: boolean) => void
   onChangeShiftLockAlign: (enabled: boolean) => void
   onChangeMouseSensitivity: (sens: number) => void
+  onChangeFov?: (fov: number) => void
+  onChangeWeather?: (weather: LobbyWeatherMode) => void
+  onChangeAutoDayCycle?: (enabled: boolean) => void
+  onChangeShowGhost?: (enabled: boolean) => void
   worldTime: MenuWorldTime
   quality: MenuQuality
   isFullscreen: boolean
@@ -185,10 +198,18 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
   clickToLock,
   shiftLockAlign,
   mouseSensitivity,
+  fov = 68,
+  weather = 'clear',
+  autoDayCycle = false,
+  showGhost = true,
   onTogglePointerLock,
   onChangeClickToLock,
   onChangeShiftLockAlign,
   onChangeMouseSensitivity,
+  onChangeFov,
+  onChangeWeather,
+  onChangeAutoDayCycle,
+  onChangeShowGhost,
   worldTime,
   quality,
   isFullscreen,
@@ -618,6 +639,96 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
                     />
                   </div>
                 </>
+              )}
+
+              {/* U-11: Camera FOV Slider (60°-100°) */}
+              {onChangeFov && (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
+                  <div className="mb-1.5 flex items-center justify-between text-xs font-bold">
+                    <span className="flex items-center gap-1.5 text-sky-100">
+                      <Eye className="h-3.5 w-3.5 text-sky-300" />
+                      {lang === 'pl' ? 'Pole widzenia (FOV)' : 'Camera FOV'}
+                    </span>
+                    <span className="font-mono text-sky-300">{Math.round(fov)}°</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={60}
+                    max={100}
+                    step={1}
+                    value={fov}
+                    onChange={(e) => onChangeFov(parseInt(e.target.value, 10))}
+                    className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-white/15 accent-sky-400"
+                  />
+                </div>
+              )}
+
+              {/* U-01: Obby Speedrun PB Ghost toggle */}
+              {worldKind === 'obby' && onChangeShowGhost && (
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
+                  <span className="flex items-center gap-2 text-xs font-bold text-white">
+                    <Ghost className="h-4 w-4 text-cyan-300" />
+                    {lang === 'pl' ? 'Duch rekordu (Ghost)' : 'PB Ghost Runner'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onChangeShowGhost(!showGhost)}
+                    className={`rounded-xl px-2.5 py-1 text-[11px] font-extrabold transition cursor-pointer ${
+                      showGhost ? 'bg-cyan-400 text-slate-950' : 'bg-white/10 text-sky-200'
+                    }`}
+                  >
+                    {showGhost ? t.on : t.off}
+                  </button>
+                </div>
+              )}
+
+              {/* U-12: Lobby Dynamic Weather & Auto Day Cycle */}
+              {worldKind === 'lobby' && onChangeWeather && (
+                <div className="space-y-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-xs font-bold text-white">
+                      <CloudSnow className="h-3.5 w-3.5 text-sky-300" />
+                      {lang === 'pl' ? 'Pogoda' : 'Weather'}
+                    </span>
+                    <div className="flex rounded-xl border border-white/10 bg-slate-950/80 p-0.5">
+                      {(
+                        [
+                          { id: 'clear', label: lang === 'pl' ? 'Czysto' : 'Clear' },
+                          { id: 'snow', label: lang === 'pl' ? 'Śnieg' : 'Snow' },
+                          { id: 'stars', label: lang === 'pl' ? 'Gwiazdy' : 'Stars' },
+                        ] as const
+                      ).map((w) => (
+                        <button
+                          key={w.id}
+                          type="button"
+                          onClick={() => onChangeWeather(w.id)}
+                          className={`rounded-lg px-2 py-1 text-[10px] font-extrabold transition cursor-pointer ${
+                            weather === w.id ? 'bg-sky-400 text-slate-950' : 'text-sky-200/75 hover:text-white'
+                          }`}
+                        >
+                          {w.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {onChangeAutoDayCycle && (
+                    <div className="flex items-center justify-between pt-1 border-t border-white/10">
+                      <span className="flex items-center gap-1.5 text-[11px] font-bold text-sky-100">
+                        <Sparkles className="h-3.5 w-3.5 text-amber-300" />
+                        {lang === 'pl' ? 'Auto cykl dnia i nocy' : 'Auto Day/Night Cycle'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onChangeAutoDayCycle(!autoDayCycle)}
+                        className={`rounded-xl px-2.5 py-0.5 text-[10px] font-extrabold transition cursor-pointer ${
+                          autoDayCycle ? 'bg-amber-400 text-slate-950' : 'bg-white/10 text-sky-200'
+                        }`}
+                      >
+                        {autoDayCycle ? t.on : t.off}
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* Day / Night */}

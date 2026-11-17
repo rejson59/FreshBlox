@@ -1,21 +1,30 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ArrowRight,
+  Bell,
   Compass,
   Crown,
   FlaskConical,
   Hash,
   Inbox,
+  Lock,
   LogOut,
   MessageSquarePlus,
-  Moon,
-  Plus,
+  Palette,
   ShieldCheck,
   Shirt,
-  Sun,
   Users,
 } from 'lucide-react'
-import { ARCTIC_SKY, getThemeTokens, ThemeMode } from './data/brandTheme'
+import {
+  applyThemeCssVars,
+  FRESH_THEMES,
+  getThemePreset,
+  getThemeTokens,
+  loadThemePreset,
+  saveThemePreset,
+  ThemeMode,
+  ThemePresetId,
+} from './data/brandTheme'
 import { Lang, LOCALES } from './data/locales'
 import { getRankForXp, WorldKind } from './data/catalog'
 import { FreshBloxLogo, FreshBloxWordmark } from './components/brand/FreshBloxBrand'
@@ -29,9 +38,15 @@ import { AdminPanelView } from './components/admin/AdminPanelView'
 import { FeedbackInboxView } from './components/admin/FeedbackInboxView'
 import { TestLabView } from './components/tests/TestLabView'
 import { FreshLoaderAnimation } from './components/loading/FreshLoaders'
+import { WorldTransitionOverlay } from './components/loading/WorldTransitionOverlay'
+import { PartyBarModal } from './components/social/PartyBarModal'
+import { PrivateRoomModal } from './components/lobby/PrivateRoomModal'
+import { NotificationsPopover } from './components/hud/NotificationsPopover'
 import { AuthScreen } from './components/auth/AuthScreen'
 import { FeedbackModal } from './components/feedback/FeedbackModal'
-import { fetchAdminPlatformStats } from './lib/adminApi'
+import { fetchAdminPlatformStats, fetchWorldLiveStats } from './lib/adminApi'
+import { fetchUserNotifications, UserNotificationItem } from './lib/socialApi'
+import { generatePartyCode, PartyMember, PartySessionClient } from './lib/partyClient'
 import { FreshLabFlags, loadLabFlags, saveLabFlags } from './lib/labFlags'
 import { sfx } from './lib/sfx'
 import {
@@ -61,7 +76,23 @@ export function App() {
   const [initialLaunch] = useState(() => getInitialLaunchFromUrl())
   const [view, setView] = useState<AppView>(initialLaunch.view)
   const [activeRoomId, setActiveRoomId] = useState<string>(initialLaunch.roomId)
-  const [mode, setMode] = useState<ThemeMode>('dark')
+  const [themePreset, setThemePreset] = useState<ThemePresetId>(() => loadThemePreset())
+  const [themePickerOpen, setThemePickerOpen] = useState<boolean>(false)
+  const activeTheme = getThemePreset(themePreset)
+  const mode: ThemeMode = activeTheme.mode
+  const setMode = (next: ThemeMode | ((prev: ThemeMode) => ThemeMode)) => {
+    const resolved = typeof next === 'function' ? next(mode) : next
+    const targetPreset: ThemePresetId =
+      resolved === 'light' ? 'nordic-frost' : themePreset === 'nordic-frost' ? 'arctic-sky' : themePreset
+    setThemePreset(targetPreset)
+    saveThemePreset(targetPreset)
+  }
+  const selectThemePreset = (id: ThemePresetId) => {
+    setThemePreset(id)
+    saveThemePreset(id)
+    setThemePickerOpen(false)
+  }
+
   const [lang, setLang] = useState<Lang>('pl')
   const [isFullscreen, setIsFullscreen] = useState<boolean>(() => isDocumentFullscreen())
   const [feedbackOpen, setFeedbackOpen] = useState<boolean>(false)
@@ -70,10 +101,28 @@ export function App() {
   const [labFlags, setLabFlags] = useState<FreshLabFlags>(() => loadLabFlags())
   const [newFeedbackCount, setNewFeedbackCount] = useState<number>(0)
   const [worldTransition, setWorldTransition] = useState<{
-    title: string
+    world: WorldKind
     room: string
     fading: boolean
+    onlineCount: number | null
   } | null>(null)
+
+  // U-08: Private Room modal
+  const [privateRoomOpen, setPrivateRoomOpen] = useState<boolean>(false)
+  const [privateRoomDefaultWorld, setPrivateRoomDefaultWorld] = useState<WorldKind>('lobby')
+
+  // U-02: Party / Squad state
+  const [partyModalOpen, setPartyModalOpen] = useState<boolean>(false)
+  const [partyCode, setPartyCode] = useState<string | null>(null)
+  const [partyMembers, setPartyMembers] = useState<PartyMember[]>([])
+  const [partyIsLeader, setPartyIsLeader] = useState<boolean>(false)
+  const partyClientRef = useRef<PartySessionClient | null>(null)
+
+  // U-14: Notifications Center + DM deep-link
+  const [notifOpen, setNotifOpen] = useState<boolean>(false)
+  const [notifications, setNotifications] = useState<UserNotificationItem[]>([])
+  const [notifLoading, setNotifLoading] = useState<boolean>(false)
+  const [initialDmUsername, setInitialDmUsername] = useState<string | null>(null)
 
   const updateLabFlags = (next: FreshLabFlags) => {
     setLabFlags(next)
@@ -94,6 +143,10 @@ export function App() {
     setUsername,
     updateAvatar,
     awardGemsAndXp,
+    setPinnedBadge,
+    saveOutfitSlot,
+    deleteOutfitSlot,
+    recordObbySpeedrun,
     incrementQuest,
     claimQuest,
     recordObbyStage,
@@ -111,10 +164,35 @@ export function App() {
   }, [lang])
 
   useEffect(() => {
-    const bg = mode === 'dark' ? '#070D19' : '#EFF6FF'
-    document.documentElement.style.backgroundColor = bg
-    document.body.style.backgroundColor = bg
-  }, [mode])
+    const th = getThemePreset(themePreset)
+    applyThemeCssVars(themePreset)
+    document.documentElement.style.backgroundColor = th.shellBg
+    document.body.style.backgroundColor = th.shellBg
+  }, [themePreset])
+
+  // U-14: Fetch notifications periodically
+  const loadNotifications = useCallback(async () => {
+    if (!authUser) return
+    setNotifLoading(true)
+    const items = await fetchUserNotifications(authUser.id, lang)
+    setNotifications(items)
+    setNotifLoading(false)
+  }, [authUser, lang])
+
+  useEffect(() => {
+    if (!authUser) return
+    void loadNotifications()
+    const id = window.setInterval(() => void loadNotifications(), 35_000)
+    return () => window.clearInterval(id)
+  }, [authUser, loadNotifications])
+
+  // U-02: Party cleanup on unmount
+  useEffect(() => {
+    return () => {
+      partyClientRef.current?.disconnect()
+      partyClientRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     const syncFs = () => setIsFullscreen(isDocumentFullscreen())
@@ -157,30 +235,32 @@ export function App() {
     }
   }, [authUser, profile.role])
 
-  // Smooth 3D world loading overlay using the active loader preset (default: Arctic 3D Glass Cube)
+  // Smooth 3D world loading overlay combining L-02 + W-01 + W-02 + W-03 with real player count
   useEffect(() => {
     if (!authUser || (view !== 'world' && view !== 'obby')) {
       setWorldTransition(null)
       return
     }
-    const title =
-      view === 'obby'
-        ? 'Test Obby 100'
-        : lang === 'pl'
-        ? 'Lobby Główne'
-        : 'Main Lobby'
-    setWorldTransition({ title, room: activeRoomId, fading: false })
+    const worldKind: WorldKind = view === 'obby' ? 'obby' : 'lobby'
+    let alive = true
+    setWorldTransition({ world: worldKind, room: activeRoomId, fading: false, onlineCount: null })
+    void fetchWorldLiveStats().then((stats) => {
+      if (!alive || !stats) return
+      const cnt = worldKind === 'obby' ? Math.max(1, stats.obby_online) : Math.max(1, stats.lobby_online)
+      setWorldTransition((prev) => (prev ? { ...prev, onlineCount: cnt } : null))
+    })
     const tFade = window.setTimeout(() => {
       setWorldTransition((prev) => (prev ? { ...prev, fading: true } : null))
-    }, 520)
+    }, 640)
     const tClear = window.setTimeout(() => {
       setWorldTransition(null)
-    }, 820)
+    }, 940)
     return () => {
+      alive = false
       window.clearTimeout(tFade)
       window.clearTimeout(tClear)
     }
-  }, [authUser, view, activeRoomId, lang])
+  }, [authUser, view, activeRoomId])
 
   // Lock page scroll while inside 3D gameplay so mobile address bar / overscroll never clips HUD controls
   useEffect(() => {
@@ -205,14 +285,20 @@ export function App() {
   const isDark = mode === 'dark'
   const rank = getRankForXp(profile.xp)
 
-  // Deep Gaming Launcher Shell Colors
-  const shellBg = isDark ? '#070D19' : '#EFF6FF'
-  const railBg = isDark ? '#050A14' : '#E3EFFC'
-  const topBarBg = isDark ? 'rgba(8, 15, 29, 0.92)' : 'rgba(248, 252, 255, 0.92)'
-  const shellBorder = isDark ? 'rgba(148, 163, 184, 0.14)' : 'rgba(14, 165, 233, 0.18)'
+  // Deep Gaming Launcher Shell Colors driven by selected Theme Preset (T-01..T-06)
+  const shellBg = activeTheme.shellBg
+  const railBg = activeTheme.railBg
+  const topBarBg = activeTheme.topBarBg
+  const shellBorder = activeTheme.border
   const inputBg = isDark ? 'rgba(255, 255, 255, 0.045)' : '#FFFFFF'
+  const themeAccent = activeTheme.accent
 
   const handleSignOut = async () => {
+    partyClientRef.current?.disconnect()
+    partyClientRef.current = null
+    setPartyCode(null)
+    setPartyMembers([])
+    setPartyIsLeader(false)
     exitGameFullscreen()
     setView('home')
     await signOut()
@@ -277,6 +363,51 @@ export function App() {
     navigateView(world === 'obby' ? 'obby' : 'world', roomId)
   }
 
+  // U-02: Party / Squad realtime session handlers
+  const connectToParty = (code: string, asLeader: boolean) => {
+    partyClientRef.current?.disconnect()
+    const clean = code.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 14)
+    if (!clean) return
+    const client = new PartySessionClient({
+      code: clean,
+      selfId: profile.playerId,
+      selfUsername: profile.username,
+      isLeader: asLeader,
+      onMembersChange: (members) => setPartyMembers(members),
+      onLaunch: (world, roomCode) => {
+        handleEnterWorld(world, roomCode)
+      },
+    })
+    client.connect()
+    partyClientRef.current = client
+    setPartyCode(clean)
+    setPartyIsLeader(asLeader)
+  }
+
+  const handleCreateParty = () => {
+    connectToParty(generatePartyCode(), true)
+  }
+
+  const handleJoinParty = (code: string) => {
+    connectToParty(code, false)
+  }
+
+  const handleLeaveParty = () => {
+    partyClientRef.current?.disconnect()
+    partyClientRef.current = null
+    setPartyCode(null)
+    setPartyMembers([])
+    setPartyIsLeader(false)
+  }
+
+  const handlePartyLaunchWorld = (world: WorldKind) => {
+    const room = partyCode ? `PTY-${partyCode.replace(/[^A-Z0-9]/g, '').slice(-4)}` : world === 'obby' ? 'OBBY-1' : 'PUBLIC-1'
+    if (partyClientRef.current && partyIsLeader) {
+      partyClientRef.current.broadcastLaunch(world, room)
+    }
+    handleEnterWorld(world, room)
+  }
+
   const handleLauncherBarSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const clean = launcherInput
@@ -295,10 +426,9 @@ export function App() {
     setLauncherInput('')
   }
 
-  const handleCreatePrivateRoom = () => {
-    const code = `SKY-${Math.floor(100 + Math.random() * 900)}`
-    sfx.playClick()
-    handleEnterWorld('lobby', code)
+  const handleOpenPrivateRoom = (world: WorldKind = 'lobby') => {
+    setPrivateRoomDefaultWorld(world)
+    setPrivateRoomOpen(true)
   }
 
   const openFeedback = (customContext?: string) => {
@@ -420,6 +550,7 @@ export function App() {
             unlockedFaces={profile.unlockedFaces}
             initialStage={profile.obbyStage}
             bestStage={isStaff && labFlags.unlockAllObbyStages ? 100 : profile.obbyBestStage}
+            bestTimeMs={profile.obbyBestTimeMs}
             completions={profile.obbyCompletions}
             isFullscreen={isFullscreen}
             onBackHome={() => navigateView('home')}
@@ -427,7 +558,12 @@ export function App() {
             onBuyAndEquip={buyAndEquip}
             onBuyBundle={buyBundle}
             onSkinChange={(hex) => updateAvatar({ skinColor: hex })}
-            onStageReached={recordObbyStage}
+            onStageReached={(stg, ms) => {
+              recordObbyStage(stg, ms)
+              if (stg === 100 && typeof ms === 'number') {
+                recordObbySpeedrun(ms)
+              }
+            }}
             onSetCurrentStage={setObbyCurrentStage}
             onChatSent={() => incrementQuest('q_chat', 1)}
             onEmoteUsed={() => incrementQuest('q_emote', 1)}
@@ -438,31 +574,14 @@ export function App() {
         )}
 
         {worldTransition && (
-          <div
-            className={`fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 px-4 transition-opacity duration-300 ${
-              worldTransition.fading ? 'pointer-events-none opacity-0' : 'opacity-100'
-            }`}
-            style={{
-              background:
-                'radial-gradient(circle at 50% 42%, #0C2344 0%, #070D19 64%, #040812 100%)',
-            }}
-          >
-            <div className="flex items-center gap-2.5 opacity-95">
-              <FreshBloxLogo size={36} />
-              <FreshBloxWordmark mode="dark" size="md" />
-            </div>
-            <div className="flex h-24 w-24 items-center justify-center">
-              <FreshLoaderAnimation id={labFlags.loaderPreset} size="lg" mode="dark" />
-            </div>
-            <div className="flex flex-col items-center gap-1 text-center">
-              <span className="font-display text-base font-extrabold text-white">
-                {worldTransition.title}
-              </span>
-              <span className="rounded-md border border-sky-400/30 bg-sky-500/12 px-2 py-0.5 font-mono text-[11px] font-bold text-sky-300">
-                #{worldTransition.room}
-              </span>
-            </div>
-          </div>
+          <WorldTransitionOverlay
+            world={worldTransition.world}
+            roomCode={worldTransition.room}
+            loaderPreset={labFlags.loaderPreset}
+            lang={lang}
+            fading={worldTransition.fading}
+            onlineCount={worldTransition.onlineCount}
+          />
         )}
 
         <FeedbackModal
@@ -499,8 +618,8 @@ export function App() {
             }}
             className="flex h-11 w-11 items-center justify-center rounded-xl transition hover:scale-105 active:scale-95 cursor-pointer"
             style={{
-              background: isDark ? 'rgba(56, 189, 248, 0.1)' : 'rgba(14, 165, 233, 0.12)',
-              border: `1px solid ${ARCTIC_SKY.skyMain}35`,
+              background: `${themeAccent}1A`,
+              border: `1px solid ${themeAccent}40`,
             }}
             title="FreshBlox"
           >
@@ -514,7 +633,7 @@ export function App() {
             {navItems.map((item) => {
               const Icon = item.icon
               const active = view === item.id
-              const accent = item.accent ?? ARCTIC_SKY.skyMain
+              const accent = item.accent ?? themeAccent
               return (
                 <div key={item.id} className="relative flex w-full items-center justify-center">
                   {/* Left sharp active indicator pill */}
@@ -590,16 +709,16 @@ export function App() {
           )}
         </div>
 
-        {/* Bottom Utility Dock (Feedback, Theme, Lang, Sign Out) */}
+        {/* Bottom Utility Dock (Feedback, 6 Themes, Lang, Sign Out) */}
         <div className="flex flex-col items-center gap-1.5">
           <button
             type="button"
             onClick={() => openFeedback()}
             className="flex h-9 w-9 items-center justify-center rounded-xl border transition hover:scale-105 cursor-pointer"
             style={{
-              borderColor: `${ARCTIC_SKY.skyMain}38`,
-              background: `${ARCTIC_SKY.skyMain}14`,
-              color: ARCTIC_SKY.skyMain,
+              borderColor: `${themeAccent}38`,
+              background: `${themeAccent}14`,
+              color: themeAccent,
             }}
             title={lang === 'pl' ? 'Zgłoś błąd / pomysł' : 'Feedback'}
             aria-label="Feedback"
@@ -609,16 +728,17 @@ export function App() {
 
           <button
             type="button"
-            onClick={() => {
-              sfx.playClick()
-              setMode((m) => (m === 'dark' ? 'light' : 'dark'))
-            }}
+            onClick={() => setThemePickerOpen((o) => !o)}
             className="flex h-9 w-9 items-center justify-center rounded-xl border transition hover:scale-105 cursor-pointer"
-            style={{ borderColor: shellBorder, background: inputBg, color: tokens.textSecondary }}
-            title={mode === 'dark' ? 'Light mode' : 'Dark mode'}
-            aria-label="Toggle theme"
+            style={{
+              borderColor: themePickerOpen ? `${themeAccent}66` : shellBorder,
+              background: themePickerOpen ? `${themeAccent}22` : inputBg,
+              color: themeAccent,
+            }}
+            title={lang === 'pl' ? 'Motywy kolorystyczne (6)' : 'Color Themes (6)'}
+            aria-label="Color themes"
           >
-            {mode === 'dark' ? <Sun className="h-4 w-4 text-amber-300" /> : <Moon className="h-4 w-4 text-sky-600" />}
+            <Palette className="h-4 w-4" />
           </button>
 
           <button
@@ -655,7 +775,7 @@ export function App() {
           style={{ background: topBarBg, borderColor: shellBorder }}
         >
           {/* Left: Brand Wordmark + Quick Room / Search Launcher Input */}
-          <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
             <button
               type="button"
               onClick={() => navigateView('home')}
@@ -685,7 +805,7 @@ export function App() {
                 <button
                   type="submit"
                   className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-white transition hover:brightness-110 cursor-pointer"
-                  style={{ background: ARCTIC_SKY.skyMain }}
+                  style={{ background: themeAccent }}
                   title={lang === 'pl' ? 'Dołącz do pokoju' : 'Join room'}
                 >
                   <ArrowRight className="h-3.5 w-3.5" />
@@ -693,34 +813,74 @@ export function App() {
               )}
             </form>
 
-            {/* Quick Private Room Button */}
+            {/* U-08: Private Room Button */}
             <button
               type="button"
-              onClick={handleCreatePrivateRoom}
+              onClick={() => handleOpenPrivateRoom('lobby')}
               className="hidden md:inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-extrabold transition hover:brightness-110 cursor-pointer"
               style={{
                 borderColor: shellBorder,
                 background: inputBg,
                 color: tokens.textPrimary,
               }}
-              title={lang === 'pl' ? 'Utwórz prywatny pokój' : 'Create private room'}
+              title={lang === 'pl' ? 'Prywatny pokój na hasło / dla znajomych' : 'Private room'}
             >
-              <Plus className="h-3.5 w-3.5 text-sky-400" />
-              <span>{lang === 'pl' ? 'Pokój' : 'Room'}</span>
+              <Lock className="h-3.5 w-3.5" style={{ color: themeAccent }} />
+              <span>{lang === 'pl' ? 'Prywatny' : 'Private'}</span>
+            </button>
+
+            {/* U-02: Party / Squad Button */}
+            <button
+              type="button"
+              onClick={() => setPartyModalOpen(true)}
+              className="hidden md:inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-extrabold transition hover:brightness-110 cursor-pointer"
+              style={{
+                borderColor: partyCode ? `${themeAccent}66` : shellBorder,
+                background: partyCode ? `${themeAccent}20` : inputBg,
+                color: partyCode ? themeAccent : tokens.textPrimary,
+              }}
+              title={lang === 'pl' ? 'Drużyna / Impreza (Party)' : 'Party / Squad'}
+            >
+              <Users className="h-3.5 w-3.5" style={{ color: themeAccent }} />
+              <span>{partyCode ? `${partyCode} (${partyMembers.length})` : 'Party'}</span>
             </button>
           </div>
 
-          {/* Right: Compact Player Pill + Mobile quick icons */}
+          {/* Right: Notifications Bell + Theme Picker + Player Chip */}
           <div className="flex shrink-0 items-center gap-1.5">
-            {/* Mobile-only quick tools (hidden on desktop because they live in Left Rail) */}
+            {/* U-14: Notifications Center Bell */}
+            <button
+              type="button"
+              onClick={() => {
+                setNotifOpen((o) => !o)
+                void loadNotifications()
+              }}
+              className="relative flex h-8 w-8 items-center justify-center rounded-xl border transition hover:brightness-110 cursor-pointer"
+              style={{
+                borderColor: notifOpen ? `${themeAccent}66` : shellBorder,
+                background: notifOpen ? `${themeAccent}20` : inputBg,
+                color: tokens.textPrimary,
+              }}
+              title={lang === 'pl' ? 'Powiadomienia' : 'Notifications'}
+              aria-label="Notifications"
+            >
+              <Bell className="h-3.5 w-3.5" style={{ color: notifications.length > 0 ? themeAccent : undefined }} />
+              {notifications.length > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 font-mono text-[9px] font-black text-white shadow">
+                  {notifications.length > 9 ? '9+' : notifications.length}
+                </span>
+              )}
+            </button>
+
+            {/* Mobile-only quick tools */}
             <button
               type="button"
               onClick={() => openFeedback()}
               className="flex lg:hidden h-8 w-8 items-center justify-center rounded-xl border cursor-pointer"
               style={{
-                borderColor: `${ARCTIC_SKY.skyMain}38`,
-                background: `${ARCTIC_SKY.skyMain}14`,
-                color: ARCTIC_SKY.skyMain,
+                borderColor: `${themeAccent}38`,
+                background: `${themeAccent}14`,
+                color: themeAccent,
               }}
               aria-label="Feedback"
             >
@@ -729,12 +889,12 @@ export function App() {
 
             <button
               type="button"
-              onClick={() => setMode((m) => (m === 'dark' ? 'light' : 'dark'))}
+              onClick={() => setThemePickerOpen((o) => !o)}
               className="flex lg:hidden h-8 w-8 items-center justify-center rounded-xl border cursor-pointer"
-              style={{ borderColor: shellBorder, background: inputBg, color: tokens.textSecondary }}
-              aria-label="Toggle theme"
+              style={{ borderColor: shellBorder, background: inputBg, color: themeAccent }}
+              aria-label="Color themes"
             >
-              {mode === 'dark' ? <Sun className="h-3.5 w-3.5 text-amber-300" /> : <Moon className="h-3.5 w-3.5 text-sky-600" />}
+              <Palette className="h-3.5 w-3.5" />
             </button>
 
             <button
@@ -758,7 +918,7 @@ export function App() {
                   profile.role === 'owner'
                     ? roleMeta.border
                     : view === 'social'
-                      ? `${ARCTIC_SKY.skyMain}55`
+                      ? `${themeAccent}55`
                       : shellBorder,
                 background: inputBg,
                 color: tokens.textPrimary,
@@ -784,8 +944,8 @@ export function App() {
                 </span>
               )}
               <span
-                className="hidden sm:inline-flex rounded-md px-1.5 py-0.5 font-mono text-[10px] font-extrabold text-sky-400"
-                style={{ background: `${ARCTIC_SKY.skyMain}18` }}
+                className="hidden sm:inline-flex rounded-md px-1.5 py-0.5 font-mono text-[10px] font-extrabold"
+                style={{ background: `${themeAccent}18`, color: themeAccent }}
               >
                 {profile.xp} XP
               </span>
@@ -812,6 +972,10 @@ export function App() {
               mode={mode}
               lang={lang}
               searchQuery={launcherInput}
+              partyCode={partyCode}
+              partyCount={partyMembers.length}
+              onOpenParty={() => setPartyModalOpen(true)}
+              onOpenPrivateRoom={handleOpenPrivateRoom}
               onEnterWorld={handleEnterWorld}
               onOpenAvatar={() => navigateView('avatar')}
               onOpenProfile={() => navigateView('social')}
@@ -828,6 +992,9 @@ export function App() {
               onBuyAndEquip={buyAndEquip}
               onBuyBundle={buyBundle}
               onSkinChange={(hex) => updateAvatar({ skinColor: hex })}
+              onSaveOutfitSlot={saveOutfitSlot}
+              onDeleteOutfitSlot={deleteOutfitSlot}
+              onApplySavedOutfit={(cfg) => updateAvatar(cfg)}
               onEnterLobby={() => handleEnterWorld('lobby', 'PUBLIC-1')}
             />
           )}
@@ -838,6 +1005,10 @@ export function App() {
               cloudStatus={cloudStatus}
               mode={mode}
               lang={lang}
+              activeRoomCode={activeRoomId}
+              initialDmUsername={initialDmUsername}
+              onConsumedInitialDm={() => setInitialDmUsername(null)}
+              onPinBadge={setPinnedBadge}
               onChangeUsername={setUsername}
               onAddFriend={addFriend}
               onRefreshFriends={refreshFriends}
@@ -891,7 +1062,7 @@ export function App() {
         {allNavItems.map((item) => {
           const Icon = item.icon
           const active = view === item.id
-          const accent = item.accent ?? ARCTIC_SKY.skyMain
+          const accent = item.accent ?? themeAccent
           return (
             <button
               key={item.id}
@@ -919,6 +1090,122 @@ export function App() {
           )
         })}
       </nav>
+
+      {/* T-01..T-06: 6 Switchable Color Themes Picker */}
+      {themePickerOpen && (
+        <div
+          onClick={() => setThemePickerOpen(false)}
+          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/55 p-4 backdrop-blur-sm sm:items-center"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl border p-5 shadow-2xl"
+            style={{
+              background: isDark ? '#091224' : '#FFFFFF',
+              borderColor: `${themeAccent}44`,
+              color: tokens.textPrimary,
+            }}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Palette className="h-4 w-4" style={{ color: themeAccent }} />
+                <h3 className="font-display text-sm font-extrabold">
+                  {lang === 'pl' ? 'Motywy kolorystyczne FreshBlox (6)' : 'FreshBlox Color Themes (6)'}
+                </h3>
+              </div>
+              <span className="rounded-md px-2 py-0.5 font-mono text-[10px] font-black" style={{ background: `${themeAccent}1A`, color: themeAccent }}>
+                {activeTheme.code}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {FRESH_THEMES.map((th) => {
+                const selected = th.id === themePreset
+                const swatches = [th.shellBg, th.accentDeep, th.accent]
+                return (
+                  <button
+                    key={th.id}
+                    type="button"
+                    onClick={() => selectThemePreset(th.id)}
+                    className="flex flex-col gap-2 rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 cursor-pointer"
+                    style={{
+                      background: selected ? `${th.accent}1A` : isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
+                      borderColor: selected ? th.accent : shellBorder,
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-[10px] font-black" style={{ color: th.accent }}>
+                        {th.code}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        {swatches.map((hex) => (
+                          <span
+                            key={hex}
+                            className="h-3.5 w-3.5 rounded-full border border-white/25"
+                            style={{ background: hex }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-extrabold" style={{ color: tokens.textPrimary }}>
+                        {lang === 'pl' ? th.namePl : th.nameEn}
+                      </div>
+                      <div className="text-[10px]" style={{ color: tokens.textSecondary }}>
+                        {th.mode === 'light'
+                          ? lang === 'pl'
+                            ? 'Jasny motyw'
+                            : 'Light theme'
+                          : lang === 'pl'
+                            ? 'Ciemny motyw'
+                            : 'Dark theme'}
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* U-02: Party / Squad Modal */}
+      <PartyBarModal
+        open={partyModalOpen}
+        lang={lang}
+        partyCode={partyCode}
+        members={partyMembers}
+        isLeader={partyIsLeader}
+        onClose={() => setPartyModalOpen(false)}
+        onCreateParty={handleCreateParty}
+        onJoinParty={handleJoinParty}
+        onLeaveParty={handleLeaveParty}
+        onLaunchWorld={handlePartyLaunchWorld}
+      />
+
+      {/* U-08: Private Rooms (Password / Friends-only) */}
+      <PrivateRoomModal
+        open={privateRoomOpen}
+        lang={lang}
+        defaultWorld={privateRoomDefaultWorld}
+        onClose={() => setPrivateRoomOpen(false)}
+        onEnterRoom={handleEnterWorld}
+      />
+
+      {/* U-14: Notifications Center Popover */}
+      <NotificationsPopover
+        open={notifOpen}
+        lang={lang}
+        items={notifications}
+        loading={notifLoading}
+        onRefresh={() => void loadNotifications()}
+        onClose={() => setNotifOpen(false)}
+        onOpenDm={(uname) => {
+          setInitialDmUsername(uname)
+          navigateView('social')
+        }}
+        onJoinRoom={handleEnterWorld}
+      />
 
       <FeedbackModal
         open={feedbackOpen}

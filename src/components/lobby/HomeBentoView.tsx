@@ -6,6 +6,7 @@ import {
   Crown,
   Flag,
   Gamepad2,
+  Lock,
   Play,
   RefreshCw,
   Shirt,
@@ -26,6 +27,10 @@ interface HomeBentoViewProps {
   mode: ThemeMode
   lang: Lang
   searchQuery?: string
+  partyCode?: string | null
+  partyCount?: number
+  onOpenParty?: () => void
+  onOpenPrivateRoom?: (world?: WorldKind) => void
   onEnterWorld: (world: WorldKind, roomId: string) => void
   onOpenAvatar: () => void
   onOpenProfile?: () => void
@@ -78,6 +83,10 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
   mode,
   lang,
   searchQuery = '',
+  partyCode = null,
+  partyCount = 0,
+  onOpenParty,
+  onOpenPrivateRoom,
   onEnterWorld,
   onOpenAvatar,
   onOpenProfile,
@@ -313,7 +322,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
 
         {/* === COMPACT WORLDS LIBRARY (4-COL DESKTOP LAUNCHER GRID) === */}
         <section className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Gamepad2 className="h-4 w-4" style={{ color: ARCTIC_SKY.skyMain }} />
               <h2 className="text-xs font-extrabold uppercase tracking-wider" style={{ color: tokens.textPrimary }}>
@@ -327,12 +336,52 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
               </span>
             </div>
 
-            {liveStats && (
-              <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-bold" style={{ color: tokens.textSecondary }}>
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                {liveStats.platform_online} online
-              </span>
-            )}
+            <div className="flex items-center gap-1.5">
+              {onOpenParty && (
+                <button
+                  type="button"
+                  onClick={onOpenParty}
+                  className="inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-extrabold transition hover:brightness-110 cursor-pointer"
+                  style={{
+                    borderColor: partyCode ? 'rgba(56,189,248,0.5)' : panelBorder,
+                    background: partyCode ? 'rgba(14,165,233,0.16)' : panelSurface,
+                    color: partyCode ? '#38BDF8' : tokens.textPrimary,
+                  }}
+                >
+                  <Users className="h-3.5 w-3.5" />
+                  <span>
+                    {partyCode
+                      ? `Party ${partyCode} (${partyCount})`
+                      : lang === 'pl'
+                        ? 'Drużyna (Party)'
+                        : 'Party / Squad'}
+                  </span>
+                </button>
+              )}
+
+              {onOpenPrivateRoom && (
+                <button
+                  type="button"
+                  onClick={() => onOpenPrivateRoom(featured)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-extrabold transition hover:brightness-110 cursor-pointer"
+                  style={{
+                    borderColor: panelBorder,
+                    background: panelSurface,
+                    color: tokens.textPrimary,
+                  }}
+                >
+                  <Lock className="h-3.5 w-3.5 text-sky-400" />
+                  <span>{lang === 'pl' ? 'Prywatny pokój' : 'Private Room'}</span>
+                </button>
+              )}
+
+              {liveStats && (
+                <span className="ml-1 inline-flex items-center gap-1.5 font-mono text-[11px] font-bold" style={{ color: tokens.textSecondary }}>
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  {liveStats.platform_online} online
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">

@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import {
+  Bookmark,
   Check,
   Crown,
   Eye,
@@ -11,10 +12,12 @@ import {
   Palette,
   Play,
   RotateCcw,
+  Save,
   Shirt,
   ShoppingBag,
   Smile,
   Sun,
+  Trash2,
   Trophy,
 } from 'lucide-react'
 import { ARCTIC_SKY, getThemeTokens, ThemeMode } from '../../data/brandTheme'
@@ -43,10 +46,13 @@ interface AvatarEditorViewProps {
   onBuyAndEquip: (category: 'outfit' | 'hat' | 'face', itemId: string, price: number) => boolean
   onBuyBundle: (items: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; price: number }>) => boolean
   onSkinChange: (hex: string) => void
+  onSaveOutfitSlot?: (slot: number, name: string, avatar: R6AvatarConfig) => void
+  onDeleteOutfitSlot?: (slot: number) => void
+  onApplySavedOutfit?: (avatar: R6AvatarConfig) => void
   onEnterLobby: () => void
 }
 
-type EditorTab = 'outfits' | 'hats' | 'faces' | 'skin'
+type EditorTab = 'outfits' | 'hats' | 'faces' | 'skin' | 'presets'
 type StudioLighting = 'day' | 'night'
 
 const OUTFIT_SWATCHES: Record<OutfitId, { torso: string; arms: string; legs: string }> = {
@@ -65,9 +71,13 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
   onBuyAndEquip,
   onBuyBundle,
   onSkinChange,
+  onSaveOutfitSlot,
+  onDeleteOutfitSlot,
+  onApplySavedOutfit,
   onEnterLobby,
 }) => {
   const [tab, setTab] = useState<EditorTab>('outfits')
+  const [slotNames, setSlotNames] = useState<Record<number, string>>({})
   const [previewPose, setPreviewPose] = useState<PlayerPose>('idle')
   const [studioLight, setStudioLight] = useState<StudioLighting>('day')
 
@@ -515,6 +525,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
     { id: 'hats', label: t.tabs.hats, icon: Crown },
     { id: 'faces', label: t.tabs.faces, icon: Smile },
     { id: 'skin', label: t.tabs.skin, icon: Palette },
+    { id: 'presets', label: lang === 'pl' ? 'Zapisane zestawy (5)' : 'Saved Outfits (5)', icon: Bookmark },
   ]
 
   const renderCatalogGrid = <T extends string>(
@@ -830,7 +841,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
           style={{ background: tokens.cardBg, borderColor: tokens.cardBorder }}
         >
           <div className="mb-4 flex items-center justify-between gap-2.5">
-            <div className="grid grid-cols-4 gap-1.5 rounded-2xl border p-1" style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg }}>
+            <div className="grid grid-cols-5 gap-1.5 rounded-2xl border p-1" style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg }}>
               {tabs.map((tb) => {
                 const Icon = tb.icon
                 const active = tab === tb.id
@@ -841,7 +852,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
                     title={tb.label}
                     aria-label={tb.label}
                     onClick={() => setTab(tb.id)}
-                    className="flex h-9 w-11 sm:w-12 items-center justify-center rounded-xl transition cursor-pointer"
+                    className="flex h-9 w-10 sm:w-12 items-center justify-center rounded-xl transition cursor-pointer"
                     style={{
                       background: active ? tokens.buttonGradient : 'transparent',
                       color: active ? '#FFFFFF' : tokens.textSecondary,
@@ -924,6 +935,102 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
                     </button>
                   )
                 })}
+              </div>
+            )}
+            {tab === 'presets' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs font-bold" style={{ color: tokens.textSecondary }}>
+                  <span>
+                    {lang === 'pl'
+                      ? 'Zapisz do 5 kompletnych strojów i przełączaj je 1 kliknięciem (synchronizowane w chmurze).'
+                      : 'Save up to 5 complete outfits and swap them in 1 click (cloud synced).'}
+                  </span>
+                  <span className="font-mono text-sky-400">{profile.savedOutfits.length}/5</span>
+                </div>
+
+                <div className="grid gap-2.5 sm:grid-cols-2">
+                  {[1, 2, 3, 4, 5].map((slotNum) => {
+                    const existing = profile.savedOutfits.find((s) => s.slot === slotNum)
+                    const sw = existing ? OUTFIT_SWATCHES[existing.avatar.outfitId] : null
+                    const draftName = slotNames[slotNum] ?? existing?.name ?? (lang === 'pl' ? `Zestaw #${slotNum}` : `Preset #${slotNum}`)
+
+                    return (
+                      <div
+                        key={slotNum}
+                        className="flex flex-col justify-between gap-2.5 rounded-2xl border p-3.5"
+                        style={{
+                          background: existing ? tokens.heroGradient : tokens.mutedBg,
+                          borderColor: existing ? `${ARCTIC_SKY.skyMain}55` : tokens.cardBorder,
+                        }}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-slate-950/60 font-mono text-xs font-black text-sky-300">
+                            {sw ? (
+                              <div className="flex h-6 w-6 flex-col overflow-hidden rounded-md border border-white/25">
+                                <span className="h-1/2 w-full" style={{ background: sw.torso }} />
+                                <span className="h-1/2 w-full" style={{ background: sw.legs }} />
+                              </div>
+                            ) : (
+                              `#${slotNum}`
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            value={draftName}
+                            maxLength={22}
+                            onChange={(e) => setSlotNames((prev) => ({ ...prev, [slotNum]: e.target.value }))}
+                            className="w-full rounded-lg border border-white/10 bg-black/20 px-2.5 py-1 text-xs font-extrabold outline-none focus:border-sky-400"
+                            style={{ color: tokens.textPrimary }}
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSaveOutfitSlot?.(slotNum, draftName, profile.avatar)
+                            }}
+                            className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-sky-400/35 bg-sky-500/15 px-2.5 py-1.5 text-[11px] font-extrabold text-sky-300 hover:bg-sky-500/25 cursor-pointer"
+                          >
+                            <Save className="h-3.5 w-3.5" />
+                            {existing
+                              ? lang === 'pl'
+                                ? 'Nadpisz'
+                                : 'Overwrite'
+                              : lang === 'pl'
+                                ? 'Zapisz obecny'
+                                : 'Save current'}
+                          </button>
+
+                          {existing && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPreviewAvatar({ ...existing.avatar })
+                                  onApplySavedOutfit?.(existing.avatar)
+                                }}
+                                className="inline-flex items-center justify-center gap-1 rounded-xl px-3 py-1.5 text-[11px] font-extrabold text-white cursor-pointer"
+                                style={{ background: tokens.buttonGradient }}
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                                {lang === 'pl' ? 'Załóż' : 'Equip'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onDeleteOutfitSlot?.(slotNum)}
+                                title={lang === 'pl' ? 'Usuń slot' : 'Delete slot'}
+                                className="flex h-7 w-7 items-center justify-center rounded-xl border border-rose-400/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 cursor-pointer"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
           </div>
