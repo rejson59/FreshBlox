@@ -1386,8 +1386,10 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     const JUMP_VEL = 13.8
     const GRAVITY = -34
     const STEP_HEIGHT = 0.56
-    const PLAYER_R = 0.68
-    const PLAYER_H = 3.2
+    const PLAYER_R = 0.52 // Tight body radius matching visual R6 avatar limbs/torso
+    const LAND_R = 0.56 // Slightly forgiving foot radius for fair platform edge landings
+    const HAZARD_R = 0.34 // Fair hurtbox radius inside visual feet/torso (no invisible-air deaths!)
+    const PLAYER_H = 3.15
 
     let lastFrame = performance.now()
     let simTime = 0
@@ -1780,23 +1782,28 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         const subSteps = Math.max(1, Math.min(4, Math.ceil(dt / 0.011)))
         const sdt = dt / subSteps
 
+        // Exact inverse-Y rotation (matching Three.js mesh.rotation.y = angle!) + circle-vs-OBB hurtbox!
         const testSpinnerBlade = (angle: number, rb: RuntimeBlock, px: number, py: number, pz: number) => {
           const dx = px - rb.curX
           const dz = pz - rb.curZ
-          const cos = Math.cos(-angle)
-          const sin = Math.sin(-angle)
+          // Three.js Ry(angle) maps local (lx, lz) -> world (cos*lx + sin*lz, -sin*lx + cos*lz)
+          // Inverse transpose maps world (dx, dz) -> local (cos*dx - sin*dz, sin*dx + cos*dz)
+          const cos = Math.cos(angle)
+          const sin = Math.sin(angle)
           const lx = dx * cos - dz * sin
           const lz = dx * sin + dz * cos
-          const halfLen = rb.def.w / 2 + PLAYER_R * 0.58
-          const halfThick = rb.def.d / 2 + PLAYER_R * 0.58
+
+          const halfLen = Math.max(0.1, rb.def.w / 2 - 0.06)
+          const halfThick = Math.max(0.08, rb.def.d / 2 - 0.04)
+          const closestX = Math.max(-halfLen, Math.min(halfLen, lx))
+          const closestZ = Math.max(-halfThick, Math.min(halfThick, lz))
+          const ox = lx - closestX
+          const oz = lz - closestZ
+          if (ox * ox + oz * oz > HAZARD_R * HAZARD_R) return false
+
           const barMinY = rb.curY - rb.def.h / 2
           const barMaxY = rb.curY + rb.def.h / 2
-          return (
-            Math.abs(lx) <= halfLen &&
-            Math.abs(lz) <= halfThick &&
-            py < barMaxY - 0.06 &&
-            py + PLAYER_H > barMinY + 0.1
-          )
+          return py < barMaxY - 0.12 && py + PLAYER_H - 0.18 > barMinY
         }
 
         let hitHazard = false
@@ -1841,12 +1848,18 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
             const botY = rb.curY - rb.def.h / 2
 
             if (rb.def.kind === 'hazard') {
-              const inside =
-                nextX >= rb.curX - halfW - PLAYER_R &&
-                nextX <= rb.curX + halfW + PLAYER_R &&
-                nextZ >= rb.curZ - halfD - PLAYER_R &&
-                nextZ <= rb.curZ + halfD + PLAYER_R
-              if (inside && nextY < topY - 0.05 && nextY + PLAYER_H > botY + 0.08) {
+              // Exact circle (HAZARD_R) vs AABB hurtbox — fair corners, no invisible-air deaths!
+              const cHalfW = Math.max(0.05, halfW - 0.04)
+              const cHalfD = Math.max(0.05, halfD - 0.04)
+              const closestX = Math.max(rb.curX - cHalfW, Math.min(rb.curX + cHalfW, nextX))
+              const closestZ = Math.max(rb.curZ - cHalfD, Math.min(rb.curZ + cHalfD, nextZ))
+              const ox = nextX - closestX
+              const oz = nextZ - closestZ
+              if (
+                ox * ox + oz * oz <= HAZARD_R * HAZARD_R &&
+                nextY < topY - 0.08 &&
+                nextY + PLAYER_H - 0.18 > botY
+              ) {
                 hitHazard = true
                 break
               }
@@ -2042,16 +2055,16 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
 
             let insideXZ: boolean
             if (rb.def.kind === 'pillar' || rb.def.kind === 'bounce') {
-              const rad = halfW + PLAYER_R * 0.85
+              const rad = halfW + LAND_R * 0.9
               const dx = nextX - rb.curX
               const dz = nextZ - rb.curZ
               insideXZ = dx * dx + dz * dz <= rad * rad
             } else {
               insideXZ =
-                nextX >= rb.curX - halfW - PLAYER_R &&
-                nextX <= rb.curX + halfW + PLAYER_R &&
-                nextZ >= rb.curZ - halfD - PLAYER_R &&
-                nextZ <= rb.curZ + halfD + PLAYER_R
+                nextX >= rb.curX - halfW - LAND_R &&
+                nextX <= rb.curX + halfW + LAND_R &&
+                nextZ >= rb.curZ - halfD - LAND_R &&
+                nextZ <= rb.curZ + halfD + LAND_R
             }
             if (!insideXZ) continue
 
