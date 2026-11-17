@@ -96,14 +96,14 @@ export function App() {
     { id: 'social', label: t.social, icon: Users },
   ]
 
-  const hideTopChrome = view === 'world' && isFullscreen
+  const hideTopChrome = view === 'world'
 
   return (
     <div
       className="min-h-dvh w-full max-w-full overflow-x-clip transition-colors duration-300"
       style={{ background: tokens.pageBg, color: tokens.textPrimary }}
     >
-      {/* === STICKY ARCTIC SKY HEADER (hidden automatically during fullscreen 3D play!) === */}
+      {/* === STICKY ARCTIC SKY HEADER (always hidden inside 3D gameplay for full immersion!) === */}
       {!hideTopChrome && (
         <header
           className="sticky top-0 z-30 h-14 sm:h-16 w-full max-w-full border-b backdrop-blur-xl transition-colors"

@@ -3,20 +3,22 @@ import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import {
   Armchair,
-  ArrowLeft,
   Bot,
   Check,
   Gauge,
-  LocateFixed,
+  LogOut,
   Maximize2,
   MessageSquare,
   Minimize2,
+  Moon,
+  Navigation,
+  RotateCcw,
   RotateCw,
   Send,
-  Settings,
   Share2,
   Smartphone,
   Sparkles,
+  Sun,
   Users,
   Volume2,
   VolumeX,
@@ -33,11 +35,20 @@ import {
 } from '../lib/mobileFullscreen'
 import { sfx } from '../lib/sfx'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { FreshGemShard } from '../components/brand/FreshBloxBrand'
+import { FreshBloxLogo, FreshGemShard } from '../components/brand/FreshBloxBrand'
 import { MobileTouchControls } from '../components/hud/MobileTouchControls'
 import { createR6Rig, getSharedFreshStudTexture, R6RigHandle } from './r6Builder'
 
 export type GraphicsQuality = 'low' | 'medium' | 'high'
+type WorldTimeMode = 'day' | 'night'
+
+interface LobbyRosterEntry {
+  id: string
+  username: string
+  rank: string
+  isBot: boolean
+  isSelf?: boolean
+}
 
 interface AABB {
   minX: number
@@ -148,7 +159,9 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   const [chatOpen, setChatOpen] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 860 && !isTouchMobileDevice() : true,
   )
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [hubOpen, setHubOpen] = useState(false)
+  const [worldTime, setWorldTime] = useState<WorldTimeMode>('day')
+  const [roster, setRoster] = useState<LobbyRosterEntry[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
 
   // Interactive bench & portal state
@@ -193,6 +206,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   const seatedBenchRef = useRef<BenchSpot | null>(null)
   const toggleSitActionRef = useRef<() => void>(() => {})
   const resetSpawnActionRef = useRef<() => void>(() => {})
+  const teleportToMemberRef = useRef<(memberId: string) => void>(() => {})
 
   const touchMoveRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const jumpQueuedRef = useRef<boolean>(false)
@@ -203,6 +217,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   usernameRef.current = username
   const rankRef = useRef(getRankForXp(xp).name)
   rankRef.current = getRankForXp(xp).name
+  const worldTimeRef = useRef<WorldTimeMode>(worldTime)
+  worldTimeRef.current = worldTime
 
   const activeEmoteRef = useRef<PlayerPose | null>(null)
   const emoteTimerRef = useRef<number>(0)
@@ -211,9 +227,11 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   const localRigRef = useRef<R6RigHandle | null>(null)
   const speechTimeoutRef = useRef<number | null>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
+  const hemiLightRef = useRef<THREE.HemisphereLight | null>(null)
   const sunLightRef = useRef<THREE.DirectionalLight | null>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cloudsGroupRef = useRef<THREE.Group | null>(null)
+  const nightSkyGroupRef = useRef<THREE.Group | null>(null)
 
   const callbacksRef = useRef({
     onCollectGem,
@@ -250,36 +268,66 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     }, 2400)
   }, [])
 
-  // Live graphics quality application
+  // Live graphics quality + natural Day / Night atmosphere application
   useEffect(() => {
     const renderer = rendererRef.current
     const sun = sunLightRef.current
+    const hemi = hemiLightRef.current
     const scene = sceneRef.current
     const clouds = cloudsGroupRef.current
+    const nightSky = nightSkyGroupRef.current
     if (!renderer || !scene) return
+
+    const isNight = worldTime === 'night'
+    const skyHex = isNight ? '#0B1528' : '#BAE6FD'
+    scene.background = new THREE.Color(skyHex)
+
+    if (hemi) {
+      if (isNight) {
+        hemi.color.set('#89AED8')
+        hemi.groundColor.set('#14233C')
+        hemi.intensity = 0.72
+      } else {
+        hemi.color.set('#F0F9FF')
+        hemi.groundColor.set('#7DD3FC')
+        hemi.intensity = 1.15
+      }
+    }
+
+    if (sun) {
+      if (isNight) {
+        sun.color.set('#D8E8FF')
+        sun.intensity = 1.05
+      } else {
+        sun.color.set('#FFFBEB')
+        sun.intensity = 1.65
+      }
+    }
+
+    if (nightSky) nightSky.visible = isNight
 
     const dpr = window.devicePixelRatio || 1
     if (quality === 'low') {
       renderer.setPixelRatio(Math.min(dpr, 1.0))
       renderer.shadowMap.enabled = false
       if (sun) sun.castShadow = false
-      scene.fog = new THREE.Fog('#BAE6FD', 40, 115)
+      scene.fog = new THREE.Fog(skyHex, 40, 115)
       if (clouds) clouds.visible = false
     } else if (quality === 'medium') {
       renderer.setPixelRatio(Math.min(dpr, 1.35))
       renderer.shadowMap.enabled = true
       if (sun) sun.castShadow = true
-      scene.fog = new THREE.Fog('#BAE6FD', 54, 150)
-      if (clouds) clouds.visible = true
+      scene.fog = new THREE.Fog(skyHex, 54, 150)
+      if (clouds) clouds.visible = !isNight
     } else {
       renderer.setPixelRatio(Math.min(dpr, 1.85))
       renderer.shadowMap.enabled = true
       if (sun) sun.castShadow = true
-      scene.fog = new THREE.Fog('#BAE6FD', 68, 178)
-      if (clouds) clouds.visible = true
+      scene.fog = new THREE.Fog(skyHex, 68, 178)
+      if (clouds) clouds.visible = !isNight
     }
     renderer.shadowMap.needsUpdate = true
-  }, [quality])
+  }, [quality, worldTime])
 
   const triggerEmote = useCallback((pose: PlayerPose) => {
     // If sitting on bench, stand up cleanly for non-sit emotes
@@ -409,9 +457,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     container.appendChild(renderer.domElement)
     rendererRef.current = renderer
 
-    // Fresh-Day bright sky lighting
+    // Fresh-Day bright sky lighting (switches cleanly to natural moonlight in Night mode)
     const hemi = new THREE.HemisphereLight('#F0F9FF', '#7DD3FC', 1.15)
     scene.add(hemi)
+    hemiLightRef.current = hemi
 
     const sun = new THREE.DirectionalLight('#FFFBEB', 1.65)
     sun.position.set(28, 46, 24)
@@ -781,9 +830,9 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       return { id: idx, mesh, baseY: g.y, x: g.x, z: g.z, collectedUntil: 0 }
     })
 
-    // Soft floating Arctic Sky clouds
+    // Soft floating Arctic Sky clouds (Day)
     const cloudsGroup = new THREE.Group()
-    cloudsGroup.visible = initQ !== 'low'
+    cloudsGroup.visible = initQ !== 'low' && worldTimeRef.current === 'day'
     const cloudMat = trackMat(new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.85 }))
     const cloudGeo = trackGeo(new RoundedBoxGeometry(10, 2.2, 5.5, 2, 0.7))
     for (let i = 0; i < 6; i++) {
@@ -793,6 +842,30 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     }
     scene.add(cloudsGroup)
     cloudsGroupRef.current = cloudsGroup
+
+    // Natural starry night sky with Moon (Night — zero neon!)
+    const nightSkyGroup = new THREE.Group()
+    nightSkyGroup.visible = worldTimeRef.current === 'night'
+    const moonMesh = new THREE.Mesh(
+      trackGeo(new THREE.SphereGeometry(4.2, 18, 14)),
+      trackMat(new THREE.MeshBasicMaterial({ color: '#F4F7FF', fog: false })),
+    )
+    moonMesh.position.set(36, 48, -68)
+    nightSkyGroup.add(moonMesh)
+
+    const starGeo = trackGeo(new THREE.OctahedronGeometry(0.42, 0))
+    const starMat = trackMat(new THREE.MeshBasicMaterial({ color: '#E2ECFF', fog: false }))
+    for (let i = 0; i < 28; i++) {
+      const angle = (i / 28) * Math.PI * 2 + (i % 3) * 0.25
+      const dist = 56 + (i % 5) * 9
+      const sy = 28 + (i % 6) * 6.5
+      const st = new THREE.Mesh(starGeo, starMat)
+      st.position.set(Math.cos(angle) * dist, sy, Math.sin(angle) * dist)
+      st.scale.setScalar(0.65 + (i % 4) * 0.22)
+      nightSkyGroup.add(st)
+    }
+    scene.add(nightSkyGroup)
+    nightSkyGroupRef.current = nightSkyGroup
 
     // === LOCAL PLAYER CLEAN R6 RIG ===
     const localRig = createR6Rig({
@@ -946,6 +1019,50 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       { state: RemotePlayerState; rig: R6RigHandle; speechUntil: number }
     >()
 
+    // Teleport right next to any player or companion bot in the room ("Meet" button in FreshBlox Quick Hub!)
+    teleportToMemberRef.current = (memberId: string) => {
+      let targetX: number | null = null
+      let targetY = 0.25
+      let targetZ: number | null = null
+      let targetName = ''
+
+      const remote = remotePlayers.get(memberId)
+      if (remote) {
+        targetX = remote.state.x
+        targetY = Math.max(0.25, remote.state.y)
+        targetZ = remote.state.z
+        targetName = remote.state.username
+      } else {
+        const bot = bots.find((b) => b.id === memberId)
+        if (bot) {
+          targetX = bot.x
+          targetY = 0.25
+          targetZ = bot.z
+          targetName = bot.username
+        }
+      }
+      if (targetX === null || targetZ === null) return
+
+      seatedBenchRef.current = null
+      setSeatedBench(null)
+      activeEmoteRef.current = null
+      setActiveEmote(null)
+
+      // Place player 2.3m cleanly beside target facing them
+      const offsetAngle = Math.atan2(player.x - targetX, player.z - targetZ)
+      const destX = Math.max(-33, Math.min(33, targetX + Math.sin(offsetAngle) * 2.35))
+      const destZ = Math.max(-33, Math.min(33, targetZ + Math.cos(offsetAngle) * 2.35))
+      player.x = destX
+      player.y = targetY + 0.15
+      player.z = destZ
+      player.vx = 0
+      player.vy = 0
+      player.vz = 0
+      player.rotY = Math.atan2(targetX - destX, targetZ - destZ)
+      sfx.playJump()
+      showToast(`${t.teleportedTo} ${targetName}`)
+    }
+
     const mp = new LobbyMultiplayerClient({
       roomId: roomCode,
       selfId: playerId,
@@ -1002,6 +1119,12 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       const code = e.code
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(code)) {
         e.preventDefault()
+      }
+      if (code === 'Escape') {
+        e.preventDefault()
+        setHubOpen((open) => !open)
+        sfx.playClick()
+        return
       }
       keys.add(code)
       if (code === 'KeyE') toggleSitActionRef.current()
@@ -1464,7 +1587,29 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
       if (now - lastCountUpdate > 800) {
         lastCountUpdate = now
-        setOnlineCount(1 + remotePlayers.size + (botsEnabledRef.current ? bots.length : 0))
+        const nextRoster: LobbyRosterEntry[] = [
+          { id: playerId, username: usernameRef.current, rank: rankRef.current, isBot: false, isSelf: true },
+        ]
+        for (const entry of remotePlayers.values()) {
+          nextRoster.push({
+            id: entry.state.id,
+            username: entry.state.username,
+            rank: entry.state.rank,
+            isBot: false,
+          })
+        }
+        if (botsEnabledRef.current) {
+          for (const b of bots) {
+            nextRoster.push({
+              id: b.id,
+              username: b.username,
+              rank: b.rank,
+              isBot: true,
+            })
+          }
+        }
+        setRoster(nextRoster)
+        setOnlineCount(nextRoster.length)
       }
 
       // Smooth 3rd-person orbit camera
@@ -1502,9 +1647,11 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       for (const d of disposables) d.dispose()
       renderer.dispose()
       rendererRef.current = null
+      hemiLightRef.current = null
       sunLightRef.current = null
       sceneRef.current = null
       cloudsGroupRef.current = null
+      nightSkyGroupRef.current = null
     }
   }, [roomCode, playerId, lang, showToast, t.gemCollected, t.terraceUnlocked, triggerEmote])
 
@@ -1519,15 +1666,13 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
   return (
     <div
-      className={`relative w-full overflow-hidden bg-sky-200 select-none ${
-        isFullscreen ? 'h-dvh' : 'h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)]'
-      }`}
+      className="relative h-dvh w-full overflow-hidden bg-sky-200 select-none"
       style={{ overscrollBehavior: 'none' }}
     >
       {/* 3D Canvas Host */}
       <div ref={mountRef} className="h-full w-full cursor-grab active:cursor-grabbing" style={{ touchAction: 'none' }} />
 
-      {/* === SINGLE-ROW CLEAN TOP HUD BAR (Never wraps, never overlaps!) === */}
+      {/* === ULTRA-CLEAN SINGLE-ROW TOP HUD BAR (Never wraps, never overlaps!) === */}
       <div
         className="pointer-events-none absolute top-2.5 inset-x-0 z-20 flex flex-nowrap items-center justify-between gap-2"
         style={{
@@ -1535,17 +1680,26 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           paddingRight: 'max(0.75rem, env(safe-area-inset-right))',
         }}
       >
-        {/* Left integrated pill cluster: Menu + Chat + Room/Invite */}
+        {/* Left integrated cluster: Official FreshBlox Logo Button (opens Quick Hub) + Chat + Room Pill */}
         <div className="pointer-events-auto flex min-w-0 items-center gap-1.5">
-          <div className="flex h-10 items-center rounded-2xl border border-white/15 bg-slate-950/72 p-1 shadow-lg backdrop-blur-xl">
+          <div className="flex h-10 items-center rounded-2xl border border-white/15 bg-slate-950/75 p-1 shadow-lg backdrop-blur-xl">
             <button
               type="button"
-              onClick={onBackHome}
-              title={t.backToLobby}
-              className="flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold text-sky-50 hover:bg-white/10 active:scale-95 transition cursor-pointer"
+              onClick={() => {
+                setHubOpen((open) => {
+                  const next = !open
+                  if (next && touchMode) setChatOpen(false)
+                  return next
+                })
+                sfx.playClick()
+              }}
+              title="FreshBlox Hub (Esc)"
+              aria-label="FreshBlox Quick Hub"
+              className={`flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+                hubOpen ? 'bg-sky-500/30 ring-1 ring-sky-300/60' : 'hover:bg-white/10'
+              }`}
             >
-              <ArrowLeft className="h-4 w-4 text-sky-400 shrink-0" />
-              <span className="hidden md:inline">{t.backToLobby}</span>
+              <FreshBloxLogo size={23} />
             </button>
 
             <div className="mx-0.5 h-4 w-[1px] bg-white/15" />
@@ -1557,7 +1711,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
                   const next = !open
                   if (next) {
                     setUnreadCount(0)
-                    setSettingsOpen(false)
+                    setHubOpen(false)
                   }
                   return next
                 })
@@ -1578,200 +1732,343 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
             </button>
           </div>
 
-          {/* Room badge — tap to copy invite link cleanly! */}
+          {/* Room badge — tap to open Players & Invite in FreshHub */}
           <button
             type="button"
-            onClick={handleCopyInvite}
-            title={t.inviteBtn}
-            className="flex h-10 min-w-0 items-center gap-1.5 rounded-2xl border border-white/15 bg-slate-950/72 px-3 text-xs font-bold text-sky-50 shadow-lg backdrop-blur-xl hover:bg-slate-900/90 active:scale-95 transition cursor-pointer"
+            onClick={() => {
+              setHubOpen((o) => !o)
+              sfx.playClick()
+            }}
+            className="flex h-10 min-w-0 items-center gap-1.5 rounded-2xl border border-white/15 bg-slate-950/75 px-3 text-xs font-bold text-sky-50 shadow-lg backdrop-blur-xl hover:bg-slate-900/90 active:scale-95 transition cursor-pointer"
           >
             <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
             <span className="truncate font-mono text-[11px] sm:text-xs text-sky-200">{roomCode}</span>
-            <span className="flex shrink-0 items-center gap-1 border-l border-white/15 pl-1.5 text-[11px] text-sky-100/80">
+            <span className="flex shrink-0 items-center gap-1 border-l border-white/15 pl-1.5 text-[11px] text-sky-100/85">
               <Users className="h-3.5 w-3.5 text-sky-300" />
               {onlineCount}
-            </span>
-            <span className="flex shrink-0 items-center gap-1 border-l border-white/15 pl-1.5 text-sky-300">
-              {copiedInvite ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Share2 className="h-3.5 w-3.5" />}
-              <span className="hidden md:inline text-[11px] font-extrabold">
-                {copiedInvite ? t.inviteCopied : t.inviteBtn}
-              </span>
             </span>
           </button>
         </div>
 
-        {/* Right integrated pill cluster: FreshGems + Locker + Settings Drawer */}
+        {/* Right minimalist cluster: FreshGems + Locker shortcut */}
         <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">
-          {/* FreshGems live counter */}
-          <div className="flex h-10 items-center gap-1.5 rounded-2xl border border-white/15 bg-slate-950/72 px-3 text-xs font-extrabold text-sky-50 shadow-lg backdrop-blur-xl">
+          <button
+            type="button"
+            onClick={onOpenAvatar}
+            className="flex h-10 items-center gap-1.5 rounded-2xl border border-white/15 bg-slate-950/75 px-3 text-xs font-extrabold text-sky-50 shadow-lg backdrop-blur-xl hover:bg-slate-900/90 active:scale-95 transition cursor-pointer"
+          >
             <FreshGemShard size={15} />
             <span>{freshGems}</span>
-          </div>
-
-          {/* Locker + Settings grouped pill */}
-          <div className="flex h-10 items-center rounded-2xl border border-white/15 bg-slate-950/72 p-1 shadow-lg backdrop-blur-xl">
-            <button
-              type="button"
-              onClick={onOpenAvatar}
-              title={t.quickAvatar}
-              className="flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold text-sky-100 hover:bg-white/10 active:scale-95 transition cursor-pointer"
-            >
-              <Sparkles className="h-4 w-4 text-sky-400 shrink-0" />
-              <span className="hidden sm:inline">{t.quickAvatar}</span>
-            </button>
-
-            <div className="mx-0.5 h-4 w-[1px] bg-white/15" />
-
-            <button
-              type="button"
-              onClick={() => {
-                setSettingsOpen((s) => {
-                  const next = !s
-                  if (next && touchMode) setChatOpen(false)
-                  return next
-                })
-                sfx.playClick()
-              }}
-              aria-label="Settings"
-              className={`flex h-8 w-8 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
-                settingsOpen ? 'bg-sky-500/30 text-white' : 'text-sky-100/90 hover:bg-white/10'
-              }`}
-            >
-              {settingsOpen ? <X className="h-4 w-4" /> : <Settings className="h-4 w-4 text-sky-300" />}
-            </button>
-          </div>
+            <span className="mx-0.5 h-3.5 w-[1px] bg-white/15 hidden sm:inline-block" />
+            <Sparkles className="h-3.5 w-3.5 text-sky-400 hidden sm:inline-block" />
+            <span className="hidden sm:inline text-sky-100 font-bold">{t.quickAvatar}</span>
+          </button>
         </div>
       </div>
 
-      {/* === CLEAN COLLAPSIBLE SETTINGS POPOVER (All extra tools neatly organized!) === */}
-      {settingsOpen && (
-        <div
-          onPointerDown={(e) => e.stopPropagation()}
-          className="pointer-events-auto absolute top-14 z-30 w-[min(272px,calc(100vw-24px))] max-h-[calc(100dvh-76px)] overflow-y-auto rounded-2xl border border-white/15 bg-slate-950/88 p-3 text-xs text-sky-50 shadow-2xl backdrop-blur-xl space-y-2.5"
-          style={{ right: 'max(0.75rem, env(safe-area-inset-right))' }}
-        >
-          {/* Quality segmented selector + FPS */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[11px] font-bold text-sky-200/80">
-              <span className="flex items-center gap-1.5">
-                <Gauge className="h-3.5 w-3.5 text-sky-400" />
-                {lang === 'pl' ? 'Jakość grafiki' : 'Graphics'}
-              </span>
-              <span className="font-mono text-[10px] text-emerald-300">{fpsDisplay} FPS</span>
+      {/* === ORIGINAL FRESHBLOX QUICK HUB (Slide-over glass side drawer — live 3D stays visible!) === */}
+      {hubOpen && (
+        <>
+          {/* Subtle click-outside scrim that keeps the 3D world alive and visible on the right */}
+          <div
+            onClick={() => setHubOpen(false)}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="pointer-events-auto absolute inset-0 z-30 bg-slate-950/35 backdrop-blur-[2px]"
+          />
+
+          <aside
+            onPointerDown={(e) => e.stopPropagation()}
+            className="pointer-events-auto absolute inset-y-2.5 z-40 flex w-[min(336px,calc(100vw-24px))] flex-col overflow-hidden rounded-3xl border border-white/15 bg-slate-950/90 text-sky-50 shadow-2xl backdrop-blur-2xl"
+            style={{ left: 'max(0.65rem, env(safe-area-inset-left))' }}
+          >
+            {/* Hub Header: Brand + Player Profile Card + Close */}
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 border border-sky-400/25">
+                  <FreshBloxLogo size={24} />
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate font-display text-sm font-extrabold text-white leading-tight">
+                    {username}
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] text-sky-200/75">
+                    <span>{getRankForXp(xp).name}</span>
+                    <span>•</span>
+                    <span className="inline-flex items-center gap-0.5 font-bold text-sky-300">
+                      <FreshGemShard size={12} /> {freshGems}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setHubOpen(false)}
+                aria-label={t.resumeGame}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/8 text-sky-100 hover:bg-white/15 active:scale-95 transition cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
-            <div className="grid grid-cols-3 gap-1 rounded-xl bg-white/5 p-1">
-              {(['low', 'medium', 'high'] as GraphicsQuality[]).map((q) => (
-                <button
-                  key={q}
-                  type="button"
-                  onClick={() => {
-                    setQuality(q)
-                    sfx.playClick()
-                  }}
-                  className={`rounded-lg py-1.5 text-[11px] font-bold transition cursor-pointer ${
-                    quality === q
-                      ? 'bg-sky-500 text-slate-950 shadow'
-                      : 'text-sky-100/75 hover:bg-white/10'
-                  }`}
-                >
-                  {t.quality[q]}
-                </button>
-              ))}
+
+            {/* Scrollable Body */}
+            <div className="flex-1 min-h-0 overflow-y-auto px-3.5 py-3 space-y-3.5">
+              {/* 1. QUICK ACTIONS 2x2 TILES */}
+              <div>
+                <div className="mb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-sky-300/70">
+                  {t.hubActions}
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetSpawnActionRef.current()
+                      setHubOpen(false)
+                    }}
+                    className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/6 px-3 py-2.5 text-left text-xs font-bold text-sky-50 hover:bg-white/12 active:scale-[0.98] transition cursor-pointer"
+                  >
+                    <RotateCcw className="h-4 w-4 shrink-0 text-sky-400" />
+                    <span className="truncate">{t.spawnReset}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyInvite}
+                    className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/6 px-3 py-2.5 text-left text-xs font-bold text-sky-50 hover:bg-white/12 active:scale-[0.98] transition cursor-pointer"
+                  >
+                    {copiedInvite ? (
+                      <Check className="h-4 w-4 shrink-0 text-emerald-400" />
+                    ) : (
+                      <Share2 className="h-4 w-4 shrink-0 text-sky-400" />
+                    )}
+                    <span className="truncate">{copiedInvite ? t.inviteCopied : t.inviteBtn}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHubOpen(false)
+                      onOpenAvatar()
+                    }}
+                    className="flex items-center gap-2 rounded-2xl border border-sky-400/25 bg-sky-500/12 px-3 py-2.5 text-left text-xs font-bold text-sky-50 hover:bg-sky-500/20 active:scale-[0.98] transition cursor-pointer"
+                  >
+                    <Sparkles className="h-4 w-4 shrink-0 text-sky-300" />
+                    <span className="truncate">{t.quickAvatar}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHubOpen(false)
+                      onBackHome()
+                    }}
+                    className="flex items-center gap-2 rounded-2xl border border-rose-400/25 bg-rose-500/12 px-3 py-2.5 text-left text-xs font-bold text-rose-100 hover:bg-rose-500/22 active:scale-[0.98] transition cursor-pointer"
+                  >
+                    <LogOut className="h-4 w-4 shrink-0 text-rose-300" />
+                    <span className="truncate">{t.leaveGame}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. LIVE LOBBY ROSTER — Meet / Teleport directly beside friends! */}
+              <div>
+                <div className="mb-1.5 flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-sky-300/70">
+                  <span>
+                    {t.playersInRoom} ({onlineCount})
+                  </span>
+                  <span className="font-mono text-sky-200/80">{roomCode}</span>
+                </div>
+
+                <div className="space-y-1.5">
+                  {roster.map((member) => (
+                    <div
+                      key={member.id}
+                      className="flex items-center justify-between gap-2 rounded-2xl border border-white/8 bg-white/5 px-2.5 py-2"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className={`h-2 w-2 shrink-0 rounded-full ${
+                            member.isSelf ? 'bg-sky-400' : member.isBot ? 'bg-amber-300' : 'bg-emerald-400'
+                          }`}
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-white leading-tight">
+                            <span className="truncate">{member.username}</span>
+                            {member.isSelf && (
+                              <span className="rounded bg-sky-500/25 px-1.5 py-0.5 text-[9px] font-extrabold text-sky-200">
+                                {t.youTag}
+                              </span>
+                            )}
+                            {member.isBot && (
+                              <span className="rounded bg-white/10 px-1.5 py-0.5 text-[9px] font-bold text-slate-300">
+                                {t.botTag}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-sky-200/65">{member.rank}</div>
+                        </div>
+                      </div>
+
+                      {!member.isSelf && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            teleportToMemberRef.current(member.id)
+                            setHubOpen(false)
+                          }}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-sky-500/20 border border-sky-400/30 px-2.5 py-1.5 text-[11px] font-bold text-sky-100 hover:bg-sky-500/35 active:scale-95 transition cursor-pointer"
+                        >
+                          <Navigation className="h-3 w-3 text-sky-300" />
+                          <span>{t.teleportTo}</span>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 3. WORLD ATMOSPHERE & SETTINGS (Zero tab switching!) */}
+              <div className="space-y-2.5">
+                <div className="text-[10px] font-extrabold uppercase tracking-wider text-sky-300/70">
+                  {t.hubSettings}
+                </div>
+
+                {/* Natural Day / Night Lobby Switch */}
+                <div className="flex items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                  <span className="text-xs font-bold text-sky-100">{t.worldTimeLabel}</span>
+                  <div className="flex items-center rounded-xl bg-slate-900/90 p-0.5 border border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWorldTime('day')
+                        sfx.playClick()
+                      }}
+                      className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-bold transition cursor-pointer ${
+                        worldTime === 'day' ? 'bg-sky-400 text-slate-950' : 'text-sky-200/70 hover:text-white'
+                      }`}
+                    >
+                      <Sun className="h-3 w-3" />
+                      {t.worldDay}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWorldTime('night')
+                        sfx.playClick()
+                      }}
+                      className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-bold transition cursor-pointer ${
+                        worldTime === 'night' ? 'bg-sky-400 text-slate-950' : 'text-sky-200/70 hover:text-white'
+                      }`}
+                    >
+                      <Moon className="h-3 w-3" />
+                      {t.worldNight}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quality + Live FPS */}
+                <div className="space-y-1.5 rounded-2xl border border-white/10 bg-white/5 p-2.5">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-sky-200/80 px-0.5">
+                    <span className="flex items-center gap-1.5">
+                      <Gauge className="h-3.5 w-3.5 text-sky-400" />
+                      {lang === 'pl' ? 'Jakość grafiki' : 'Graphics'}
+                    </span>
+                    <span className="font-mono text-[10px] text-emerald-300">{fpsDisplay} FPS</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-900/80 p-1">
+                    {(['low', 'medium', 'high'] as GraphicsQuality[]).map((q) => (
+                      <button
+                        key={q}
+                        type="button"
+                        onClick={() => {
+                          setQuality(q)
+                          sfx.playClick()
+                        }}
+                        className={`rounded-lg py-1.5 text-[11px] font-bold transition cursor-pointer ${
+                          quality === q
+                            ? 'bg-sky-400 text-slate-950 shadow'
+                            : 'text-sky-100/75 hover:bg-white/10'
+                        }`}
+                      >
+                        {t.quality[q]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Quick Toggles 2x2 */}
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={toggleSound}
+                    className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold transition cursor-pointer ${
+                      soundEnabled
+                        ? 'border-sky-400/35 bg-sky-500/15 text-sky-50'
+                        : 'border-white/10 bg-white/5 text-slate-400'
+                    }`}
+                  >
+                    {soundEnabled ? <Volume2 className="h-3.5 w-3.5 text-sky-400" /> : <VolumeX className="h-3.5 w-3.5" />}
+                    <span>{soundEnabled ? t.soundOn : t.soundOff}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBotsEnabled((b) => !b)
+                      sfx.playClick()
+                    }}
+                    className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold transition cursor-pointer ${
+                      botsEnabled
+                        ? 'border-sky-400/35 bg-sky-500/15 text-sky-50'
+                        : 'border-white/10 bg-white/5 text-slate-400'
+                    }`}
+                  >
+                    <Bot className="h-3.5 w-3.5 text-sky-400" />
+                    <span>{botsEnabled ? t.botsOn : t.botsOff}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTouchMode((v) => !v)
+                      sfx.playClick()
+                    }}
+                    className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold transition cursor-pointer ${
+                      touchMode
+                        ? 'border-sky-400/35 bg-sky-500/15 text-sky-50'
+                        : 'border-white/10 bg-white/5 text-slate-400'
+                    }`}
+                  >
+                    <Smartphone className="h-3.5 w-3.5 text-sky-400" />
+                    <span>{touchMode ? t.touchOn : t.touchOff}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleToggleFullscreen}
+                    className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold transition cursor-pointer ${
+                      isFullscreen
+                        ? 'border-sky-400/35 bg-sky-500/15 text-sky-50'
+                        : 'border-white/10 bg-white/5 text-sky-100/85 hover:bg-white/10'
+                    }`}
+                  >
+                    {isFullscreen ? (
+                      <Minimize2 className="h-3.5 w-3.5 text-sky-400" />
+                    ) : (
+                      <Maximize2 className="h-3.5 w-3.5 text-sky-400" />
+                    )}
+                    <span>{t.fullscreenBtn}</span>
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div className="h-[1px] bg-white/10" />
-
-          {/* Clean 2x2 toggles grid */}
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              onClick={toggleSound}
-              className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold transition cursor-pointer ${
-                soundEnabled
-                  ? 'border-sky-400/40 bg-sky-500/15 text-sky-50'
-                  : 'border-white/10 bg-white/5 text-slate-400'
-              }`}
-            >
-              {soundEnabled ? <Volume2 className="h-3.5 w-3.5 text-sky-400" /> : <VolumeX className="h-3.5 w-3.5" />}
-              <span>{lang === 'pl' ? (soundEnabled ? 'Dźwięk' : 'Wycisz.') : soundEnabled ? 'Sound' : 'Muted'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setBotsEnabled((b) => !b)
-                sfx.playClick()
-              }}
-              className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold transition cursor-pointer ${
-                botsEnabled
-                  ? 'border-sky-400/40 bg-sky-500/15 text-sky-50'
-                  : 'border-white/10 bg-white/5 text-slate-400'
-              }`}
-            >
-              <Bot className="h-3.5 w-3.5 text-sky-400" />
-              <span>{botsEnabled ? t.botsOn : t.botsOff}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setTouchMode((v) => !v)
-                sfx.playClick()
-              }}
-              className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold transition cursor-pointer ${
-                touchMode
-                  ? 'border-sky-400/40 bg-sky-500/15 text-sky-50'
-                  : 'border-white/10 bg-white/5 text-slate-400'
-              }`}
-            >
-              <Smartphone className="h-3.5 w-3.5 text-sky-400" />
-              <span>{lang === 'pl' ? 'Dotyk' : 'Touch'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleToggleFullscreen}
-              className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold transition cursor-pointer ${
-                isFullscreen
-                  ? 'border-sky-400/40 bg-sky-500/15 text-sky-50'
-                  : 'border-white/10 bg-white/5 text-sky-100/85 hover:bg-white/10'
-              }`}
-            >
-              {isFullscreen ? <Minimize2 className="h-3.5 w-3.5 text-sky-400" /> : <Maximize2 className="h-3.5 w-3.5 text-sky-400" />}
-              <span>{lang === 'pl' ? 'Pełny' : 'Full'}</span>
-            </button>
-          </div>
-
-          <div className="h-[1px] bg-white/10" />
-
-          {/* Quick Utility Actions */}
-          <div className="flex gap-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                resetSpawnActionRef.current()
-                setSettingsOpen(false)
-              }}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/8 px-2.5 py-2 text-[11px] font-bold text-sky-100 hover:bg-white/15 active:scale-95 transition cursor-pointer"
-            >
-              <LocateFixed className="h-3.5 w-3.5 text-sky-400" />
-              <span>{t.spawnReset}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                handleCopyInvite()
-                setSettingsOpen(false)
-              }}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-sky-500 px-2.5 py-2 text-[11px] font-extrabold text-slate-950 hover:bg-sky-400 active:scale-95 transition cursor-pointer"
-            >
-              <Share2 className="h-3.5 w-3.5" />
-              <span>{t.inviteBtn}</span>
-            </button>
-          </div>
-        </div>
+            {/* Subtle Controls Tip Footer inside Hub (never clutters gameplay screen!) */}
+            <div className="shrink-0 border-t border-white/10 bg-slate-950/60 px-3.5 py-2 text-[10px] font-medium text-sky-200/70">
+              {touchMode ? t.touchControlsList : t.controlsList}
+            </div>
+          </aside>
+        </>
       )}
 
       {/* MOBILE PORTRAIT ROTATE + FULLSCREEN HELPER BANNER */}
@@ -1905,10 +2202,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         </div>
       )}
 
-      {/* DESKTOP EMOTE BAR & CONTROLS */}
+      {/* DESKTOP EMOTE BAR */}
       {!touchMode && (
         <div className="pointer-events-none absolute bottom-4 right-4 hidden sm:flex flex-col items-end gap-2 z-10">
-          <div className="pointer-events-auto flex flex-wrap justify-end gap-1.5 rounded-2xl bg-slate-950/75 p-2 border border-sky-400/30 backdrop-blur-xl shadow-2xl">
+          <div className="pointer-events-auto flex flex-wrap justify-end gap-1.5 rounded-2xl bg-slate-950/75 p-2 border border-white/15 backdrop-blur-xl shadow-2xl">
             {emotesList.map((em) => (
               <button
                 key={em.key}
@@ -1916,7 +2213,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
                 className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-bold transition cursor-pointer ${
                   activeEmote === em.pose
                     ? 'bg-sky-400 text-slate-950 shadow-md'
-                    : 'bg-sky-500/15 text-sky-100 hover:bg-sky-500/30'
+                    : 'bg-white/8 text-sky-100 hover:bg-white/15'
                 }`}
               >
                 <span className="rounded bg-black/25 px-1.5 py-0.5 font-mono text-[10px]">{em.key}</span>
@@ -1924,39 +2221,28 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
               </button>
             ))}
           </div>
-
-          <div className="rounded-xl bg-slate-950/65 px-3 py-1.5 text-[11px] font-semibold text-sky-100/85 border border-sky-400/20 backdrop-blur-md">
-            {t.controlsList}
-          </div>
         </div>
       )}
 
-      {/* MOBILE / TABLET VIRTUAL THUMBSTICK & ACTION BUTTONS */}
+      {/* MOBILE / TABLET VIRTUAL THUMBSTICK & ACTION BUTTONS (Clean bottom — zero cluttered text bar!) */}
       {touchMode && (
-        <>
-          <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 z-10 hidden md:block">
-            <div className="rounded-full bg-slate-950/60 px-3 py-1 text-[11px] font-semibold text-sky-100/85 border border-sky-400/20 backdrop-blur-md">
-              {t.touchControlsList}
-            </div>
-          </div>
-          <MobileTouchControls
-            onMoveVector={handleTouchMoveVector}
-            onJump={handleTouchJump}
-            sprintActive={sprintLocked}
-            onToggleSprint={() => {
-              setSprintLocked((s) => !s)
-              sfx.playClick()
-            }}
-            activeEmote={activeEmote}
-            onEmote={triggerEmote}
-            labels={{
-              jumpBtn: t.jumpBtn,
-              sprintBtn: t.sprintBtn,
-              emotesLabel: t.emotesLabel,
-              emotes: t.emotes,
-            }}
-          />
-        </>
+        <MobileTouchControls
+          onMoveVector={handleTouchMoveVector}
+          onJump={handleTouchJump}
+          sprintActive={sprintLocked}
+          onToggleSprint={() => {
+            setSprintLocked((s) => !s)
+            sfx.playClick()
+          }}
+          activeEmote={activeEmote}
+          onEmote={triggerEmote}
+          labels={{
+            jumpBtn: t.jumpBtn,
+            sprintBtn: t.sprintBtn,
+            emotesLabel: t.emotesLabel,
+            emotes: t.emotes,
+          }}
+        />
       )}
     </div>
   )
