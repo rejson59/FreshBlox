@@ -18,7 +18,6 @@ export interface R6PoseTarget {
   scaleY: number
   scaleXZ: number
   snappiness: number
-  /** When true, comRot.x/y is applied directly without shortest-angle wrap damping (used for crisp 360°/720° flips & spins) */
   directSpinX?: boolean
   directSpinY?: boolean
 }
@@ -33,9 +32,6 @@ const easeOutBack = (t: number) => {
 }
 const mix = (a: number, b: number, t: number) => a + (b - a) * t
 
-/**
- * Reusable zero-allocation scratch pose target so the 60fps loop triggers ZERO GC.
- */
 export function createEmptyPoseTarget(): R6PoseTarget {
   return {
     comPos: { x: 0, y: 0, z: 0 },
@@ -48,7 +44,7 @@ export function createEmptyPoseTarget(): R6PoseTarget {
     rLegRot: { x: 0, y: 0, z: 0 },
     scaleY: 1,
     scaleXZ: 1,
-    snappiness: 14,
+    snappiness: 15,
     directSpinX: false,
     directSpinY: false,
   }
@@ -69,16 +65,16 @@ function resetTarget(out: R6PoseTarget) {
   out.headRot.z = 0
   out.lArmRot.x = 0
   out.lArmRot.y = 0
-  out.lArmRot.z = 0
+  out.lArmRot.z = -0.08
   out.rArmRot.x = 0
   out.rArmRot.y = 0
-  out.rArmRot.z = 0
+  out.rArmRot.z = 0.08
   out.lLegRot.x = 0
   out.lLegRot.y = 0
-  out.lLegRot.z = 0
+  out.lLegRot.z = -0.04
   out.rLegRot.x = 0
   out.rLegRot.y = 0
-  out.rLegRot.z = 0
+  out.rLegRot.z = 0.04
   out.scaleY = 1
   out.scaleXZ = 1
   out.snappiness = 15
@@ -87,444 +83,425 @@ function resetTarget(out: R6PoseTarget) {
 }
 
 /**
- * Viral-grade procedural R6 animation evaluator.
- * Uses anticipation, squash & stretch, follow-through, counter-rotation, and phase choreography.
- * All flips & spins rotate around Center of Mass (`comPivot` at y=1.72) with generous apex clearance — ZERO floor clipping!
+ * COORDINATE SIGN CONVENTION (Three.js intrinsic 'XYZ', character facing +Z, limbs hanging along -Y):
+ * - Because M = Rx * Ry * Rz, Rz rotates local (0, -L, 0) FIRST → x = +L * sin(rotZ) at EVERY elevation rotX!
+ * - LEFT limbs (at x < 0): NEGATIVE rotZ (< 0) = OUTWARD away from body!
+ * - RIGHT limbs (at x > 0): POSITIVE rotZ (> 0) = OUTWARD away from body!
+ * - rotX < 0 = swing FORWARD (+Z) and UP; rotX > 0 = swing BACKWARD (-Z)!
+ * - A hard anti-clipping clamp at the end guarantees arms/legs NEVER clip inward into torso or knees!
  */
 export function evaluateR6Pose(
   pose: PlayerPose,
   elapsed: number,
   poseTime: number,
-  landingImpact: number, // 0..1 decaying right after landing from jump/fall
+  landingImpact: number,
   out: R6PoseTarget,
 ): void {
   resetTarget(out)
 
   if (pose === 'idle') {
-    // Stylish Pro Roblox Idle: asymmetric heroic stance, chest breathe, hip weight shift, natural glance
-    const breathe = Math.sin(elapsed * 2.4)
-    const sway = Math.sin(elapsed * 1.2)
-    const glance = Math.sin(elapsed * 0.75) * Math.sin(elapsed * 0.35)
+    // Bold, Confident Pro Action-Game Ready Stance (grounded wide athletic feet, outward arms, sharp breathing)
+    const breathe = Math.sin(elapsed * 2.3)
+    const shift = Math.sin(elapsed * 1.15)
+    const scan = Math.sin(elapsed * 0.72) * Math.sin(elapsed * 0.38)
 
-    out.comPos.x = sway * 0.045
-    out.comPos.y = breathe * 0.032
-    out.comRot.z = -sway * 0.025
+    out.comPos.x = shift * 0.03
+    out.comPos.y = breathe * 0.028
 
-    out.torsoRot.y = -0.17 + sway * 0.05
-    out.torsoRot.x = 0.025 + breathe * 0.02
-    out.torsoRot.z = sway * 0.03
+    // Slight heroic readiness angle, strong upright chest
+    out.torsoRot.y = -0.11 + shift * 0.04
+    out.torsoRot.x = 0.02 + breathe * 0.018
 
-    out.headRot.y = 0.16 + glance * 0.22
-    out.headRot.x = -0.02 - breathe * 0.03
-    out.headRot.z = -sway * 0.04
+    // Confident forward gaze with natural subtle scan (zero coy tilt!)
+    out.headRot.y = 0.1 + scan * 0.2
+    out.headRot.x = -0.02 - breathe * 0.02
 
-    // Confident slightly angled arms
-    out.lArmRot.x = 0.08 + breathe * 0.06
-    out.lArmRot.z = 0.11 + breathe * 0.025
-    out.lArmRot.y = 0.12
+    // Arms relaxed slightly OUTWARD with athletic swagger (NEVER touching torso!)
+    out.lArmRot.x = -0.05 + breathe * 0.05
+    out.lArmRot.z = -0.11 - breathe * 0.025
+    out.lArmRot.y = 0
 
-    out.rArmRot.x = -0.08 - breathe * 0.06
-    out.rArmRot.z = -0.12 - breathe * 0.025
-    out.rArmRot.y = -0.1
+    out.rArmRot.x = 0.04 - breathe * 0.05
+    out.rArmRot.z = 0.11 + breathe * 0.025
+    out.rArmRot.y = 0
 
-    // Grounded asymmetric athletic foot stance
-    out.lLegRot.x = 0.07
-    out.lLegRot.z = 0.05
-    out.lLegRot.y = 0.12
+    // Solid wide athletic stance (legs angled slightly OUTWARD!)
+    out.lLegRot.x = -0.06
+    out.lLegRot.z = -0.07
+    out.rLegRot.x = 0.06
+    out.rLegRot.z = 0.07
 
-    out.rLegRot.x = -0.09
-    out.rLegRot.z = -0.06
-    out.rLegRot.y = -0.16
-
-    out.scaleY = 1 + breathe * 0.012
-    out.scaleXZ = 1 - breathe * 0.006
+    out.scaleY = 1 + breathe * 0.01
+    out.scaleXZ = 1 - breathe * 0.005
     out.snappiness = 12
   } else if (pose === 'walk') {
-    // Snappy Stylised Walk: bouncy stride, pelvis-vs-torso counter-twist, swinging arms with swagger
+    // Crisp, Energetic Roblox Pro Walk (clean stride, counter-rotating torso, outward arm clearance)
     const w = elapsed * 8.8
     const s = Math.sin(w)
     const c = Math.cos(w)
     const bounce = Math.abs(s)
 
-    out.comPos.y = bounce * 0.12
-    out.comPos.x = c * 0.04
-    out.comRot.z = -c * 0.045
+    out.comPos.y = bounce * 0.11
+    out.comPos.x = c * 0.035
+    out.comRot.z = c * 0.03
 
-    out.torsoRot.x = 0.09
-    out.torsoRot.y = -s * 0.22
-    out.torsoRot.z = c * 0.04
+    out.torsoRot.x = 0.08
+    out.torsoRot.y = -s * 0.2
 
-    out.headRot.y = s * 0.14
-    out.headRot.x = -0.06 + Math.sin(w * 2 - 0.5) * 0.045
-    out.headRot.z = -c * 0.03
+    out.headRot.y = s * 0.12
+    out.headRot.x = -0.05 + Math.sin(w * 2 - 0.5) * 0.035
 
-    out.lArmRot.x = s * 0.78
-    out.lArmRot.z = 0.11 + Math.max(0, -s) * 0.08
-    out.lArmRot.y = s * 0.14
+    // Clean outward arm swing (left < 0, right > 0)
+    out.lArmRot.x = s * 0.75
+    out.lArmRot.z = -0.11 - Math.abs(s) * 0.05
+    out.rArmRot.x = -s * 0.75
+    out.rArmRot.z = 0.11 + Math.abs(s) * 0.05
 
-    out.rArmRot.x = -s * 0.78
-    out.rArmRot.z = -0.11 - Math.max(0, s) * 0.08
-    out.rArmRot.y = -s * 0.14
-
+    // Crisp parallel-to-slightly-outward stride
     out.lLegRot.x = -s * 0.74
-    out.lLegRot.z = 0.03
+    out.lLegRot.z = -0.04
     out.rLegRot.x = s * 0.74
-    out.rLegRot.z = -0.03
+    out.rLegRot.z = 0.04
 
-    out.scaleY = 1 + (bounce - 0.5) * 0.045
+    out.scaleY = 1 + (bounce - 0.5) * 0.04
     out.scaleXZ = 1 - (bounce - 0.5) * 0.02
     out.snappiness = 18
   } else if (pose === 'run') {
-    // High-Energy Anime / Parkour Pro Sprint
+    // High-Energy Action / Parkour Sprint (forward aerodynamic drive, outward power arms!)
     const r = elapsed * 13.6
     const s = Math.sin(r)
     const c = Math.cos(r)
     const lift = Math.pow(Math.abs(s), 0.75)
 
-    out.comPos.y = lift * 0.22 - 0.04
-    out.comPos.x = c * 0.06
-    out.comRot.z = -c * 0.08
+    out.comPos.y = lift * 0.2 - 0.03
+    out.comPos.x = c * 0.05
+    out.comRot.z = c * 0.05
 
-    out.torsoRot.x = 0.32 + Math.abs(c) * 0.05
-    out.torsoRot.y = -s * 0.34
-    out.torsoRot.z = c * 0.07
+    out.torsoRot.x = 0.28 + Math.abs(c) * 0.04
+    out.torsoRot.y = -s * 0.3
 
-    out.headRot.x = -0.24
-    out.headRot.y = s * 0.24
-    out.headRot.z = -c * 0.05
+    out.headRot.x = -0.22
+    out.headRot.y = s * 0.2
 
-    // Powerful driving sprint arms across torso
-    out.lArmRot.x = s * 1.28 - 0.15
-    out.lArmRot.z = 0.18 + Math.abs(s) * 0.12
-    out.lArmRot.y = 0.25 + s * 0.22
+    // Powerful outward-cleared sprint arms (zero torso clipping!)
+    out.lArmRot.x = s * 1.24 - 0.12
+    out.lArmRot.z = -0.16 - Math.abs(s) * 0.08
+    out.rArmRot.x = -s * 1.24 - 0.12
+    out.rArmRot.z = 0.16 + Math.abs(s) * 0.08
 
-    out.rArmRot.x = -s * 1.28 - 0.15
-    out.rArmRot.z = -0.18 - Math.abs(s) * 0.12
-    out.rArmRot.y = -0.25 - s * 0.22
-
-    // Explosive scissor sprint stride
+    // Explosive athletic stride
     out.lLegRot.x = -s * 1.12
-    out.lLegRot.z = 0.05
+    out.lLegRot.z = -0.05
     out.rLegRot.x = s * 1.12
-    out.rLegRot.z = -0.05
+    out.rLegRot.z = 0.05
 
-    out.scaleY = 1 + (lift - 0.5) * 0.07
-    out.scaleXZ = 1 - (lift - 0.5) * 0.032
+    out.scaleY = 1 + (lift - 0.5) * 0.065
+    out.scaleXZ = 1 - (lift - 0.5) * 0.03
     out.snappiness = 22
   } else if (pose === 'jump') {
-    // Expressive Athletic Ninja/Toy Jump Silhouette
-    const t = clamp01(poseTime / 0.22)
+    // Heroic Open-Silhouette Action Jump (wide outward arms overhead, athletic airborne legs — NEVER blocking face!)
+    const t = clamp01(poseTime / 0.2)
     const pop = easeOutBack(t)
-    const hover = Math.sin(poseTime * 7) * 0.05
+    const hover = Math.sin(poseTime * 7) * 0.04
 
-    out.comPos.y = 0.12 + hover
-    out.torsoRot.x = -0.14 * pop
-    out.torsoRot.y = 0.16
+    out.comPos.y = 0.14 + hover
+    out.torsoRot.x = -0.1 * pop
+    out.torsoRot.y = 0.1
 
-    out.headRot.x = -0.12
-    out.headRot.y = -0.14
+    out.headRot.x = -0.1
+    out.headRot.y = -0.08
 
+    // Both arms swept HIGH & WIDE OUTWARD (clean heroic V!)
     out.lArmRot.x = -2.35 * pop
-    out.lArmRot.z = 0.36
-    out.rArmRot.x = -1.95 * pop
-    out.rArmRot.z = -0.44
+    out.lArmRot.z = -0.34 * pop
+    out.rArmRot.x = -2.1 * pop
+    out.rArmRot.z = 0.38 * pop
 
-    // Heroic tucked knee + swept trail leg
-    out.lLegRot.x = -0.82 * pop
-    out.lLegRot.z = 0.1
-    out.rLegRot.x = 0.54 * pop
-    out.rLegRot.z = -0.1
+    // Dynamic front knee lift + trailing rear leg, slightly outward
+    out.lLegRot.x = -0.72 * pop
+    out.lLegRot.z = -0.09
+    out.rLegRot.x = 0.52 * pop
+    out.rLegRot.z = 0.09
 
     out.scaleY = 1.06 - t * 0.03
     out.scaleXZ = 0.96 + t * 0.02
     out.snappiness = 20
   } else if (pose === 'fall') {
-    // Wind-catching dynamic fall with light leg kick & balance arms
+    // Dynamic Freefall / Skydive Control (arms spread WIDE outward for balance)
     const f = elapsed * 10
-    out.comRot.x = 0.1
+    out.comRot.x = 0.08
     out.torsoRot.x = 0.08
-    out.headRot.x = 0.18
+    out.headRot.x = 0.16
 
-    out.lArmRot.x = -2.42 + Math.sin(f) * 0.18
-    out.lArmRot.z = 0.58 + Math.cos(f) * 0.12
-    out.rArmRot.x = -2.42 - Math.sin(f) * 0.18
-    out.rArmRot.z = -0.58 - Math.cos(f) * 0.12
+    out.lArmRot.x = -2.35 + Math.sin(f) * 0.16
+    out.lArmRot.z = -0.56 - Math.cos(f) * 0.1
+    out.rArmRot.x = -2.35 - Math.sin(f) * 0.16
+    out.rArmRot.z = 0.56 + Math.cos(f) * 0.1
 
-    out.lLegRot.x = -0.32 + Math.sin(f * 0.85) * 0.26
-    out.lLegRot.z = 0.14
-    out.rLegRot.x = -0.12 - Math.sin(f * 0.85) * 0.26
-    out.rLegRot.z = -0.14
+    out.lLegRot.x = -0.28 + Math.sin(f * 0.85) * 0.24
+    out.lLegRot.z = -0.12
+    out.rLegRot.x = -0.12 - Math.sin(f * 0.85) * 0.24
+    out.rLegRot.z = 0.12
 
     out.scaleY = 1.03
     out.scaleXZ = 0.98
     out.snappiness = 15
   } else if (pose === 'wave') {
-    // Charismatic Friendly Double-Wave with hip pop & head tilt
-    const intro = easeOutBack(clamp01(poseTime / 0.28))
-    const w = Math.sin(poseTime * 13.5)
-    const groove = Math.sin(poseTime * 4.5)
+    // Cool, Confident Game-Hero Wave (planted solid athletic stance, right arm raised cleanly OUTWARD!)
+    const intro = easeOutBack(clamp01(poseTime / 0.24))
+    const w = Math.sin(poseTime * 13)
 
-    out.comPos.x = -0.12 * intro
-    out.comPos.y = Math.abs(groove) * 0.06
-    out.comRot.z = -0.08 * intro
+    out.comPos.y = Math.sin(poseTime * 4) * 0.03
+    out.torsoRot.y = -0.1 * intro
+    out.torsoRot.x = -0.03 * intro
 
-    out.torsoRot.z = 0.08 * intro
-    out.torsoRot.y = -0.14 * intro
+    // Friendly confident forward look
+    out.headRot.y = 0.08 * intro
+    out.headRot.x = -0.04 * intro
 
-    out.headRot.z = 0.2 * intro + w * 0.04
-    out.headRot.y = 0.16 * intro
+    // Left arm relaxed naturally OUTWARD at side (NEVER crossing into chest!)
+    out.lArmRot.x = 0.06 * intro
+    out.lArmRot.z = -0.16 * intro
 
-    // Left hand confidently on hip
-    out.lArmRot.x = -0.32 * intro
-    out.lArmRot.z = 0.52 * intro
-    out.lArmRot.y = 0.35 * intro
+    // Right arm raised high & clearly OUTWARD to the right side, waving briskly!
+    out.rArmRot.x = -2.68 * intro
+    out.rArmRot.z = (0.44 + w * 0.28) * intro // always positive (+0.16..+0.72) → cleanly OUTWARD!
 
-    // Right arm crisp high wave
-    out.rArmRot.x = -2.72 * intro
-    out.rArmRot.z = (-0.42 + w * 0.42) * intro
-    out.rArmRot.y = -0.2 * intro
-
-    // Relaxed hip-popped stance
-    out.lLegRot.z = 0.09 * intro
-    out.rLegRot.z = -0.12 * intro
-    out.rLegRot.x = -0.08 * intro
+    // Solid wide planted hero stance (ZERO knock-knees or shy tilt!)
+    out.lLegRot.x = -0.05
+    out.lLegRot.z = -0.09
+    out.rLegRot.x = 0.05
+    out.rLegRot.z = 0.09
 
     out.snappiness = 18
   } else if (pose === 'dance') {
-    // VIRAL 4-BAR "FRESH GROOVE / STURDY SHUFFLE" CHOREOGRAPHY (3.2s seamless loop, 150 BPM!)
+    // VIRAL 4-BAR "FRESH HYPE SHUFFLE" CHOREOGRAPHY (3.2s seamless 8-beat loop — bold, outward, snappy!)
     const loopDur = 3.2
-    const phase = (poseTime % loopDur) / loopDur // 0..1 across 8 beats
-    const beat = phase * 8 // 0..8
+    const phase = (poseTime % loopDur) / loopDur
+    const beat = phase * 8
     const bFrac = beat % 1
-    // Punchy downbeat drop curve: sharp snap down on beat, bouncy rebound!
     const beatDrop = Math.sin(bFrac * Math.PI)
     const hitBounce = Math.pow(beatDrop, 0.7)
 
     if (beat < 2) {
-      // BAR 1 (Beats 0-2): Crisp Side-to-Side Sturdy Step + Cross-Chest Groove
+      // BAR 1: Crisp Side-to-Side Sturdy Step + Wide Power Arm Groove
       const dir = beat < 1 ? 1 : -1
       const stepCurve = easeOutQuad(bFrac)
 
       out.comPos.x = dir * (0.28 * Math.sin(stepCurve * Math.PI))
-      out.comPos.y = -0.16 * (1 - beatDrop) + 0.14 * hitBounce
-      out.comRot.z = -dir * 0.12 * hitBounce
+      out.comPos.y = -0.15 * (1 - beatDrop) + 0.14 * hitBounce
+      out.comRot.z = dir * 0.07 * hitBounce
 
-      out.torsoRot.y = dir * 0.34 * hitBounce
-      out.torsoRot.x = 0.14 * (1 - hitBounce)
-      out.torsoRot.z = dir * 0.14 * hitBounce
+      out.torsoRot.y = dir * 0.3 * hitBounce
+      out.torsoRot.x = 0.12 * (1 - hitBounce)
 
-      out.headRot.x = 0.18 * (1 - beatDrop) - 0.08
-      out.headRot.y = -dir * 0.24 * hitBounce
-      out.headRot.z = dir * 0.12
+      out.headRot.x = 0.16 * (1 - beatDrop) - 0.06
+      out.headRot.y = -dir * 0.2 * hitBounce
 
-      // Alternating crisp punch + cross-body swing
-      out.lArmRot.x = dir > 0 ? -1.45 * hitBounce - 0.3 : -0.55
-      out.lArmRot.z = dir > 0 ? 0.55 : 0.22
-      out.lArmRot.y = dir > 0 ? 0.45 : -0.35
+      // Arms pumping dynamically forward & strictly OUTWARD
+      out.lArmRot.x = dir > 0 ? -1.55 * hitBounce - 0.25 : 0.25
+      out.lArmRot.z = dir > 0 ? -0.45 : -0.22
+      out.rArmRot.x = dir < 0 ? -1.55 * hitBounce - 0.25 : 0.25
+      out.rArmRot.z = dir < 0 ? 0.45 : 0.22
 
-      out.rArmRot.x = dir < 0 ? -1.45 * hitBounce - 0.3 : -0.55
-      out.rArmRot.z = dir < 0 ? -0.55 : -0.22
-      out.rArmRot.y = dir < 0 ? -0.45 : 0.35
+      // Wide sturdy side-steps & kicks (outward!)
+      out.lLegRot.x = dir > 0 ? -0.52 * hitBounce : 0.24 * hitBounce
+      out.lLegRot.z = dir > 0 ? -0.28 * hitBounce - 0.06 : -0.08
+      out.rLegRot.x = dir < 0 ? -0.52 * hitBounce : 0.24 * hitBounce
+      out.rLegRot.z = dir < 0 ? 0.28 * hitBounce + 0.06 : 0.08
 
-      // Footwork kicks & wide sturdy steps
-      out.lLegRot.x = dir > 0 ? -0.55 * hitBounce : 0.28 * hitBounce
-      out.lLegRot.z = dir > 0 ? 0.28 * hitBounce : 0.06
-      out.rLegRot.x = dir < 0 ? -0.55 * hitBounce : 0.28 * hitBounce
-      out.rLegRot.z = dir < 0 ? -0.28 * hitBounce : -0.06
-
-      out.scaleY = 0.94 + hitBounce * 0.1
-      out.scaleXZ = 1.04 - hitBounce * 0.05
+      out.scaleY = 0.94 + hitBounce * 0.09
+      out.scaleXZ = 1.04 - hitBounce * 0.045
     } else if (beat < 4) {
-      // BAR 2 (Beats 2-4): Viral Hype Alternating Sky-Punches + Knee Dip
+      // BAR 2: Alternating Hype Sky-Punches + Rhythmic Bounce
       const alt = beat < 3 ? 1 : -1
       const snap = easeOutBack(clamp01(bFrac * 1.4))
 
-      out.comPos.y = -0.18 * (1 - beatDrop) + 0.18 * hitBounce
-      out.torsoRot.x = -0.06 + 0.18 * (1 - hitBounce)
-      out.torsoRot.y = alt * 0.42 * snap
-      out.torsoRot.z = -alt * 0.16 * snap
+      out.comPos.y = -0.16 * (1 - beatDrop) + 0.18 * hitBounce
+      out.torsoRot.x = -0.05 + 0.16 * (1 - hitBounce)
+      out.torsoRot.y = alt * 0.34 * snap
 
-      out.headRot.x = -0.1 + 0.22 * (1 - beatDrop)
-      out.headRot.y = -alt * 0.26 * snap
+      out.headRot.x = -0.1 + 0.2 * (1 - beatDrop)
+      out.headRot.y = -alt * 0.22 * snap
 
-      // One arm punches sky-high, other snaps down to hip!
-      out.lArmRot.x = alt > 0 ? -2.65 * snap : 0.45 * snap
-      out.lArmRot.z = alt > 0 ? 0.42 : 0.25
-      out.rArmRot.x = alt < 0 ? -2.65 * snap : 0.45 * snap
-      out.rArmRot.z = alt < 0 ? -0.42 : -0.25
+      // One arm punches sky-high & outward, other drives down-back & outward!
+      out.lArmRot.x = alt > 0 ? -2.65 * snap : 0.42 * snap
+      out.lArmRot.z = alt > 0 ? -0.38 : -0.24
+      out.rArmRot.x = alt < 0 ? -2.65 * snap : 0.42 * snap
+      out.rArmRot.z = alt < 0 ? 0.38 : 0.24
 
-      out.lLegRot.x = alt > 0 ? -0.36 * hitBounce : 0.22
-      out.lLegRot.z = 0.22
-      out.rLegRot.x = alt < 0 ? -0.36 * hitBounce : 0.22
-      out.rLegRot.z = -0.22
+      out.lLegRot.x = alt > 0 ? -0.34 * hitBounce : 0.18
+      out.lLegRot.z = -0.18
+      out.rLegRot.x = alt < 0 ? -0.34 * hitBounce : 0.18
+      out.rLegRot.z = 0.18
 
-      out.scaleY = 0.93 + hitBounce * 0.12
-      out.scaleXZ = 1.05 - hitBounce * 0.06
+      out.scaleY = 0.94 + hitBounce * 0.11
+      out.scaleXZ = 1.04 - hitBounce * 0.05
     } else if (beat < 6) {
-      // BAR 3 (Beats 4-6): Silky Glide Shuffle + Wave Arms
-      const p = (beat - 4) / 2 // 0..1
+      // BAR 3: Smooth Lateral Glide Shuffle + Wide Helicopter Wave Arms
+      const p = (beat - 4) / 2
       const glide = Math.sin(p * Math.PI * 2)
       const foot = Math.sin(p * Math.PI * 4)
 
-      out.comPos.x = glide * 0.34
-      out.comPos.y = Math.abs(foot) * 0.16 - 0.04
-      out.comRot.z = -glide * 0.14
+      out.comPos.x = glide * 0.32
+      out.comPos.y = Math.abs(foot) * 0.16 - 0.03
+      out.comRot.z = glide * 0.08
 
-      out.torsoRot.y = glide * 0.36
-      out.torsoRot.z = glide * 0.15
-      out.headRot.y = -glide * 0.22
-      out.headRot.z = -glide * 0.16
+      out.torsoRot.y = glide * 0.3
+      out.headRot.y = -glide * 0.18
 
-      out.lArmRot.x = -1.35 + Math.sin(p * Math.PI * 4) * 0.55
-      out.lArmRot.z = 0.85 + Math.cos(p * Math.PI * 4) * 0.32
-      out.rArmRot.x = -1.35 - Math.sin(p * Math.PI * 4) * 0.55
-      out.rArmRot.z = -0.85 - Math.cos(p * Math.PI * 4) * 0.32
+      out.lArmRot.x = -1.25 + Math.sin(p * Math.PI * 4) * 0.5
+      out.lArmRot.z = -0.78 - Math.cos(p * Math.PI * 4) * 0.28
+      out.rArmRot.x = -1.25 - Math.sin(p * Math.PI * 4) * 0.5
+      out.rArmRot.z = 0.78 + Math.cos(p * Math.PI * 4) * 0.28
 
-      out.lLegRot.x = foot * 0.65
-      out.lLegRot.z = 0.18 + Math.max(0, foot) * 0.22
-      out.rLegRot.x = -foot * 0.65
-      out.rLegRot.z = -0.18 - Math.max(0, -foot) * 0.22
+      out.lLegRot.x = foot * 0.62
+      out.lLegRot.z = -0.14 - Math.max(0, foot) * 0.2
+      out.rLegRot.x = -foot * 0.62
+      out.rLegRot.z = 0.14 + Math.max(0, -foot) * 0.2
 
       out.scaleY = 0.97 + Math.abs(foot) * 0.06
       out.scaleXZ = 1.02 - Math.abs(foot) * 0.03
     } else {
-      // BAR 4 (Beats 6-8): 360° Flair Spin + Drop Pose Finisher!
-      const p = (beat - 6) / 2 // 0..1
+      // BAR 4: 360° Pro Flair Spin → Power Drop Finisher!
+      const p = (beat - 6) / 2
       if (p < 0.68) {
         const sp = easeInOutCubic(p / 0.68)
         const hop = Math.sin((p / 0.68) * Math.PI)
-        out.comPos.y = hop * 0.52
+        out.comPos.y = hop * 0.55
         out.comRot.y = sp * Math.PI * 2
         out.directSpinY = true
-        out.comRot.z = 0.14 * hop
+        out.comRot.z = 0.1 * hop
 
-        out.lArmRot.x = -1.2
-        out.lArmRot.z = 1.15
-        out.rArmRot.x = -1.2
-        out.rArmRot.z = -1.15
+        out.lArmRot.x = -1.1
+        out.lArmRot.z = -1.08
+        out.rArmRot.x = -1.1
+        out.rArmRot.z = 1.08
 
         out.lLegRot.x = -0.45 * hop
+        out.lLegRot.z = -0.14
         out.rLegRot.x = 0.32 * hop
+        out.rLegRot.z = 0.14
         out.scaleY = 1 + hop * 0.08
         out.scaleXZ = 1 - hop * 0.04
       } else {
-        // Juicy beat-drop finisher!
         const dp = (p - 0.68) / 0.32
         const settle = Math.sin(dp * Math.PI)
-        out.comPos.y = -0.22 * settle
+        out.comPos.y = -0.2 * settle
         out.comRot.y = 0
         out.directSpinY = true
-        out.torsoRot.x = 0.2 * settle
-        out.headRot.x = -0.16 * settle
+        out.torsoRot.x = 0.18 * settle
+        out.headRot.x = -0.14 * settle
 
-        out.lArmRot.x = -1.75
-        out.lArmRot.z = 0.65
-        out.rArmRot.x = -1.75
-        out.rArmRot.z = -0.65
+        out.lArmRot.x = -1.55
+        out.lArmRot.z = -0.62
+        out.rArmRot.x = -1.55
+        out.rArmRot.z = 0.62
 
-        out.lLegRot.z = 0.24
-        out.rLegRot.z = -0.24
-        out.scaleY = 1 - 0.1 * settle
-        out.scaleXZ = 1 + 0.06 * settle
+        out.lLegRot.z = -0.2
+        out.rLegRot.z = 0.2
+        out.scaleY = 1 - 0.09 * settle
+        out.scaleXZ = 1 + 0.05 * settle
       }
     }
     out.snappiness = 24
   } else if (pose === 'cheer') {
-    // Explosive Star-Jump Victory Celebration (1.2s choreographed cycle)
+    // Explosive Wide Victory Star-Jump (1.2s cycle)
     const p = (poseTime % 1.2) / 1.2
     if (p < 0.2) {
-      // Anticipation crouch
       const t = easeOutQuad(p / 0.2)
-      out.comPos.y = -0.22 * t
-      out.torsoRot.x = 0.25 * t
-      out.lArmRot.x = 0.65 * t
-      out.rArmRot.x = 0.65 * t
-      out.lLegRot.x = -0.38 * t
-      out.rLegRot.x = -0.38 * t
-      out.scaleY = 1 - 0.09 * t
+      out.comPos.y = -0.2 * t
+      out.torsoRot.x = 0.22 * t
+      out.lArmRot.x = 0.58 * t
+      out.lArmRot.z = -0.16
+      out.rArmRot.x = 0.58 * t
+      out.rArmRot.z = 0.16
+      out.lLegRot.x = -0.34 * t
+      out.lLegRot.z = -0.1
+      out.rLegRot.x = -0.34 * t
+      out.rLegRot.z = 0.1
+      out.scaleY = 1 - 0.08 * t
       out.scaleXZ = 1 + 0.05 * t
     } else if (p < 0.72) {
-      // High Star-Jump apex!
       const t = (p - 0.2) / 0.52
       const arc = Math.sin(t * Math.PI)
       out.comPos.y = arc * 1.05
-      out.torsoRot.x = -0.14 * arc
-      out.headRot.x = -0.18 * arc
+      out.torsoRot.x = -0.12 * arc
+      out.headRot.x = -0.16 * arc
 
-      out.lArmRot.x = -2.85 * arc
-      out.lArmRot.z = 0.68 * arc
-      out.rArmRot.x = -2.85 * arc
-      out.rArmRot.z = -0.68 * arc
+      out.lArmRot.x = -2.75 * arc
+      out.lArmRot.z = -0.66 * arc - 0.1
+      out.rArmRot.x = -2.75 * arc
+      out.rArmRot.z = 0.66 * arc + 0.1
 
-      out.lLegRot.z = 0.52 * arc
-      out.rLegRot.z = -0.52 * arc
-      out.lLegRot.x = -0.18 * arc
-      out.rLegRot.x = -0.18 * arc
+      out.lLegRot.z = -0.46 * arc - 0.06
+      out.rLegRot.z = 0.46 * arc + 0.06
+      out.lLegRot.x = -0.15 * arc
+      out.rLegRot.x = -0.15 * arc
 
       out.scaleY = 1 + 0.08 * arc
       out.scaleXZ = 1 - 0.04 * arc
     } else {
-      // Cushioned landing + triumphant fist pump
       const t = (p - 0.72) / 0.28
       const impact = Math.sin(t * Math.PI)
       out.comPos.y = -0.18 * impact
-      out.torsoRot.x = 0.14 * impact
-      out.lArmRot.x = -2.35 + impact * 0.45
-      out.lArmRot.z = 0.35
-      out.rArmRot.x = -2.35 + impact * 0.45
-      out.rArmRot.z = -0.35
-      out.lLegRot.z = 0.16
-      out.rLegRot.z = -0.16
+      out.torsoRot.x = 0.12 * impact
+      out.lArmRot.x = -2.3 + impact * 0.42
+      out.lArmRot.z = -0.36
+      out.rArmRot.x = -2.3 + impact * 0.42
+      out.rArmRot.z = 0.36
+      out.lLegRot.z = -0.14
+      out.rLegRot.z = 0.14
       out.scaleY = 1 - 0.08 * impact
       out.scaleXZ = 1 + 0.05 * impact
     }
     out.snappiness = 22
   } else if (pose === 'sit') {
-    // Relaxed Hangout Chill Sit (grounded hips, casually swinging legs, propping arms)
-    const ease = easeOutQuad(clamp01(poseTime / 0.35))
-    const swing = Math.sin(elapsed * 2.6)
-    const glance = Math.sin(elapsed * 1.1)
+    // Relaxed Hangout Sit (legs forward & apart, arms braced outward behind)
+    const ease = easeOutQuad(clamp01(poseTime / 0.32))
+    const swing = Math.sin(elapsed * 2.5)
+    const glance = Math.sin(elapsed * 1.05)
 
     out.comPos.y = -0.68 * ease
-    out.torsoRot.x = -0.18 * ease
-    out.headRot.y = glance * 0.24 * ease
-    out.headRot.x = 0.1 * ease
+    out.torsoRot.x = -0.16 * ease
+    out.headRot.y = glance * 0.22 * ease
+    out.headRot.x = 0.08 * ease
 
-    // Arms angled slightly back resting comfortably
     out.lArmRot.x = 0.36 * ease
-    out.lArmRot.z = 0.28 * ease
+    out.lArmRot.z = -0.26 * ease
     out.rArmRot.x = 0.36 * ease
-    out.rArmRot.z = -0.28 * ease
+    out.rArmRot.z = 0.26 * ease
 
-    // Legs kicked forward swinging lazily
     out.lLegRot.x = (-1.45 + swing * 0.14) * ease
-    out.lLegRot.z = 0.12 * ease
+    out.lLegRot.z = -0.12 * ease
     out.rLegRot.x = (-1.45 - swing * 0.14) * ease
-    out.rLegRot.z = -0.12 * ease
+    out.rLegRot.z = 0.12 * ease
 
     out.snappiness = 14
   } else if (pose === 'spin') {
-    // Pro Breakdance 720° Tornado Flair Spin (1.45s choreographed cycle)
+    // Pro Martial-Arts 720° Tornado Kick Spin (1.45s choreographed cycle)
     const dur = 1.45
     const p = (poseTime % dur) / dur
 
     if (p < 0.18) {
-      // Coil wind-up!
+      // Athletic coil wind-up!
       const t = easeOutQuad(p / 0.18)
-      out.comPos.y = -0.22 * t
+      out.comPos.y = -0.2 * t
       out.comRot.y = -0.55 * t
       out.directSpinY = true
-      out.torsoRot.x = 0.24 * t
-      out.lArmRot.x = -0.8 * t
-      out.lArmRot.z = 0.35 * t
-      out.rArmRot.x = 0.65 * t
-      out.rArmRot.z = -0.4 * t
-      out.lLegRot.x = -0.35 * t
-      out.rLegRot.x = 0.22 * t
+      out.torsoRot.x = 0.22 * t
+      out.lArmRot.x = -0.75 * t
+      out.lArmRot.z = -0.34 * t - 0.08
+      out.rArmRot.x = 0.6 * t
+      out.rArmRot.z = 0.38 * t + 0.08
+      out.lLegRot.x = -0.34 * t
+      out.lLegRot.z = -0.12
+      out.rLegRot.x = 0.2 * t
+      out.rLegRot.z = 0.12
       out.scaleY = 1 - 0.08 * t
       out.scaleXZ = 1 + 0.05 * t
     } else if (p < 0.78) {
-      // Airborne 720° Tornado Spin with extended flair kick!
+      // Airborne 720° Tornado Kick with wide outward helicopter arms!
       const t = (p - 0.18) / 0.6
       const spinEase = easeInOutCubic(t)
       const arc = Math.sin(t * Math.PI)
@@ -532,148 +509,152 @@ export function evaluateR6Pose(
       out.comPos.y = arc * 0.98
       out.comRot.y = mix(-0.55, Math.PI * 4, spinEase)
       out.directSpinY = true
-      out.comRot.z = 0.22 * arc
+      out.comRot.z = 0.18 * arc
 
       out.torsoRot.x = -0.1 * arc
-      out.lArmRot.x = -1.45
-      out.lArmRot.z = 1.25 * arc + 0.2
-      out.rArmRot.x = -1.45
-      out.rArmRot.z = -1.25 * arc - 0.2
+      out.lArmRot.x = -1.35
+      out.lArmRot.z = -1.15 * arc - 0.2
+      out.rArmRot.x = -1.35
+      out.rArmRot.z = 1.15 * arc + 0.2
 
-      // One leg extended in tornado kick, other tucked!
-      out.lLegRot.x = -1.15 * arc
-      out.lLegRot.z = 0.42 * arc
-      out.rLegRot.x = 0.48 * arc
-      out.rLegRot.z = -0.18 * arc
+      // Extended outward tornado kick + tucked trail leg!
+      out.lLegRot.x = -1.12 * arc
+      out.lLegRot.z = -0.36 * arc - 0.06
+      out.rLegRot.x = 0.45 * arc
+      out.rLegRot.z = 0.16 * arc + 0.06
 
       out.scaleY = 1 + 0.07 * arc
       out.scaleXZ = 1 - 0.035 * arc
     } else {
-      // Cushioned superhero landing settle!
+      // Wide superhero landing settle!
       const t = (p - 0.78) / 0.22
       const impact = Math.sin(t * Math.PI)
-      out.comPos.y = -0.22 * impact
+      out.comPos.y = -0.2 * impact
       out.comRot.y = 0
       out.directSpinY = true
-      out.torsoRot.x = 0.22 * impact
-      out.headRot.x = -0.16 * impact
-      out.lArmRot.x = -0.45 * impact
-      out.lArmRot.z = 0.62 * impact + 0.12
-      out.rArmRot.x = -0.45 * impact
-      out.rArmRot.z = -0.62 * impact - 0.12
-      out.lLegRot.z = 0.2 * impact
-      out.rLegRot.z = -0.2 * impact
-      out.scaleY = 1 - 0.1 * impact
-      out.scaleXZ = 1 + 0.06 * impact
+      out.torsoRot.x = 0.2 * impact
+      out.headRot.x = -0.15 * impact
+      out.lArmRot.x = -0.4 * impact
+      out.lArmRot.z = -0.58 * impact - 0.14
+      out.rArmRot.x = -0.4 * impact
+      out.rArmRot.z = 0.58 * impact + 0.14
+      out.lLegRot.z = -0.18 * impact - 0.06
+      out.rLegRot.z = 0.18 * impact + 0.06
+      out.scaleY = 1 - 0.09 * impact
+      out.scaleXZ = 1 + 0.05 * impact
     }
     out.snappiness = 24
   } else if (pose === 'backflip') {
-    // PRO PARKOUR BACKFLIP — Anticipation Squat → Explosive Launch → High-Apex Tight Tuck (-360°) → Superhero Landing!
-    // Center of mass (`comPivot` at y=1.72) lifts up to +1.78 (world y=3.50!), guaranteeing 100% clearance above the floor!
+    // PRO PARKOUR BACKFLIP — Coiled Squat → High Launch → Tight Midair Tuck (-360°) → Wide Superhero Landing!
     const dur = 1.75
     const p = (poseTime % dur) / dur
 
     if (p < 0.2) {
-      // Phase 1: Coiled Anticipation Squat (feet planted, arms swing BACK!)
+      // Phase 1: Power Anticipation Squat (feet wide, arms thrust back & outward!)
       const t = easeOutQuad(p / 0.2)
-      out.comPos.y = -0.24 * t
+      out.comPos.y = -0.22 * t
       out.comRot.x = 0
       out.directSpinX = true
 
-      out.torsoRot.x = 0.42 * t
-      out.headRot.x = -0.3 * t
+      out.torsoRot.x = 0.4 * t
+      out.headRot.x = -0.28 * t
 
-      out.lArmRot.x = 1.32 * t
-      out.lArmRot.z = 0.22 * t
-      out.rArmRot.x = 1.32 * t
-      out.rArmRot.z = -0.22 * t
+      out.lArmRot.x = 1.28 * t
+      out.lArmRot.z = -0.24 * t - 0.08
+      out.rArmRot.x = 1.28 * t
+      out.rArmRot.z = 0.24 * t + 0.08
 
-      out.lLegRot.x = -0.42 * t
-      out.lLegRot.z = 0.1 * t
-      out.rLegRot.x = -0.42 * t
-      out.rLegRot.z = -0.1 * t
+      out.lLegRot.x = -0.4 * t
+      out.lLegRot.z = -0.12
+      out.rLegRot.x = -0.4 * t
+      out.rLegRot.z = 0.12
 
       out.scaleY = 1 - 0.08 * t
       out.scaleXZ = 1 + 0.05 * t
     } else if (p < 0.76) {
-      // Phase 2 & 3: Explosive Takeoff → High-Apex Tight Tuck Full -360° Flip → Open-Out!
-      const t = (p - 0.2) / 0.56 // 0..1 airborne window
-      // Parabolic jump arc peaking at +1.78 above rest (world COM y = 3.50!)
+      // Phase 2 & 3: Explosive Takeoff → High-Apex Tight Tuck -360° around COM → Clean Open-Out!
+      const t = (p - 0.2) / 0.56
       const heightArc = 4 * t * (1 - t)
-      const tuck = Math.sin(clamp01((t - 0.08) / 0.78) * Math.PI) // tightest in midair!
+      const tuck = Math.sin(clamp01((t - 0.08) / 0.78) * Math.PI)
 
-      out.comPos.y = mix(-0.24, 0, clamp01(t * 5)) + heightArc * 1.78
-      // Smooth full backward -2π rotation around Center of Mass!
+      out.comPos.y = mix(-0.22, 0, clamp01(t * 5)) + heightArc * 1.78
       out.comRot.x = -easeInOutCubic(t) * Math.PI * 2
       out.directSpinX = true
 
-      out.torsoRot.x = -0.24 * (1 - tuck) + 0.15 * tuck
-      out.headRot.x = -0.38 * (1 - tuck)
+      out.torsoRot.x = -0.22 * (1 - tuck) + 0.14 * tuck
+      out.headRot.x = -0.35 * (1 - tuck)
 
-      // Launch arms whip high overhead, then hug tight into the tuck, then open for landing
-      out.lArmRot.x = mix(-2.75, -1.25, tuck)
-      out.lArmRot.z = mix(0.45, 0.14, tuck)
-      out.rArmRot.x = mix(-2.75, -1.25, tuck)
-      out.rArmRot.z = mix(-0.45, -0.14, tuck)
+      // Launch arms whip high & outward, hug cleanly beside tucked knees, then spread for landing!
+      out.lArmRot.x = mix(-2.7, -1.2, tuck)
+      out.lArmRot.z = mix(-0.44, -0.16, tuck)
+      out.rArmRot.x = mix(-2.7, -1.2, tuck)
+      out.rArmRot.z = mix(0.44, 0.16, tuck)
 
-      // Tight mid-air tuck knees -> crisp landing extension!
-      out.lLegRot.x = -1.25 * tuck + 0.15 * (1 - tuck)
-      out.lLegRot.z = 0.08
-      out.rLegRot.x = -1.25 * tuck + 0.15 * (1 - tuck)
-      out.rLegRot.z = -0.08
+      out.lLegRot.x = -1.22 * tuck + 0.14 * (1 - tuck)
+      out.lLegRot.z = -0.1
+      out.rLegRot.x = -1.22 * tuck + 0.14 * (1 - tuck)
+      out.rLegRot.z = 0.1
 
-      // Stretch on takeoff, compact on apex tuck
       out.scaleY = 1 + (1 - tuck) * 0.08 - tuck * 0.04
       out.scaleXZ = 1 - (1 - tuck) * 0.04 + tuck * 0.03
     } else if (p < 0.9) {
-      // Phase 4: Juicy Cushioned Superhero Landing Impact!
+      // Phase 4: Bold Wide-Stance Superhero Landing Impact!
       const t = (p - 0.76) / 0.14
       const impact = Math.sin(t * Math.PI)
-      out.comPos.y = -0.26 * impact
+      out.comPos.y = -0.24 * impact
       out.comRot.x = 0
       out.directSpinX = true
 
-      out.torsoRot.x = 0.34 * impact
-      out.headRot.x = -0.24 * impact
+      out.torsoRot.x = 0.32 * impact
+      out.headRot.x = -0.22 * impact
 
-      out.lArmRot.x = -0.55 * impact
-      out.lArmRot.z = 0.72 * impact + 0.12
-      out.rArmRot.x = -0.55 * impact
-      out.rArmRot.z = -0.72 * impact - 0.12
+      out.lArmRot.x = -0.45 * impact
+      out.lArmRot.z = -0.68 * impact - 0.14
+      out.rArmRot.x = -0.45 * impact
+      out.rArmRot.z = 0.68 * impact + 0.14
 
-      out.lLegRot.x = -0.4 * impact
-      out.lLegRot.z = 0.22 * impact + 0.06
-      out.rLegRot.x = -0.4 * impact
-      out.rLegRot.z = -0.22 * impact - 0.06
+      out.lLegRot.x = -0.36 * impact
+      out.lLegRot.z = -0.2 * impact - 0.08
+      out.rLegRot.x = -0.36 * impact
+      out.rLegRot.z = 0.2 * impact + 0.08
 
-      out.scaleY = 1 - 0.11 * impact
-      out.scaleXZ = 1 + 0.07 * impact
+      out.scaleY = 1 - 0.1 * impact
+      out.scaleXZ = 1 + 0.06 * impact
     } else {
-      // Phase 5: Confident Heroic Stand-Up Settle
+      // Phase 5: Crisp Heroic Rebound Stand
       const t = easeOutBack((p - 0.9) / 0.1)
       out.comPos.y = 0
       out.comRot.x = 0
       out.directSpinX = true
-      out.torsoRot.y = -0.16 * t
-      out.headRot.y = 0.16 * t
-      out.lArmRot.z = 0.12
-      out.rArmRot.z = -0.12
-      out.lLegRot.z = 0.06
-      out.rLegRot.z = -0.06
+      out.torsoRot.y = -0.1 * t
+      out.headRot.y = 0.1 * t
+      out.lArmRot.z = -0.11
+      out.rArmRot.z = 0.11
+      out.lLegRot.z = -0.07
+      out.rLegRot.z = 0.07
     }
     out.snappiness = 26
   }
 
-  // Apply automatic juicy Landing Squash overlay whenever touching down from a jump/fall!
+  // Automatic juicy Landing Squash overlay after jumping/falling (with OUTWARD stabilizing arms!)
   if (landingImpact > 0.005 && pose !== 'jump' && pose !== 'fall' && pose !== 'backflip') {
     const k = Math.sin(landingImpact * Math.PI)
-    out.comPos.y -= 0.22 * k
-    out.torsoRot.x += 0.22 * k
-    out.lArmRot.z += 0.35 * k
-    out.rArmRot.z -= 0.35 * k
-    out.lLegRot.x -= 0.26 * k
-    out.rLegRot.x -= 0.26 * k
-    out.scaleY *= 1 - 0.1 * k
-    out.scaleXZ *= 1 + 0.06 * k
+    out.comPos.y -= 0.2 * k
+    out.torsoRot.x += 0.2 * k
+    out.lArmRot.z -= 0.34 * k
+    out.rArmRot.z += 0.34 * k
+    out.lLegRot.x -= 0.24 * k
+    out.lLegRot.z -= 0.08 * k
+    out.rLegRot.x -= 0.24 * k
+    out.rLegRot.z += 0.08 * k
+    out.scaleY *= 1 - 0.09 * k
+    out.scaleXZ *= 1 + 0.05 * k
   }
+
+  // HARD MATHEMATICAL ANTI-CLIPPING GUARD:
+  // Arms & legs can NEVER bend inward into the torso or into each other on ANY frame!
+  out.lArmRot.z = Math.min(out.lArmRot.z, -0.07)
+  out.rArmRot.z = Math.max(out.rArmRot.z, 0.07)
+  out.lLegRot.z = Math.min(out.lLegRot.z, -0.03)
+  out.rLegRot.z = Math.max(out.rLegRot.z, 0.03)
 }
