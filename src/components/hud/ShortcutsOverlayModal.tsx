@@ -52,7 +52,7 @@ export const ShortcutsOverlayModal: React.FC<ShortcutsOverlayModalProps> = ({
 
   const uiRows: ShortcutRow[] = [
     { keys: ['T', '/'], label: isPl ? 'Otwórz Czat i zacznij pisać' : 'Open Chat & focus input' },
-    { keys: ['I'], label: isPl ? 'Szatnia R6 (zmiana stroju i czapek)' : 'R6 Wardrobe (outfits & hats)' },
+    { keys: ['I'], label: isPl ? 'Szatnia awatarów (zmiana stroju i czapek)' : 'Avatar Wardrobe (outfits & hats)' },
     { keys: ['H'], label: isPl ? 'Menu gry (Hub)' : 'In-Game Menu (Hub)' },
     { keys: ['P'], label: isPl ? 'Lista graczy w pokoju' : 'Room Players list' },
     { keys: ['O'], label: isPl ? 'Ustawienia (czułość, grafika)' : 'Settings (sensitivity, graphics)' },

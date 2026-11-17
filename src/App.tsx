@@ -282,7 +282,7 @@ export function App() {
     if (customContext) {
       setFeedbackContext(customContext)
     } else if (view === 'avatar') {
-      setFeedbackContext(lang === 'pl' ? 'Szatnia R6' : 'Avatar Wardrobe')
+      setFeedbackContext(lang === 'pl' ? 'Szatnia awatarów' : 'Avatar Wardrobe')
     } else if (view === 'social') {
       setFeedbackContext(lang === 'pl' ? 'Społeczność / Profil' : 'Social / Profile')
     } else if (view === 'admin') {
@@ -314,7 +314,7 @@ export function App() {
     badge?: number
   }> = [
     { id: 'home', label: lang === 'pl' ? 'Odkrywaj' : 'Discover', icon: Compass },
-    { id: 'avatar', label: lang === 'pl' ? 'Szatnia R6' : 'Wardrobe', icon: Shirt },
+    { id: 'avatar', label: lang === 'pl' ? 'Szatnia awatarów' : 'Avatar Wardrobe', icon: Shirt },
     { id: 'social', label: lang === 'pl' ? 'Profil i Znajomi' : 'Profile', icon: Users },
   ]
 

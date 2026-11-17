@@ -31,7 +31,7 @@ export interface MobileTouchControlsProps {
 }
 
 /**
- * Ergonomic Roblox-grade mobile touch HUD:
+ * Ergonomic FreshBlox mobile touch HUD:
  * - Floating / forgiving left thumbstick zone (touch anywhere in the lower-left zone; centers under your thumb!).
  * - Outer-ring auto-sprint (> 84% deflection) + dedicated Sprint lock toggle.
  * - Arc-shaped right-thumb action cluster (never stacks tall vertically, never clips on short landscape screens!).

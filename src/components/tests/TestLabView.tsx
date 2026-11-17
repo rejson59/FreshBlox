@@ -6,6 +6,7 @@ import {
   Flag,
   FlaskConical,
   Gauge,
+  Lightbulb,
   Play,
   RefreshCw,
   RotateCcw,
@@ -20,6 +21,7 @@ import { WorldKind } from '../../data/catalog'
 import { hasAdminAccess, PlayerProfile } from '../../store/usePlayerStore'
 import { DEFAULT_LAB_FLAGS, FreshLabFlags } from '../../lib/labFlags'
 import { LoadingShowcasePanel } from './LoadingShowcasePanel'
+import { ProposalsLabPanel } from './ProposalsLabPanel'
 import { LoaderPresetId } from '../loading/FreshLoaders'
 import {
   regenerateWorldThumbnails,
@@ -35,7 +37,7 @@ type BooleanLabFlagKey =
   | 'turboMovement'
   | 'verboseDebugBadges'
 
-type LabSubTab = 'loaders' | 'tools'
+type LabSubTab = 'loaders' | 'proposals' | 'tools'
 
 interface TestLabViewProps {
   profile: PlayerProfile
@@ -52,8 +54,6 @@ const PRESET_STAGES = [1, 10, 25, 50, 75, 90, 99, 100]
 const PREVIEW_ITEMS: { key: WorldPreviewKey; label: string }[] = [
   { key: 'lobby', label: 'Lobby Główne' },
   { key: 'obby', label: 'Test Obby 100' },
-  { key: 'sky-drift', label: 'Sky Drift' },
-  { key: 'parkour-arena', label: 'Parkour Arena' },
 ]
 
 export const TestLabView: React.FC<TestLabViewProps> = ({
@@ -237,6 +237,20 @@ export const TestLabView: React.FC<TestLabViewProps> = ({
 
         <button
           type="button"
+          onClick={() => setSubTab('proposals')}
+          className="inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-extrabold transition cursor-pointer"
+          style={{
+            background: subTab === 'proposals' ? 'rgba(245, 158, 11, 0.16)' : panelSurface,
+            borderColor: subTab === 'proposals' ? 'rgba(251, 191, 36, 0.45)' : panelBorder,
+            color: subTab === 'proposals' ? '#FBBF24' : tokens.textSecondary,
+          }}
+        >
+          <Lightbulb className="h-3.5 w-3.5" />
+          <span>{isPl ? 'Propozycje ulepszeń (27)' : 'Upgrade Proposals (27)'}</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setSubTab('tools')}
           className="inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-extrabold transition cursor-pointer"
           style={{
@@ -256,6 +270,14 @@ export const TestLabView: React.FC<TestLabViewProps> = ({
           lang={lang}
           selectedLoader={flags.loaderPreset}
           onSelectLoader={handleSelectLoader}
+        />
+      )}
+
+      {subTab === 'proposals' && (
+        <ProposalsLabPanel
+          mode={mode}
+          lang={lang}
+          selectedLoader={flags.loaderPreset}
         />
       )}
 
@@ -437,7 +459,7 @@ export const TestLabView: React.FC<TestLabViewProps> = ({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 max-w-2xl">
           {PREVIEW_ITEMS.map((item) => (
             <div
               key={item.key}

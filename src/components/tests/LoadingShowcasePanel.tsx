@@ -33,7 +33,7 @@ const SIM_STEPS_PL = [
   'Łączenie z serwerem FreshBlox…',
   'Wczytywanie geometrii świata 3D…',
   'Generowanie tekstur PBR i oświetlenia…',
-  'Synchronizacja awatarów R6…',
+  'Synchronizacja awatarów 3D…',
   'Gotowe — wchodzisz do świata!',
 ]
 
@@ -41,7 +41,7 @@ const SIM_STEPS_EN = [
   'Connecting to FreshBlox server…',
   'Loading 3D world geometry…',
   'Generating PBR materials & lighting…',
-  'Syncing R6 avatars…',
+  'Syncing 3D avatars…',
   'Ready — entering world!',
 ]
 

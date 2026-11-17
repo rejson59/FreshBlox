@@ -11,7 +11,6 @@ import {
   Palette,
   Play,
   RotateCcw,
-  RotateCw,
   Shirt,
   ShoppingBag,
   Smile,
@@ -71,7 +70,6 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
   const [tab, setTab] = useState<EditorTab>('outfits')
   const [previewPose, setPreviewPose] = useState<PlayerPose>('idle')
   const [studioLight, setStudioLight] = useState<StudioLighting>('day')
-  const [autoRotate, setAutoRotate] = useState<boolean>(true)
 
   // Free Try-On preview avatar (can combine unowned outfits, hats & faces before buying!)
   const [previewAvatar, setPreviewAvatar] = useState<R6AvatarConfig>(() => ({ ...profile.avatar }))
@@ -82,6 +80,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
 
   const mountRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
   const rigRef = useRef<R6RigHandle | null>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
   const hemiRef = useRef<THREE.HemisphereLight | null>(null)
@@ -202,11 +201,13 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
     }
   }, [studioLight])
 
-  useEffect(() => {
-    if (controlsRef.current) {
-      controlsRef.current.autoRotate = autoRotate
+  const handleResetCamera = () => {
+    if (cameraRef.current && controlsRef.current) {
+      cameraRef.current.position.set(0, 2.5, 8.6)
+      controlsRef.current.target.set(0, 1.9, 0)
+      controlsRef.current.update()
     }
-  }, [autoRotate])
+  }
 
   // Initialize Clean Fresh Glossy 3D Locker Terrace (Day & Starry Night — Zero Neon!)
   useEffect(() => {
@@ -242,6 +243,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
       70,
     )
     camera.position.set(0, 2.5, 8.6)
+    cameraRef.current = camera
 
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
@@ -250,8 +252,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
     controls.minDistance = 4.8
     controls.maxDistance = 12.2
     controls.maxPolarAngle = Math.PI * 0.52
-    controls.autoRotate = true
-    controls.autoRotateSpeed = 0.65
+    controls.autoRotate = false
     controlsRef.current = controls
 
     // Natural 3-point outdoor lighting (Sun / Moon + Soft Sky Fill)
@@ -271,7 +272,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
     scene.add(fill)
     fillRef.current = fill
 
-    // === CLEAN FRESH ARCHITECTURAL MARBLE TURNTABLE PODIUM (ZERO ROBLOX STUDS / ZERO NEON) ===
+    // === CLEAN FRESH ARCHITECTURAL MARBLE PODIUM (ZERO STUDS / ZERO NEON) ===
     const podiumTex = cloneFreshTexturesWithRepeat('marble', 2, 2, track)
     const flutedTex = cloneFreshTexturesWithRepeat('fluted', 1, 2, track)
     const baseStoneTex = cloneFreshTexturesWithRepeat('terrazzo', 3, 1, track)
@@ -653,7 +654,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
         <div className="flex items-center gap-2.5">
           <Shirt className="h-5 w-5" style={{ color: ARCTIC_SKY.skyMain }} />
           <h1 className="font-display text-lg font-extrabold sm:text-xl" style={{ color: tokens.textPrimary }}>
-            {lang === 'pl' ? 'Szatnia R6' : 'R6 Wardrobe'}
+            {lang === 'pl' ? 'Szatnia awatarów' : 'Avatar Wardrobe'}
           </h1>
         </div>
 
@@ -683,7 +684,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
             {/* Top-left Status Badge */}
             <div className="pointer-events-none absolute top-3 left-3 flex items-center gap-1.5">
               <span className="rounded-full bg-slate-950/65 px-2.5 py-0.5 font-mono text-[10px] font-bold text-sky-200 border border-white/15 backdrop-blur">
-                R6
+                3D
               </span>
               {triedUnowned.length > 0 && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-black text-slate-950 shadow">
@@ -693,7 +694,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
               )}
             </div>
 
-            {/* Top-right Icon Controls (Day/Night + Auto-Rotate) */}
+            {/* Top-right Icon Controls (Day/Night + Reset Camera Angle) */}
             <div className="absolute top-3 right-3 flex items-center gap-1.5">
               <button
                 type="button"
@@ -714,16 +715,12 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
 
               <button
                 type="button"
-                onClick={() => setAutoRotate((r) => !r)}
-                title="Auto-rotate"
-                aria-label="Auto-rotate"
-                className={`flex h-8 w-8 items-center justify-center rounded-xl border backdrop-blur transition cursor-pointer ${
-                  autoRotate
-                    ? 'bg-sky-500/35 border-sky-300/60 text-white'
-                    : 'bg-slate-950/65 border-white/15 text-slate-300'
-                }`}
+                onClick={handleResetCamera}
+                title={lang === 'pl' ? 'Wyśrodkuj widok' : 'Reset camera view'}
+                aria-label={lang === 'pl' ? 'Wyśrodkuj widok' : 'Reset camera view'}
+                className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-950/65 text-sky-100 border border-white/15 backdrop-blur hover:bg-slate-900 cursor-pointer"
               >
-                <RotateCw className="h-3.5 w-3.5" />
+                <RotateCcw className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>

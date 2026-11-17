@@ -4,7 +4,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { cloneFreshTexturesWithRepeat, FreshSurfaceKind } from './freshTextures'
 import { generateTestObbyCourse, OBBY_ZONES } from './obbyCourse'
 
-export type WorldPreviewKey = 'lobby' | 'obby' | 'sky-drift' | 'parkour-arena'
+export type WorldPreviewKey = 'lobby' | 'obby'
 
 export type WorldThumbnailMap = Partial<Record<WorldPreviewKey, string>>
 
@@ -596,178 +596,6 @@ function renderObbyThumbnail(renderer: THREE.WebGLRenderer, width: number, heigh
   return url
 }
 
-/**
- * 3. SKY DRIFT (Upcoming) — Real Three.js bird's-eye view of a curved sky-racing circuit
- */
-function renderSkyDriftThumbnail(renderer: THREE.WebGLRenderer, width: number, height: number): string {
-  const scene = new THREE.Scene()
-  const tr = createTracker()
-  setupArcticLighting(scene, [28, 42, 22], 50)
-
-  const camera = new THREE.PerspectiveCamera(38, width / height, 0.5, 240)
-  camera.position.set(28, 22, 28)
-  camera.lookAt(0, 2, -4)
-
-  // Sweeping elevated S-curve track segments
-  const roadMat = tr.getSurfaceMat('grip', '#1E293B', 2, 2, 0.44, 0.14)
-  const curbCyan = tr.trackMat(new THREE.MeshStandardMaterial({ color: '#38BDF8', roughness: 0.24, metalness: 0.2 }))
-  const curbWhite = tr.trackMat(new THREE.MeshStandardMaterial({ color: '#F8FAFC', roughness: 0.28, metalness: 0.08 }))
-
-  const segGeo = tr.trackGeo(new RoundedBoxGeometry(6.8, 0.7, 3.6, 2, 0.1))
-  const curbGeo = tr.trackGeo(new THREE.BoxGeometry(0.55, 0.22, 3.6))
-
-  for (let i = 0; i < 24; i++) {
-    const t = i / 23
-    const angle = t * Math.PI * 1.15 - 0.35
-    const x = Math.sin(angle) * 14 - 4
-    const z = 18 - i * 2.45
-    const y = Math.sin(t * Math.PI) * 3.2
-    const nextAngle = ((i + 1) / 23) * Math.PI * 1.15 - 0.35
-    const yaw = Math.atan2(Math.sin(nextAngle) * 14 - Math.sin(angle) * 14, -2.45)
-
-    const seg = new THREE.Mesh(segGeo, roadMat)
-    seg.position.set(x, y, z)
-    seg.rotation.y = yaw
-    seg.castShadow = true
-    seg.receiveShadow = true
-    scene.add(seg)
-
-    const cMat = i % 2 === 0 ? curbCyan : curbWhite
-    for (const side of [-3.3, 3.3]) {
-      const curb = new THREE.Mesh(curbGeo, cMat)
-      curb.position.set(x + Math.cos(yaw) * side, y + 0.42, z - Math.sin(yaw) * side)
-      curb.rotation.y = yaw
-      scene.add(curb)
-    }
-
-    // Start / boost gantry arches
-    if (i === 3 || i === 12) {
-      const arch = new THREE.Group()
-      arch.position.set(x, y, z)
-      arch.rotation.y = yaw
-      const pMat = tr.getSurfaceMat('fluted', '#0EA5E9', 1, 3, 0.26, 0.2)
-      const pL = new THREE.Mesh(tr.trackGeo(new THREE.BoxGeometry(0.6, 4.8, 0.7)), pMat)
-      pL.position.set(-3.7, 2.4, 0)
-      pL.castShadow = true
-      arch.add(pL)
-      const pR = pL.clone()
-      pR.position.x = 3.7
-      arch.add(pR)
-      const top = new THREE.Mesh(tr.trackGeo(new RoundedBoxGeometry(8.2, 0.9, 0.9, 2, 0.12)), curbWhite)
-      top.position.set(0, 4.9, 0)
-      top.castShadow = true
-      arch.add(top)
-      scene.add(arch)
-    }
-  }
-
-  // Clouds below
-  const cloudMat = tr.trackMat(new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.85 }))
-  const cloudGeo = tr.trackGeo(new RoundedBoxGeometry(13, 2.6, 6.8, 2, 0.8))
-  for (const [cx, cy, cz] of [
-    [-18, -5, -8],
-    [16, -6, -16],
-    [-12, -4, 12],
-    [14, -5, 6],
-    [-2, -6, -32],
-  ]) {
-    const c = new THREE.Mesh(cloudGeo, cloudMat)
-    c.position.set(cx, cy, cz)
-    scene.add(c)
-  }
-
-  renderer.render(scene, camera)
-  const url = renderer.domElement.toDataURL('image/webp', 0.9)
-  tr.disposeAll()
-  return url
-}
-
-/**
- * 4. PARKOUR ARENA (Upcoming) — Real Three.js bird's-eye view of floating island towers
- */
-function renderParkourArenaThumbnail(renderer: THREE.WebGLRenderer, width: number, height: number): string {
-  const scene = new THREE.Scene()
-  const tr = createTracker()
-  setupArcticLighting(scene, [26, 44, 30], 44)
-
-  const camera = new THREE.PerspectiveCamera(38, width / height, 0.5, 240)
-  camera.position.set(27, 24, 27)
-  camera.lookAt(0, 5.5, 0)
-
-  const tiers: [number, number, number, number, number, string][] = [
-    [0, 0, 0, 14, 1.4, '#EEF6FF'],
-    [-8.5, 3.2, -5.5, 6.2, 1.0, '#38BDF8'],
-    [8.2, 4.6, -4.8, 5.8, 1.0, '#22D3EE'],
-    [6.5, 6.8, 6.5, 5.4, 1.0, '#60A5FA'],
-    [-7.2, 8.6, 6.2, 5.2, 1.0, '#34D399'],
-    [0, 11.4, 0, 6.8, 1.2, '#F8FAFC'],
-  ]
-
-  for (const [x, y, z, size, h, color] of tiers) {
-    const slab = new THREE.Mesh(
-      tr.trackGeo(new RoundedBoxGeometry(size, h, size, 2, 0.18)),
-      tr.getSurfaceMat(color === '#EEF6FF' || color === '#F8FAFC' ? 'marble' : 'facetTile', color, 3, 3, 0.34, 0.08),
-    )
-    slab.position.set(x, y, z)
-    slab.castShadow = true
-    slab.receiveShadow = true
-    scene.add(slab)
-  }
-
-  // Connecting vertical pillars & summit crown crystal
-  const pillarGeo = tr.trackGeo(new THREE.CylinderGeometry(0.65, 0.85, 11.4, 12))
-  const pillarMat = tr.getSurfaceMat('fluted', '#CBD5E1', 2, 4, 0.3, 0.16)
-  for (const [px, pz] of [
-    [-2.5, -2.5],
-    [2.5, -2.5],
-    [-2.5, 2.5],
-    [2.5, 2.5],
-  ]) {
-    const p = new THREE.Mesh(pillarGeo, pillarMat)
-    p.position.set(px, 5.7, pz)
-    p.castShadow = true
-    scene.add(p)
-  }
-
-  const summitGem = new THREE.Mesh(
-    tr.trackGeo(new THREE.OctahedronGeometry(1.5, 0)),
-    tr.trackMat(new THREE.MeshStandardMaterial({ color: '#F59E0B', roughness: 0.14, metalness: 0.32, flatShading: true })),
-  )
-  summitGem.position.set(0, 14.3, 0)
-  summitGem.castShadow = true
-  scene.add(summitGem)
-
-  // Floating stepping blocks orbiting the tower
-  const stepMat = tr.getSurfaceMat('facetTile', '#0EA5E9', 1, 1, 0.3, 0.1)
-  const stepGeo = tr.trackGeo(new RoundedBoxGeometry(2.2, 0.55, 2.2, 2, 0.1))
-  for (let i = 0; i < 10; i++) {
-    const ang = (i / 10) * Math.PI * 2
-    const s = new THREE.Mesh(stepGeo, stepMat)
-    s.position.set(Math.cos(ang) * 9.5, 1.5 + i * 1.05, Math.sin(ang) * 9.5)
-    s.castShadow = true
-    scene.add(s)
-  }
-
-  // Clouds
-  const cloudMat = tr.trackMat(new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.85 }))
-  const cloudGeo = tr.trackGeo(new RoundedBoxGeometry(12, 2.4, 6.2, 2, 0.8))
-  for (const [cx, cy, cz] of [
-    [-18, -3, -16],
-    [16, -2, -14],
-    [-15, 2, 16],
-    [18, 0, 14],
-  ]) {
-    const c = new THREE.Mesh(cloudGeo, cloudMat)
-    c.position.set(cx, cy, cz)
-    scene.add(c)
-  }
-
-  renderer.render(scene, camera)
-  const url = renderer.domElement.toDataURL('image/webp', 0.9)
-  tr.disposeAll()
-  return url
-}
-
 export function generateWorldThumbnails(): Promise<WorldThumbnailMap> {
   if (cachedThumbnails) return Promise.resolve(cachedThumbnails)
   if (pendingPromise) return pendingPromise
@@ -799,8 +627,6 @@ export function generateWorldThumbnails(): Promise<WorldThumbnailMap> {
         const result: WorldThumbnailMap = {
           lobby: renderLobbyThumbnail(renderer, width, height),
           obby: renderObbyThumbnail(renderer, width, height),
-          'sky-drift': renderSkyDriftThumbnail(renderer, width, height),
-          'parkour-arena': renderParkourArenaThumbnail(renderer, width, height),
         }
 
         renderer.dispose()

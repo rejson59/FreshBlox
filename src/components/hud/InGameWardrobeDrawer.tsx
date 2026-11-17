@@ -285,7 +285,7 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
             <Shirt className="h-4 w-4 text-sky-300" />
           </div>
           <span className="font-display text-sm font-black text-white">
-            {lang === 'pl' ? 'Szatnia R6' : 'Wardrobe'}
+            {lang === 'pl' ? 'Szatnia awatarów' : 'Avatar Wardrobe'}
           </span>
         </div>
 

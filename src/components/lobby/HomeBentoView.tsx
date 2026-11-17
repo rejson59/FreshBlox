@@ -71,26 +71,6 @@ const WORLD_CARDS: WorldCardSpec[] = [
     accent: '#F59E0B',
     fallbackBg: 'linear-gradient(135deg, #3B2308 0%, #F59E0B 100%)',
   },
-  {
-    id: 'sky-drift',
-    titlePl: 'Sky Drift',
-    titleEn: 'Sky Drift',
-    tagPl: 'Wyścigi',
-    tagEn: 'Racing',
-    live: false,
-    accent: '#06B6D4',
-    fallbackBg: 'linear-gradient(135deg, #0E293B 0%, #0891B2 100%)',
-  },
-  {
-    id: 'parkour-arena',
-    titlePl: 'Parkour Arena',
-    titleEn: 'Parkour Arena',
-    tagPl: 'Arena',
-    tagEn: 'Arena',
-    live: false,
-    accent: '#34D399',
-    fallbackBg: 'linear-gradient(135deg, #0D2F27 0%, #059669 100%)',
-  },
 ]
 
 export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
@@ -416,17 +396,10 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
 
                     {/* Subtle top-left status pill */}
                     <div className="absolute left-2.5 top-2.5">
-                      {world.live ? (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-slate-950/70 px-2 py-0.5 text-[10px] font-extrabold text-emerald-300 backdrop-blur-md border border-emerald-400/25">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                          LIVE
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-slate-950/80 px-2 py-0.5 text-[10px] font-bold text-slate-300 backdrop-blur-md border border-white/10">
-                          <Clock className="h-2.5 w-2.5" />
-                          {lang === 'pl' ? 'Wkrótce' : 'Soon'}
-                        </span>
-                      )}
+                      <span className="inline-flex items-center gap-1 rounded-md bg-slate-950/70 px-2 py-0.5 text-[10px] font-extrabold text-emerald-300 backdrop-blur-md border border-emerald-400/25">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                        LIVE
+                      </span>
                     </div>
 
                     {/* Clean hover Play action button */}
@@ -522,7 +495,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
         className="w-full shrink-0 border-t xl:w-[292px] xl:border-t-0 xl:border-l p-4 space-y-4"
         style={{ background: sidebarSurface, borderColor: panelBorder }}
       >
-        {/* 1. Compact Player Card + R6 Wardrobe Jump */}
+        {/* 1. Compact Player Card + Avatar Wardrobe Jump */}
         <div
           className="rounded-xl border p-3.5"
           style={{ background: panelSurface, borderColor: panelBorder }}
@@ -586,7 +559,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
             {profile.xp} / {nextRankXp}
           </div>
 
-          {/* Quick R6 Wardrobe Button */}
+          {/* Quick Avatar Wardrobe Button */}
           <button
             type="button"
             onClick={onOpenAvatar}
@@ -598,7 +571,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
             }}
           >
             <Shirt className="h-3.5 w-3.5" />
-            <span>{lang === 'pl' ? 'Szatnia R6' : 'R6 Wardrobe'}</span>
+            <span>{lang === 'pl' ? 'Szatnia awatarów' : 'Avatar Wardrobe'}</span>
           </button>
         </div>
 
