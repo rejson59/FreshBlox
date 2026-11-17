@@ -41,7 +41,6 @@ interface LobbyRosterEntry {
   id: string
   username: string
   rank: string
-  isBot: boolean
   isSelf?: boolean
 }
 
@@ -71,20 +70,6 @@ interface JumpPad {
   radius: number
   boost: number
   ring: THREE.Mesh
-}
-
-interface HangoutBot {
-  id: string
-  username: string
-  rank: string
-  rig: R6RigHandle
-  x: number
-  z: number
-  rotY: number
-  waypoints: Array<{ x: number; z: number; pause: number; emote?: PlayerPose; chat?: string }>
-  wpIndex: number
-  pauseTimer: number
-  speechTimer: number
 }
 
 interface MainLobbyWorldProps {
@@ -181,7 +166,6 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   )
   const [rotateBannerDismissed, setRotateBannerDismissed] = useState(false)
 
-  const [botsEnabled, setBotsEnabled] = useState(true)
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [copiedInvite, setCopiedInvite] = useState(false)
   const [onlineCount, setOnlineCount] = useState(1)
@@ -199,8 +183,6 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     },
   ])
 
-  const botsEnabledRef = useRef(botsEnabled)
-  botsEnabledRef.current = botsEnabled
   const qualityRef = useRef(quality)
   qualityRef.current = quality
   const sprintLockedRef = useRef(sprintLocked)
@@ -1087,106 +1069,20 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       sfx.playJump()
     }
 
-    // === HANGOUT COMPANION BOTS ===
-    const botConfigs: Array<{
-      id: string
-      username: string
-      rank: string
-      avatar: R6AvatarConfig
-      waypoints: HangoutBot['waypoints']
-    }> = [
-      {
-        id: 'bot_kuba',
-        username: 'KubaDev',
-        rank: 'Glacier Elite',
-        avatar: { outfitId: 'arctic-frost', faceId: 'wink-pro', hatId: 'headphones', skinColor: '#FDE0B6' },
-        waypoints: [
-          { x: -6, z: 6, pause: 4.5, emote: 'wave', chat: lang === 'pl' ? 'Siema! Witaj w Lobby Głównym!' : 'Hey! Welcome to Main Lobby!' },
-          { x: -13, z: 2, pause: 5, emote: 'idle' },
-          { x: -4, z: 18, pause: 6, emote: 'dance', chat: lang === 'pl' ? 'Wpadaj na parkiet!' : 'Come dance on stage!' },
-        ],
-      },
-      {
-        id: 'bot_nadia',
-        username: 'NadiaSky',
-        rank: 'Crystal III',
-        avatar: { outfitId: 'crystal-royal', faceId: 'star-eyes', hatId: 'crystal-halo', skinColor: '#F3C998' },
-        waypoints: [
-          { x: 6, z: -5, pause: 5, emote: 'cheer', chat: lang === 'pl' ? 'Można siadać na ławkach pod [E]!' : 'You can sit on benches with [E]!' },
-          { x: 11, z: -8, pause: 4, emote: 'backflip' },
-          { x: 4, z: 10, pause: 5, emote: 'wave' },
-        ],
-      },
-      {
-        id: 'bot_mati',
-        username: 'MatiBlox',
-        rank: 'Crystal II',
-        avatar: { outfitId: 'classic-remaster', faceId: 'cool-shades', hatId: 'fresh-cap', skinColor: '#FACC15' },
-        waypoints: [
-          { x: 2.5, z: 23, pause: 6, emote: 'dance', chat: lang === 'pl' ? 'Kto wbija na Taras Widokowy?' : 'Who is climbing the Sky Terrace?' },
-          { x: -8, z: 14, pause: 4, emote: 'spin' },
-          { x: 8, z: 8, pause: 4, emote: 'idle' },
-        ],
-      },
-    ]
-
-    const botsGroup = new THREE.Group()
-    scene.add(botsGroup)
-    const bots: HangoutBot[] = botConfigs.map((bc) => {
-      const rig = createR6Rig({
-        avatar: bc.avatar,
-        username: bc.username,
-        rank: bc.rank,
-        showNameplate: true,
-        castShadow: initQ !== 'low',
-      })
-      const start = bc.waypoints[0]
-      rig.root.position.set(start.x, 0.14, start.z)
-      botsGroup.add(rig.root)
-      return {
-        id: bc.id,
-        username: bc.username,
-        rank: bc.rank,
-        rig,
-        x: start.x,
-        z: start.z,
-        rotY: 0,
-        waypoints: bc.waypoints,
-        wpIndex: 0,
-        pauseTimer: 2,
-        speechTimer: 0,
-      }
-    })
-
     // === REMOTE MULTIPLAYER PLAYERS ===
     const remotePlayers = new Map<
       string,
       { state: RemotePlayerState; rig: R6RigHandle; speechUntil: number }
     >()
 
-    // Teleport right next to any player or companion bot in the room ("Meet" button in FreshBlox Quick Hub!)
+    // Teleport right next to any player in the room ("Meet" button in FreshBlox Menu!)
     teleportToMemberRef.current = (memberId: string) => {
-      let targetX: number | null = null
-      let targetY = 0.25
-      let targetZ: number | null = null
-      let targetName = ''
-
       const remote = remotePlayers.get(memberId)
-      if (remote) {
-        targetX = remote.state.x
-        targetY = Math.max(0.25, remote.state.y)
-        targetZ = remote.state.z
-        targetName = remote.state.username
-      } else {
-        const bot = bots.find((b) => b.id === memberId)
-        if (bot) {
-          targetX = bot.x
-          targetY = 0.25
-          targetZ = bot.z
-          targetName = bot.username
-        }
-      }
-      if (targetX === null || targetZ === null) return
+      if (!remote) return
+      const targetX = remote.state.x
+      const targetY = Math.max(0.25, remote.state.y)
+      const targetZ = remote.state.z
+      const targetName = remote.state.username
 
       seatedBenchRef.current = null
       setSeatedBench(null)
@@ -1978,50 +1874,6 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         localRigRef.current.update(dt, elapsed, currentPose)
       }
 
-      // Update Hangout Companion Bots
-      botsGroup.visible = botsEnabledRef.current
-      if (botsEnabledRef.current) {
-        for (const bot of bots) {
-          const wp = bot.waypoints[bot.wpIndex]
-          const dx = wp.x - bot.x
-          const dz = wp.z - bot.z
-          const dist = Math.hypot(dx, dz)
-          let botPose: PlayerPose = 'idle'
-
-          if (dist > 0.35) {
-            const step = Math.min(dist, dt * 4.2)
-            bot.x += (dx / dist) * step
-            bot.z += (dz / dist) * step
-            const targetRot = Math.atan2(dx, dz)
-            let diff = targetRot - bot.rotY
-            while (diff > Math.PI) diff -= Math.PI * 2
-            while (diff < -Math.PI) diff += Math.PI * 2
-            bot.rotY += diff * Math.min(1, dt * 8)
-            botPose = 'walk'
-          } else {
-            if (bot.pauseTimer === 0 && wp.chat) {
-              bot.rig.setSpeech(wp.chat)
-              bot.speechTimer = 4.2
-            }
-            bot.pauseTimer += dt
-            botPose = wp.emote ?? 'idle'
-            if (bot.pauseTimer >= wp.pause) {
-              bot.pauseTimer = 0
-              bot.wpIndex = (bot.wpIndex + 1) % bot.waypoints.length
-            }
-          }
-
-          if (bot.speechTimer > 0) {
-            bot.speechTimer -= dt
-            if (bot.speechTimer <= 0) bot.rig.setSpeech(null)
-          }
-
-          bot.rig.root.position.set(bot.x, 0.14, bot.z)
-          bot.rig.root.rotation.y = bot.rotY
-          bot.rig.update(dt, elapsed, botPose)
-        }
-      }
-
       // Interpolate remote multiplayer peers
       for (const [id, entry] of remotePlayers.entries()) {
         if (now - entry.state.lastSeen > 12000) {
@@ -2061,25 +1913,14 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       if (now - lastCountUpdate > 800) {
         lastCountUpdate = now
         const nextRoster: LobbyRosterEntry[] = [
-          { id: playerId, username: usernameRef.current, rank: rankRef.current, isBot: false, isSelf: true },
+          { id: playerId, username: usernameRef.current, rank: rankRef.current, isSelf: true },
         ]
         for (const entry of remotePlayers.values()) {
           nextRoster.push({
             id: entry.state.id,
             username: entry.state.username,
             rank: entry.state.rank,
-            isBot: false,
           })
-        }
-        if (botsEnabledRef.current) {
-          for (const b of bots) {
-            nextRoster.push({
-              id: b.id,
-              username: b.username,
-              rank: b.rank,
-              isBot: true,
-            })
-          }
         }
         setRoster(nextRoster)
         setOnlineCount(nextRoster.length)
@@ -2132,7 +1973,6 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
       localRigRef.current?.dispose()
       localRigRef.current = null
-      for (const bot of bots) bot.rig.dispose()
       for (const entry of remotePlayers.values()) entry.rig.dispose()
       for (const d of disposables) d.dispose()
       renderer.dispose()
@@ -2365,7 +2205,6 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         soundEnabled={soundEnabled}
         quality={quality}
         isFullscreen={isFullscreen}
-        botsEnabled={botsEnabled}
         supabaseConnected={isSupabaseConfigured}
         copiedInvite={copiedInvite}
         onChangeWorldTime={setWorldTime}
@@ -2373,7 +2212,6 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         onChangeQuality={setQuality}
         onToggleTouchMode={() => setTouchMode((v) => !v)}
         onToggleFullscreen={handleToggleFullscreen}
-        onToggleBots={() => setBotsEnabled((b) => !b)}
         onClose={() => setHubOpen(false)}
         onResumeAndLock={() => {
           setHubOpen(false)

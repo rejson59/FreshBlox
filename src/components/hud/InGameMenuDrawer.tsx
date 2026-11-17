@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
 import {
-  Bot,
   Check,
   Compass,
   Crosshair,
@@ -42,7 +41,6 @@ export interface InGameRosterMember {
   username: string
   rank: string
   isSelf?: boolean
-  isBot?: boolean
   stage?: number
 }
 
@@ -77,7 +75,6 @@ export interface InGameMenuDrawerProps {
   soundEnabled: boolean
   quality: MenuQuality
   isFullscreen: boolean
-  botsEnabled?: boolean
   supabaseConnected: boolean
   copiedInvite: boolean
   onChangeWorldTime: (time: MenuWorldTime) => void
@@ -85,7 +82,6 @@ export interface InGameMenuDrawerProps {
   onChangeQuality: (q: MenuQuality) => void
   onToggleTouchMode: () => void
   onToggleFullscreen: () => void
-  onToggleBots?: () => void
   // Actions
   onClose: () => void
   onResumeAndLock?: () => void
@@ -120,7 +116,6 @@ const MENU_COPY = {
     playersTitle: 'Gracze w tym pokoju',
     teleport: 'Dołącz',
     youTag: 'Ty',
-    botTag: 'Bot',
     mouseSection: 'Sterowanie myszą (PC)',
     clickToLockLabel: 'Lock myszy (bez przeciągania)',
     clickToLockDesc: 'Kliknij ekran 3D albo naciśnij Tab / M, aby swobodnie obracać kamerą myszą.',
@@ -144,7 +139,6 @@ const MENU_COPY = {
     touchPc: 'PC',
     touchMobile: 'Dotyk',
     fullscreenLabel: 'Pełny ekran',
-    botsLabel: 'Boty w Lobby',
     controlsTitle: 'Skróty klawiszowe (PC)',
     controlsList: [
       ['WASD / Strzałki', 'Poruszanie się'],
@@ -181,7 +175,6 @@ const MENU_COPY = {
     playersTitle: 'Players in this room',
     teleport: 'Teleport',
     youTag: 'You',
-    botTag: 'Bot',
     mouseSection: 'Mouse Controls (PC)',
     clickToLockLabel: 'Mouse Lock (no dragging)',
     clickToLockDesc: 'Click the 3D view or press Tab / M to look around freely with your mouse.',
@@ -205,7 +198,6 @@ const MENU_COPY = {
     touchPc: 'PC',
     touchMobile: 'Touch',
     fullscreenLabel: 'Fullscreen',
-    botsLabel: 'Lobby Bots',
     controlsTitle: 'Keyboard Shortcuts (PC)',
     controlsList: [
       ['WASD / Arrows', 'Move'],
@@ -251,7 +243,6 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
   soundEnabled,
   quality,
   isFullscreen,
-  botsEnabled,
   supabaseConnected,
   copiedInvite,
   onChangeWorldTime,
@@ -259,7 +250,6 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
   onChangeQuality,
   onToggleTouchMode,
   onToggleFullscreen,
-  onToggleBots,
   onClose,
   onResumeAndLock,
   onOpenWardrobe,
@@ -581,7 +571,7 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
                     <div className="flex min-w-0 items-center gap-2.5">
                       <span
                         className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-                          m.isSelf ? 'bg-sky-400' : m.isBot ? 'bg-amber-300' : 'bg-emerald-400'
+                          m.isSelf ? 'bg-sky-400' : 'bg-emerald-400'
                         }`}
                       />
                       <div className="min-w-0">
@@ -590,11 +580,6 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
                           {m.isSelf && (
                             <span className="rounded bg-sky-500/25 px-1.5 py-0.5 text-[9px] text-sky-200">
                               {t.youTag}
-                            </span>
-                          )}
-                          {m.isBot && (
-                            <span className="rounded bg-white/10 px-1.5 py-0.5 text-[9px] text-slate-300">
-                              {t.botTag}
                             </span>
                           )}
                         </div>
@@ -810,25 +795,6 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
                     )}
                     <span>{t.fullscreenLabel}</span>
                   </button>
-
-                  {onToggleBots && botsEnabled !== undefined && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        sfx.playClick()
-                        onToggleBots()
-                      }}
-                      className="col-span-2 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-xs font-bold text-white hover:bg-white/12 cursor-pointer"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <Bot className="h-3.5 w-3.5 text-sky-300" />
-                        {t.botsLabel}
-                      </span>
-                      <span className={botsEnabled ? 'text-emerald-300' : 'text-slate-400'}>
-                        {botsEnabled ? t.on : t.off}
-                      </span>
-                    </button>
-                  )}
                 </div>
               </div>
 
