@@ -5,8 +5,10 @@ import {
   Armchair,
   Bot,
   Check,
+  Crosshair,
   Flag,
   Gauge,
+  Lock,
   LogOut,
   Maximize2,
   MessageSquare,
@@ -35,6 +37,7 @@ import {
   isDocumentFullscreen,
   isTouchMobileDevice,
 } from '../lib/mobileFullscreen'
+import { useVisualViewport } from '../lib/useVisualViewport'
 import { sfx } from '../lib/sfx'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { FreshBloxLogo } from '../components/brand/FreshBloxBrand'
@@ -220,9 +223,20 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   const toggleSitActionRef = useRef<() => void>(() => {})
   const resetSpawnActionRef = useRef<() => void>(() => {})
   const teleportToMemberRef = useRef<(memberId: string) => void>(() => {})
+  const recenterCamRef = useRef<() => void>(() => {})
+  const toggleShiftLockRef = useRef<() => void>(() => {})
 
-  const touchMoveRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  const [shiftLockActive, setShiftLockActive] = useState(false)
+  const shiftLockRef = useRef(false)
+  const vp = useVisualViewport()
+
+  const touchMoveRef = useRef<{ x: number; y: number; autoSprint: boolean }>({
+    x: 0,
+    y: 0,
+    autoSprint: false,
+  })
   const jumpQueuedRef = useRef<boolean>(false)
+  const jumpHeldRef = useRef<boolean>(false)
 
   const avatarRef = useRef(avatar)
   avatarRef.current = avatar
@@ -414,13 +428,18 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     callbacksRef.current.onEmoteUsed()
   }, [])
 
-  const handleTouchMoveVector = useCallback((x: number, y: number) => {
+  const handleTouchMoveVector = useCallback((x: number, y: number, autoSprint = false) => {
     touchMoveRef.current.x = x
     touchMoveRef.current.y = y
+    touchMoveRef.current.autoSprint = autoSprint
   }, [])
 
   const handleTouchJump = useCallback(() => {
     jumpQueuedRef.current = true
+  }, [])
+
+  const handleTouchJumpHold = useCallback((held: boolean) => {
+    jumpHeldRef.current = held
   }, [])
 
   const handleSendChat = useCallback(
@@ -1179,14 +1198,42 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       camPitch = 0.22
     }
 
+    recenterCamRef.current = () => {
+      camYaw = player.rotY + Math.PI
+      camPitch = 0.32
+      sfx.playClick()
+    }
+
+    toggleShiftLockRef.current = () => {
+      if (document.pointerLockElement === renderer.domElement) {
+        document.exitPointerLock?.()
+      } else {
+        renderer.domElement.requestPointerLock?.()
+      }
+    }
+
+    const onPointerLockChange = () => {
+      const locked = document.pointerLockElement === renderer.domElement
+      shiftLockRef.current = locked
+      setShiftLockActive(locked)
+    }
+
     const activePointers = new Map<number, { x: number; y: number }>()
     let lastPinchDist = 0
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (chatInputFocusedRef.current) return
       const code = e.code
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(code)) {
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(code)) {
         e.preventDefault()
+      }
+      if (code === 'Tab') {
+        toggleShiftLockRef.current()
+        return
+      }
+      if (code === 'KeyC') {
+        recenterCamRef.current()
+        return
       }
       if (code === 'Escape') {
         e.preventDefault()
@@ -1204,7 +1251,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         if (nearPortalRef.current?.action === 'obby') {
           sfx.playJump()
           callbacksRef.current.onEnterObby()
-        } else {
+        } else if (seatedBenchRef.current || nearBenchRef.current) {
           toggleSitActionRef.current()
         }
       }
@@ -1232,6 +1279,12 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     }
 
     const onPointerMove = (e: PointerEvent) => {
+      if (shiftLockRef.current && e.pointerType === 'mouse') {
+        camYaw -= e.movementX * 0.0046
+        camPitch = Math.max(0.08, Math.min(1.12, camPitch + e.movementY * 0.0042))
+        return
+      }
+
       const prev = activePointers.get(e.pointerId)
       if (!prev) return
 
@@ -1241,7 +1294,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       prev.y = e.clientY
 
       if (activePointers.size === 1) {
-        const sensitivity = e.pointerType === 'touch' ? 0.0085 : 0.0062
+        const sensitivity = e.pointerType === 'touch' ? 0.0092 : 0.0062
         camYaw -= dx * sensitivity
         camPitch = Math.max(0.08, Math.min(1.12, camPitch + dy * sensitivity * 0.85))
       } else if (activePointers.size === 2) {
@@ -1265,6 +1318,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
     const onContext = (e: MouseEvent) => e.preventDefault()
 
+    document.addEventListener('pointerlockchange', onPointerLockChange)
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
     renderer.domElement.addEventListener('pointerdown', onPointerDown)
@@ -1345,8 +1399,14 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         inputZ -= stickY
       }
 
+      // Keyboard smooth camera yaw rotation (Q / E when not near bench/portal)
+      if (keys.has('KeyQ')) camYaw += 2.2 * dt
+      if (keys.has('KeyE') && !nearBenchRef.current && !seatedBenchRef.current && nearPortalRef.current?.action !== 'obby') {
+        camYaw -= 2.2 * dt
+      }
+
       const isMoving = Math.abs(inputX) > 0.06 || Math.abs(inputZ) > 0.06
-      const wantJump = keys.has('Space') || jumpQueuedRef.current
+      const wantJump = keys.has('Space') || jumpQueuedRef.current || jumpHeldRef.current
       jumpQueuedRef.current = false
 
       // If seated on a bench, moving or jumping stands you right back up!
@@ -1361,9 +1421,11 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         }
       }
 
-      const stickMag = Math.hypot(stickX, stickY)
       const isSprinting =
-        keys.has('ShiftLeft') || keys.has('ShiftRight') || sprintLockedRef.current || stickMag > 0.88
+        keys.has('ShiftLeft') ||
+        keys.has('ShiftRight') ||
+        sprintLockedRef.current ||
+        touchMoveRef.current.autoSprint
       const speed = isSprinting ? 12.6 : 7.8
 
       if (!seatedBenchRef.current) {
@@ -1381,7 +1443,13 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         player.vx = moveVec.x * speed
         player.vz = moveVec.z * speed
 
-        if (isMoving) {
+        if (shiftLockRef.current) {
+          const targetAngle = camYaw + Math.PI
+          let diff = targetAngle - player.rotY
+          while (diff > Math.PI) diff -= Math.PI * 2
+          while (diff < -Math.PI) diff += Math.PI * 2
+          player.rotY += diff * Math.min(1, dt * 18)
+        } else if (isMoving) {
           const targetAngle = Math.atan2(player.vx, player.vz)
           let diff = targetAngle - player.rotY
           while (diff > Math.PI) diff -= Math.PI * 2
@@ -1705,6 +1773,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       cancelAnimationFrame(rafId)
       ro.disconnect()
       mp.disconnect()
+      if (document.pointerLockElement === renderer.domElement) {
+        document.exitPointerLock?.()
+      }
+      document.removeEventListener('pointerlockchange', onPointerLockChange)
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('resize', onResize)
@@ -1741,23 +1813,28 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
   return (
     <div
-      className="relative h-dvh w-full overflow-hidden bg-sky-200 select-none"
-      style={{ overscrollBehavior: 'none' }}
+      className="fixed inset-x-0 z-30 w-full overflow-hidden bg-sky-200 select-none"
+      style={{
+        top: vp.offsetTop,
+        height: vp.height,
+        overscrollBehavior: 'none',
+      }}
     >
       {/* 3D Canvas Host */}
       <div ref={mountRef} className="h-full w-full cursor-grab active:cursor-grabbing" style={{ touchAction: 'none' }} />
 
-      {/* === ULTRA-CLEAN SINGLE-ROW TOP HUD BAR (Never wraps, never overlaps!) === */}
+      {/* === ULTRA-CLEAN SINGLE-ROW TOP HUD BAR (Adapts to every screen width & height!) === */}
       <div
-        className="pointer-events-none absolute top-2.5 inset-x-0 z-20 flex flex-nowrap items-center justify-between gap-2"
+        className="pointer-events-none absolute top-0 inset-x-0 z-20 flex flex-nowrap items-center justify-between gap-1.5 sm:gap-2"
         style={{
-          paddingLeft: 'max(0.75rem, env(safe-area-inset-left))',
-          paddingRight: 'max(0.75rem, env(safe-area-inset-right))',
+          paddingTop: 'max(0.5rem, calc(env(safe-area-inset-top) + 0.35rem))',
+          paddingLeft: 'max(0.6rem, calc(env(safe-area-inset-left) + 0.4rem))',
+          paddingRight: 'max(0.6rem, calc(env(safe-area-inset-right) + 0.4rem))',
         }}
       >
         {/* Left integrated cluster: Official FreshBlox Logo Button (opens Quick Hub) + Chat + Room Pill */}
-        <div className="pointer-events-auto flex min-w-0 items-center gap-1.5">
-          <div className="flex h-10 items-center rounded-2xl border border-white/15 bg-slate-950/75 p-1 shadow-lg backdrop-blur-xl">
+        <div className="pointer-events-auto flex min-w-0 items-center gap-1 sm:gap-1.5">
+          <div className="flex h-9 sm:h-10 items-center rounded-2xl border border-white/15 bg-slate-950/75 p-0.5 sm:p-1 shadow-lg backdrop-blur-xl">
             <button
               type="button"
               onClick={() => {
@@ -1829,30 +1906,48 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           </button>
         </div>
 
-        {/* Right minimalist cluster: Live In-Game Wardrobe toggle + Test Obby quick jump */}
-        <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">
+        {/* Right minimalist cluster: Obby 100 quick jump + Shift-Lock (PC) + Live Wardrobe */}
+        <div className="pointer-events-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
           <button
             type="button"
             onClick={() => {
               sfx.playClick()
               onEnterObby()
             }}
-            className="hidden sm:flex h-10 items-center gap-1.5 rounded-2xl border border-amber-300/45 bg-slate-950/75 px-3 text-xs font-extrabold text-amber-200 shadow-lg backdrop-blur-xl hover:bg-slate-900/90 active:scale-95 transition cursor-pointer"
+            className="flex h-9 sm:h-10 items-center gap-1 sm:gap-1.5 rounded-2xl border border-amber-300/45 bg-slate-950/75 px-2.5 sm:px-3 text-[11px] sm:text-xs font-extrabold text-amber-200 shadow-lg backdrop-blur-xl hover:bg-slate-900/90 active:scale-95 transition cursor-pointer"
           >
-            <Flag className="h-3.5 w-3.5 text-amber-300" />
-            <span>Test Obby 100</span>
+            <Flag className="h-3.5 w-3.5 text-amber-300 shrink-0" />
+            <span className="sm:hidden">Obby</span>
+            <span className="hidden sm:inline">Test Obby 100</span>
           </button>
+
+          {!touchMode && (
+            <button
+              type="button"
+              onClick={() => toggleShiftLockRef.current()}
+              title="Shift-Lock (Tab)"
+              className={`hidden md:flex h-9 sm:h-10 items-center gap-1 rounded-2xl border px-2.5 text-xs font-bold shadow-lg backdrop-blur-xl transition cursor-pointer ${
+                shiftLockActive
+                  ? 'border-sky-300/70 bg-sky-500/35 text-white'
+                  : 'border-white/15 bg-slate-950/75 text-sky-100 hover:bg-slate-900/90'
+              }`}
+            >
+              <Lock className="h-3.5 w-3.5 text-sky-300" />
+              <span>Shift-Lock</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => (wardrobeOpen ? closeLiveWardrobe() : openLiveWardrobe())}
-            className={`flex h-10 items-center gap-1.5 rounded-2xl border px-3 text-xs font-extrabold shadow-lg backdrop-blur-xl active:scale-95 transition cursor-pointer ${
+            className={`flex h-9 sm:h-10 items-center gap-1.5 rounded-2xl border px-2.5 sm:px-3 text-[11px] sm:text-xs font-extrabold shadow-lg backdrop-blur-xl active:scale-95 transition cursor-pointer ${
               wardrobeOpen
                 ? 'border-sky-300/70 bg-sky-500/30 text-white'
                 : 'border-white/15 bg-slate-950/75 text-sky-50 hover:bg-slate-900/90'
             }`}
           >
-            <Shirt className="h-4 w-4 text-sky-300" />
-            <span className="text-sky-100 font-bold">{t.quickAvatar}</span>
+            <Shirt className="h-4 w-4 text-sky-300 shrink-0" />
+            <span className="hidden xs:inline sm:inline text-sky-100 font-bold">{t.quickAvatar}</span>
           </button>
         </div>
       </div>
@@ -2231,7 +2326,14 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
       {/* INTERACTIVE BENCH SIT / STAND PROMPT OR PORTAL ACTION */}
       {(seatedBench || nearBench || nearPortalInfo) && (
-        <div className="pointer-events-auto absolute bottom-5 sm:bottom-6 left-1/2 -translate-x-1/2 z-20">
+        <div
+          className="pointer-events-auto absolute left-1/2 -translate-x-1/2 z-20"
+          style={{
+            bottom: touchMode
+              ? 'max(6.2rem, calc(env(safe-area-inset-bottom) + 5.6rem))'
+              : 'max(1.4rem, env(safe-area-inset-bottom))',
+          }}
+        >
           {seatedBench || nearBench ? (
             <button
               type="button"
@@ -2359,11 +2461,19 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         </div>
       )}
 
+      {/* SHIFT-LOCK CROSSHAIR RETICLE (Desktop) */}
+      {shiftLockActive && !touchMode && (
+        <div className="pointer-events-none fixed inset-0 z-20 flex items-center justify-center">
+          <Crosshair className="h-5 w-5 text-white/80 drop-shadow" />
+        </div>
+      )}
+
       {/* MOBILE / TABLET VIRTUAL THUMBSTICK & ACTION BUTTONS (hidden cleanly while Live Wardrobe is open!) */}
       {touchMode && !wardrobeOpen && (
         <MobileTouchControls
           onMoveVector={handleTouchMoveVector}
           onJump={handleTouchJump}
+          onJumpHoldChange={handleTouchJumpHold}
           sprintActive={sprintLocked}
           onToggleSprint={() => {
             setSprintLocked((s) => !s)
@@ -2371,10 +2481,13 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           }}
           activeEmote={activeEmote}
           onEmote={triggerEmote}
+          onRecenterCamera={() => recenterCamRef.current()}
+          compactHeight={vp.isCompactHeight}
           labels={{
             jumpBtn: t.jumpBtn,
             sprintBtn: t.sprintBtn,
             emotesLabel: t.emotesLabel,
+            recenterBtn: lang === 'pl' ? 'Centruj kamerę' : 'Center camera',
             emotes: t.emotes,
           }}
         />

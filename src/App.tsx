@@ -98,6 +98,24 @@ export function App() {
     return () => window.clearInterval(id)
   }, [view, activeRoomId, updatePresenceLocation, authUser])
 
+  // Lock page scroll while inside 3D gameplay so mobile address bar / overscroll never clips HUD controls
+  useEffect(() => {
+    const inGame = Boolean(authUser) && (view === 'world' || view === 'obby')
+    if (!inGame) return
+    const prevBodyOverflow = document.body.style.overflow
+    const prevHtmlOverflow = document.documentElement.style.overflow
+    const prevOverscroll = document.documentElement.style.overscrollBehavior
+    document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
+    document.documentElement.style.overscrollBehavior = 'none'
+    window.scrollTo(0, 0)
+    return () => {
+      document.body.style.overflow = prevBodyOverflow
+      document.documentElement.style.overflow = prevHtmlOverflow
+      document.documentElement.style.overscrollBehavior = prevOverscroll
+    }
+  }, [authUser, view])
+
   const tokens = getThemeTokens(mode)
   const t = LOCALES[lang].nav
   const ta = LOCALES[lang].auth
@@ -290,8 +308,12 @@ export function App() {
       {/* Mobile / Tablet Bottom Quick Nav (hidden inside 3D gameplay) */}
       {!isIn3DGame && (
         <div
-          className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t py-2 backdrop-blur-xl lg:hidden"
-          style={{ background: tokens.navBg, borderColor: tokens.cardBorder }}
+          className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t pt-2 backdrop-blur-xl lg:hidden"
+          style={{
+            background: tokens.navBg,
+            borderColor: tokens.cardBorder,
+            paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
+          }}
         >
           {navItems.map((item) => {
             const Icon = item.icon

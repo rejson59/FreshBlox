@@ -6,9 +6,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Compass,
+  Crosshair,
   Flag,
   Gamepad2,
   Home,
+  Lock,
   LogOut,
   Maximize2,
   MessageSquare,
@@ -48,6 +50,7 @@ import { MobileTouchControls } from '../components/hud/MobileTouchControls'
 import { InGameWardrobeDrawer } from '../components/hud/InGameWardrobeDrawer'
 import { FreshBloxLogo } from '../components/brand/FreshBloxBrand'
 import { enterGameFullscreenLandscape, isTouchMobileDevice } from '../lib/mobileFullscreen'
+import { useVisualViewport } from '../lib/useVisualViewport'
 
 type GraphicsQuality = 'low' | 'medium' | 'high'
 type WorldTimeOfDay = 'day' | 'night'
@@ -61,11 +64,14 @@ interface RuntimeBlock {
   prevX: number
   prevY: number
   prevZ: number
-  // For fading tiles
+  // For fading & fake glass tiles
   fadeState: 'solid' | 'shaking' | 'gone'
   fadeTimer: number
-  // For spinners
+  // For spinners (optional second perpendicular cross blade)
   spinAngle: number
+  crossBladeMesh?: THREE.Mesh
+  // For bounce pad squash animation
+  bouncePulse: number
   // For checkpoints
   flagMesh?: THREE.Mesh
 }
@@ -135,6 +141,45 @@ function makeStageSignTexture(stageNum: number, isFinish: boolean): THREE.Canvas
   return tex
 }
 
+function makeConveyorArrowTexture(dir: 'fwd' | 'back' | 'left' | 'right'): THREE.CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 128
+  c.height = 128
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = '#0369A1'
+  ctx.fillRect(0, 0, 128, 128)
+  // Subtle deck lines
+  ctx.fillStyle = '#0284C7'
+  ctx.fillRect(4, 4, 120, 120)
+
+  ctx.save()
+  ctx.translate(64, 64)
+  if (dir === 'back') ctx.rotate(Math.PI)
+  else if (dir === 'left') ctx.rotate(-Math.PI / 2)
+  else if (dir === 'right') ctx.rotate(Math.PI / 2)
+
+  // Clean crisp chevron arrow (zero neon!)
+  ctx.fillStyle = '#F8FAFC'
+  ctx.beginPath()
+  ctx.moveTo(0, -40)
+  ctx.lineTo(38, 10)
+  ctx.lineTo(18, 10)
+  ctx.lineTo(18, 38)
+  ctx.lineTo(-18, 38)
+  ctx.lineTo(-18, 10)
+  ctx.lineTo(-38, 10)
+  ctx.closePath()
+  ctx.fill()
+  ctx.restore()
+
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.wrapS = THREE.RepeatWrapping
+  tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(2, 3)
+  return tex
+}
+
 function formatTimeMs(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000))
   const m = Math.floor(totalSec / 60)
@@ -170,6 +215,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   onJumpPadUsed,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null)
+  const vp = useVisualViewport()
   const t = LOCALES[lang].world
   const rank = getRankForXp(xp)
 
@@ -184,6 +230,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true)
   const [touchMode, setTouchMode] = useState<boolean>(() => isTouchMobileDevice())
   const [touchSprint, setTouchSprint] = useState<boolean>(false)
+  const [shiftLockActive, setShiftLockActive] = useState<boolean>(false)
   const [activeEmoteUi, setActiveEmoteUi] = useState<PlayerPose | null>(null)
   const [isPortraitMobile, setIsPortraitMobile] = useState<boolean>(false)
   const [quality, setQuality] = useState<GraphicsQuality>(() => (isTouchMobileDevice() ? 'low' : 'medium'))
@@ -262,12 +309,16 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
 
   // Input & camera refs
   const keysRef = useRef<Set<string>>(new Set())
-  const joyRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  const joyRef = useRef<{ x: number; y: number; autoSprint: boolean }>({ x: 0, y: 0, autoSprint: false })
   const touchSprintRef = useRef<boolean>(false)
   const jumpRequestRef = useRef<boolean>(false)
+  const jumpHeldRef = useRef<boolean>(false)
+  const shiftLockRef = useRef<boolean>(false)
   const activeEmoteRef = useRef<{ pose: PlayerPose; until: number } | null>(null)
   const respawnToStageRef = useRef<((stage: number, resetTimer?: boolean) => void) | null>(null)
   const focusWardrobeCamRef = useRef<(() => void) | null>(null)
+  const recenterCamRef = useRef<(() => void) | null>(null)
+  const toggleShiftLockRef = useRef<(() => void) | null>(null)
 
   const mpRef = useRef<LobbyMultiplayerClient | null>(null)
   const localRigRef = useRef<R6RigHandle | null>(null)
@@ -394,9 +445,19 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       }
       if (document.activeElement === chatInputRef.current) return
       const code = e.code
+      if (code === 'Tab') {
+        e.preventDefault()
+        toggleShiftLockRef.current?.()
+        return
+      }
+      if (code === 'KeyC') {
+        recenterCamRef.current?.()
+        return
+      }
       if (code === 'Space') {
         e.preventDefault()
         jumpRequestRef.current = true
+        jumpHeldRef.current = true
       }
       if (code === 'KeyR') {
         respawnToStageRef.current?.(currentStageRef.current)
@@ -412,6 +473,9 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       if (code === 'Digit6') triggerEmote('backflip')
     }
     const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        jumpHeldRef.current = false
+      }
       keysRef.current.delete(e.code)
     }
     window.addEventListener('keydown', onKeyDown)
@@ -671,17 +735,39 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         metalness: 0.14,
       }),
     )
+    const iceMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: '#BAE6FD',
+        roughness: 0.07,
+        metalness: 0.12,
+        transparent: true,
+        opacity: 0.86,
+      }),
+    )
+    const conveyorTexFwd = makeConveyorArrowTexture('fwd')
+    const conveyorTexBack = makeConveyorArrowTexture('back')
+    const conveyorTexLeft = makeConveyorArrowTexture('left')
+    const conveyorTexRight = makeConveyorArrowTexture('right')
+    texturesToDispose.push(conveyorTexFwd, conveyorTexBack, conveyorTexLeft, conveyorTexRight)
+
+    const conveyorMatFwd = trackMat(new THREE.MeshStandardMaterial({ map: conveyorTexFwd, roughness: 0.35, metalness: 0.08 }))
+    const conveyorMatBack = trackMat(new THREE.MeshStandardMaterial({ map: conveyorTexBack, roughness: 0.35, metalness: 0.08 }))
+    const conveyorMatLeft = trackMat(new THREE.MeshStandardMaterial({ map: conveyorTexLeft, roughness: 0.35, metalness: 0.08 }))
+    const conveyorMatRight = trackMat(new THREE.MeshStandardMaterial({ map: conveyorTexRight, roughness: 0.35, metalness: 0.08 }))
+
     const poleMat = trackMat(new THREE.MeshStandardMaterial({ color: '#E2E8F0', roughness: 0.3, metalness: 0.35 }))
+    const whiteTrimMat = trackMat(new THREE.MeshStandardMaterial({ color: '#F8FAFC', roughness: 0.25, metalness: 0.05 }))
     const flagInactiveMat = trackMat(new THREE.MeshStandardMaterial({ color: '#38BDF8', roughness: 0.3 }))
     const flagActiveMat = trackMat(new THREE.MeshStandardMaterial({ color: '#22C55E', roughness: 0.28 }))
     const goldMat = trackMat(new THREE.MeshStandardMaterial({ color: '#FBBF24', roughness: 0.24, metalness: 0.45 }))
 
     // Shared geometries
     const unitBoxGeo = trackGeo(new THREE.BoxGeometry(1, 1, 1))
+    const unitCylGeo = trackGeo(new THREE.CylinderGeometry(0.5, 0.5, 1, 20))
     const poleGeo = trackGeo(new THREE.CylinderGeometry(0.11, 0.13, 3.3, 10))
     const flagGeo = trackGeo(new THREE.BoxGeometry(1.15, 0.72, 0.1))
     const signBoardGeo = trackGeo(new THREE.BoxGeometry(1.75, 0.9, 0.14))
-    const spinnerHubGeo = trackGeo(new THREE.CylinderGeometry(0.42, 0.52, 0.75, 12))
+    const spinnerHubGeo = trackGeo(new THREE.CylinderGeometry(0.45, 0.56, 0.8, 14))
 
     // Build 10 zone groups for instant culling (always 60 FPS across all 100 levels!)
     const zoneGroups: THREE.Group[] = Array.from({ length: 10 }, () => {
@@ -696,12 +782,23 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     for (const b of course.blocks) {
       const zg = zoneGroups[b.zone]
       let mat: THREE.MeshStandardMaterial
+      let geo: THREE.BufferGeometry = unitBoxGeo
+
       if (b.kind === 'hazard' || b.kind === 'spinner') {
         mat = hazardMat
       } else if (b.kind === 'jumppad') {
         mat = jumpPadMat
+      } else if (b.kind === 'ice') {
+        mat = iceMat
+      } else if (b.kind === 'conveyor') {
+        const vx = b.conveyorVx ?? 0
+        const vz = b.conveyorVz ?? 0
+        if (Math.abs(vx) > Math.abs(vz)) {
+          mat = vx > 0 ? conveyorMatRight : conveyorMatLeft
+        } else {
+          mat = vz <= 0 ? conveyorMatFwd : conveyorMatBack
+        }
       } else if (b.kind === 'fade') {
-        // Unique material per fading tile so opacity can animate independently!
         mat = trackMat(
           new THREE.MeshStandardMaterial({
             color: b.color,
@@ -712,15 +809,31 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
             opacity: 1,
           }),
         )
+      } else if (b.kind === 'fake') {
+        // Semi-transparent smooth glass without studs (gives observant players a fair visual clue!)
+        mat = trackMat(
+          new THREE.MeshStandardMaterial({
+            color: b.color,
+            roughness: 0.1,
+            metalness: 0.1,
+            transparent: true,
+            opacity: 0.62,
+          }),
+        )
+      } else if (b.kind === 'pillar' || b.kind === 'bounce') {
+        geo = unitCylGeo
+        mat = getStudMat(b.color, b.kind === 'bounce' ? 0.24 : 0.34, 0.06)
+      } else if (b.kind === 'pusher') {
+        mat = getStudMat(b.color, 0.26, 0.14)
       } else {
         mat = getStudMat(b.color)
       }
 
-      const mesh = new THREE.Mesh(unitBoxGeo, mat)
+      const mesh = new THREE.Mesh(geo, mat)
       mesh.scale.set(b.w, b.h, b.d)
       mesh.position.set(b.x, b.y, b.z)
       mesh.receiveShadow = b.kind !== 'hazard' && b.kind !== 'spinner'
-      mesh.castShadow = b.kind === 'moving' || b.kind === 'spinner'
+      mesh.castShadow = b.kind === 'moving' || b.kind === 'spinner' || b.kind === 'pusher' || b.kind === 'decor'
       zg.add(mesh)
 
       const rb: RuntimeBlock = {
@@ -735,16 +848,34 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         fadeState: 'solid',
         fadeTimer: 0,
         spinAngle: b.spinnerPhase ?? 0,
+        bouncePulse: 0,
       }
 
       if (b.kind === 'spinner') {
         const hub = new THREE.Mesh(spinnerHubGeo, poleMat)
         hub.position.set(b.x, b.y - 0.05, b.z)
         zg.add(hub)
+        if (b.spinnerCross) {
+          const cross = new THREE.Mesh(unitBoxGeo, hazardMat)
+          cross.scale.set(b.w, b.h, b.d)
+          cross.position.set(b.x, b.y, b.z)
+          cross.rotation.y = (b.spinnerPhase ?? 0) + Math.PI / 2
+          cross.castShadow = true
+          zg.add(cross)
+          rb.crossBladeMesh = cross
+        }
+      }
+
+      if (b.kind === 'bounce') {
+        // Clean white top ring on bounce cushion
+        const ring = new THREE.Mesh(unitCylGeo, whiteTrimMat)
+        ring.scale.set(b.w * 0.66, 0.08, b.d * 0.66)
+        ring.position.set(b.x, b.y + b.h / 2 + 0.04, b.z)
+        zg.add(ring)
       }
 
       if (b.kind === 'jumppad') {
-        // Yellow clean arrow trim ring on top of jump pad
+        // Clean gold trim pad on top of jump pad
         const trim = new THREE.Mesh(unitBoxGeo, goldMat)
         trim.scale.set(b.w * 0.72, 0.08, b.d * 0.72)
         trim.position.set(b.x, b.y + b.h / 2 + 0.04, b.z)
@@ -927,10 +1058,32 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     }
     respawnToStageRef.current = respawnToStage
 
-    // Mouse / Touch camera controls
+    recenterCamRef.current = () => {
+      camState.yaw = 0
+      camState.pitch = 0.34
+      sfx.playClick()
+    }
+
+    // Mouse / Touch camera controls + Desktop Shift-Lock (Tab)
     const dom = renderer.domElement
     const activeTouchPointers = new Map<number, { x: number; y: number }>()
     let lastPinchDist = 0
+
+    const onPointerLockChange = () => {
+      const locked = document.pointerLockElement === dom
+      shiftLockRef.current = locked
+      setShiftLockActive(locked)
+    }
+    document.addEventListener('pointerlockchange', onPointerLockChange)
+
+    toggleShiftLockRef.current = () => {
+      if (document.pointerLockElement === dom) {
+        document.exitPointerLock?.()
+      } else {
+        dom.requestPointerLock?.()
+      }
+      sfx.playClick()
+    }
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.pointerType === 'touch') {
@@ -953,6 +1106,11 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     }
 
     const onPointerMove = (e: PointerEvent) => {
+      if (shiftLockRef.current && document.pointerLockElement === dom) {
+        camState.yaw -= e.movementX * 0.0046
+        camState.pitch = Math.max(0.05, Math.min(1.18, camState.pitch + e.movementY * 0.0042))
+        return
+      }
       if (e.pointerType === 'touch') {
         if (!activeTouchPointers.has(e.pointerId)) return
         activeTouchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -1138,6 +1296,8 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       camera.updateProjectionMatrix()
       renderer.setSize(w, h)
     }
+    const ro = new ResizeObserver(onResize)
+    ro.observe(container)
     window.addEventListener('resize', onResize)
 
     const tick = (now: number) => {
@@ -1146,10 +1306,16 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       lastFrame = now
       simTime += dt
 
+      // Animate conveyor belt chevron texture smoothly!
+      conveyorTexFwd.offset.y = (simTime * 1.8) % 1
+      conveyorTexBack.offset.y = -(simTime * 1.4) % 1
+      conveyorTexLeft.offset.x = (simTime * 1.5) % 1
+      conveyorTexRight.offset.x = -(simTime * 1.5) % 1
+
       const activeStg = currentStageRef.current
       const activeZone = Math.min(9, Math.floor((activeStg - 1) / 10))
 
-      // 1. Update dynamic blocks (moving platforms, fading tiles, rotating spinners) in nearby zones
+      // 1. Update dynamic blocks (moving platforms, pushers, fading/fake tiles, bounce pads, spinners)
       for (const rb of runtimeBlocks) {
         if (rb.def.zone < activeZone - 1 || rb.def.zone > activeZone + 2) continue
 
@@ -1159,35 +1325,60 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
 
         if (rb.def.kind === 'moving') {
           const amp = rb.def.moveAmp ?? 2.5
+          const ampY = rb.def.moveAmpY ?? amp
           const spd = rb.def.moveSpeed ?? 1.5
           const ph = rb.def.movePhase ?? 0
+          const s = Math.sin(simTime * spd + ph)
+          if (rb.def.moveAxis === 'xy') {
+            rb.curX = rb.def.x + s * amp
+            rb.curY = rb.def.y + Math.cos(simTime * spd + ph) * ampY
+            rb.curZ = rb.def.z
+          } else {
+            rb.curX = rb.def.x + (rb.def.moveAxis === 'x' ? s * amp : 0)
+            rb.curY = rb.def.y + (rb.def.moveAxis === 'y' ? s * amp : 0)
+            rb.curZ = rb.def.z + (rb.def.moveAxis === 'z' ? s * amp : 0)
+          }
+          rb.mesh.position.set(rb.curX, rb.curY, rb.curZ)
+        } else if (rb.def.kind === 'pusher') {
+          const amp = rb.def.moveAmp ?? 1.65
+          const spd = rb.def.moveSpeed ?? 2.0
+          const ph = rb.def.movePhase ?? 0
           const offset = Math.sin(simTime * spd + ph) * amp
-          rb.curX = rb.def.x + (rb.def.moveAxis === 'x' ? offset : 0)
-          rb.curY = rb.def.y + (rb.def.moveAxis === 'y' ? offset : 0)
-          rb.curZ = rb.def.z + (rb.def.moveAxis === 'z' ? offset : 0)
+          rb.curX = rb.def.x + offset
+          rb.curY = rb.def.y
+          rb.curZ = rb.def.z
           rb.mesh.position.set(rb.curX, rb.curY, rb.curZ)
         } else if (rb.def.kind === 'spinner') {
           rb.spinAngle = (rb.def.spinnerPhase ?? 0) + simTime * (rb.def.spinnerSpeed ?? 1.4)
           rb.mesh.rotation.y = rb.spinAngle
-        } else if (rb.def.kind === 'fade') {
+          if (rb.crossBladeMesh) {
+            rb.crossBladeMesh.rotation.y = rb.spinAngle + Math.PI / 2
+          }
+        } else if (rb.def.kind === 'bounce' && rb.bouncePulse > 0) {
+          rb.bouncePulse = Math.max(0, rb.bouncePulse - dt * 5)
+          const squash = 1 - Math.sin(rb.bouncePulse * Math.PI) * 0.35
+          rb.mesh.scale.set(rb.def.w * (1 + (1 - squash) * 0.18), rb.def.h * squash, rb.def.d * (1 + (1 - squash) * 0.18))
+        } else if (rb.def.kind === 'fade' || rb.def.kind === 'fake') {
+          const shakeLimit = rb.def.kind === 'fake' ? 0.11 : 0.68
           if (rb.fadeState === 'shaking') {
             rb.fadeTimer += dt
-            const frac = Math.min(1, rb.fadeTimer / 0.68)
+            const frac = Math.min(1, rb.fadeTimer / shakeLimit)
             rb.mesh.position.y = rb.def.y + Math.sin(rb.fadeTimer * 44) * 0.06
-            ;(rb.mesh.material as THREE.MeshStandardMaterial).opacity = 1 - frac * 0.65
-            if (rb.fadeTimer >= 0.68) {
+            ;(rb.mesh.material as THREE.MeshStandardMaterial).opacity =
+              (rb.def.kind === 'fake' ? 0.62 : 1) * (1 - frac * 0.75)
+            if (rb.fadeTimer >= shakeLimit) {
               rb.fadeState = 'gone'
               rb.fadeTimer = 0
               rb.mesh.visible = false
             }
           } else if (rb.fadeState === 'gone') {
             rb.fadeTimer += dt
-            if (rb.fadeTimer >= 2.2) {
+            if (rb.fadeTimer >= 2.3) {
               rb.fadeState = 'solid'
               rb.fadeTimer = 0
               rb.mesh.visible = true
               rb.mesh.position.y = rb.def.y
-              ;(rb.mesh.material as THREE.MeshStandardMaterial).opacity = 1
+              ;(rb.mesh.material as THREE.MeshStandardMaterial).opacity = rb.def.kind === 'fake' ? 0.62 : 1
             }
           }
         }
@@ -1203,15 +1394,31 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         }
       }
 
-      // 2. Carry player with moving platform if currently standing on one
-      if (player.grounded && player.standingBlock && player.standingBlock.def.kind === 'moving') {
-        player.x += player.standingBlock.curX - player.standingBlock.prevX
-        player.y += player.standingBlock.curY - player.standingBlock.prevY
-        player.z += player.standingBlock.curZ - player.standingBlock.prevZ
+      // 2. Carry player with moving platform or conveyor belt if standing on one
+      let standingOnIce = false
+      let convVx = 0
+      let convVz = 0
+      if (player.grounded && player.standingBlock) {
+        const sb = player.standingBlock
+        if (sb.def.kind === 'moving') {
+          player.x += sb.curX - sb.prevX
+          player.y += sb.curY - sb.prevY
+          player.z += sb.curZ - sb.prevZ
+        } else if (sb.def.kind === 'conveyor') {
+          convVx = sb.def.conveyorVx ?? 0
+          convVz = sb.def.conveyorVz ?? 0
+        } else if (sb.def.kind === 'ice') {
+          standingOnIce = true
+        }
       }
 
-      // 3. Movement input
+      // 3. Movement input + smooth Q/E camera rotation
       const keys = keysRef.current
+      if (!wardrobeOpenRef.current) {
+        if (keys.has('KeyQ')) camState.yaw += 2.2 * dt
+        if (keys.has('KeyE')) camState.yaw -= 2.2 * dt
+      }
+
       let inputFwd = 0
       let inputRight = 0
       if (!wardrobeOpenRef.current) {
@@ -1228,7 +1435,8 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         inputRight /= mag
       }
 
-      const sprinting = keys.has('ShiftLeft') || keys.has('ShiftRight') || touchSprintRef.current
+      const sprinting =
+        keys.has('ShiftLeft') || keys.has('ShiftRight') || touchSprintRef.current || joyRef.current.autoSprint
       const speed = sprinting ? SPRINT_SPEED : WALK_SPEED
 
       const camFwdX = -Math.sin(camState.yaw)
@@ -1241,27 +1449,46 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
 
       if (mag > 0.08) {
         activeEmoteRef.current = null
-        player.vx = moveX * speed
-        player.vz = moveZ * speed
+        const targetVx = moveX * speed + convVx
+        const targetVz = moveZ * speed + convVz
+        if (standingOnIce) {
+          // Authentic slippery glacier momentum!
+          const iceAccel = Math.min(1, dt * 3.1)
+          player.vx += (targetVx - player.vx) * iceAccel
+          player.vz += (targetVz - player.vz) * iceAccel
+        } else {
+          const groundAccel = player.grounded ? Math.min(1, dt * 22) : Math.min(1, dt * 11)
+          player.vx += (targetVx - player.vx) * groundAccel
+          player.vz += (targetVz - player.vz) * groundAccel
+        }
         const desiredRot = Math.atan2(moveX, moveZ)
         let diff = desiredRot - player.rotY
         while (diff > Math.PI) diff -= Math.PI * 2
         while (diff < -Math.PI) diff += Math.PI * 2
-        player.rotY += diff * Math.min(1, dt * 14)
+        player.rotY += diff * Math.min(1, dt * 15)
       } else {
-        player.vx *= Math.max(0, 1 - dt * 15)
-        player.vz *= Math.max(0, 1 - dt * 15)
+        if (standingOnIce) {
+          // Glide smoothly across ice!
+          const iceGlide = Math.max(0, 1 - dt * 1.45)
+          player.vx *= iceGlide
+          player.vz *= iceGlide
+        } else {
+          // Conveyor still carries stationary player smoothly!
+          const stopRate = Math.min(1, dt * 16)
+          player.vx += (convVx - player.vx) * stopRate
+          player.vz += (convVz - player.vz) * stopRate
+        }
       }
 
-      // Coyote Time + Jump Buffer for crisp, joyous Obby platforming!
+      // Coyote Time + Jump Buffer + Hold-to-Jump (auto-hop!)
       if (player.grounded) {
-        player.coyoteTimer = 0.12
+        player.coyoteTimer = 0.13
       } else {
         player.coyoteTimer = Math.max(0, player.coyoteTimer - dt)
       }
 
-      if (jumpRequestRef.current) {
-        player.jumpBufferTimer = 0.13
+      if (jumpRequestRef.current || (jumpHeldRef.current && player.grounded)) {
+        player.jumpBufferTimer = 0.14
         jumpRequestRef.current = false
       } else {
         player.jumpBufferTimer = Math.max(0, player.jumpBufferTimer - dt)
@@ -1280,39 +1507,44 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       player.vy += GRAVITY * dt
 
       const prevY = player.y
-      const nextX = player.x + player.vx * dt
-      const nextZ = player.z + player.vz * dt
+      let nextX = player.x + player.vx * dt
+      let nextZ = player.z + player.vz * dt
       let nextY = player.y + player.vy * dt
 
-      // 4. Resolve collisions against nearby blocks
+      // 4. Resolve collisions against nearby blocks (all 14 block kinds!)
       let groundedNow = false
       let landedBlock: RuntimeBlock | null = null
       let hitHazard = false
       let hitJumpPadVel = 0
+      let hitBounceBlock: RuntimeBlock | null = null
+
+      const testSpinnerBlade = (angle: number, rb: RuntimeBlock) => {
+        const dx = nextX - rb.curX
+        const dz = nextZ - rb.curZ
+        const cos = Math.cos(-angle)
+        const sin = Math.sin(-angle)
+        const lx = dx * cos - dz * sin
+        const lz = dx * sin + dz * cos
+        const halfLen = rb.def.w / 2 + PLAYER_R * 0.58
+        const halfThick = rb.def.d / 2 + PLAYER_R * 0.58
+        const barMinY = rb.curY - rb.def.h / 2
+        const barMaxY = rb.curY + rb.def.h / 2
+        return (
+          Math.abs(lx) <= halfLen &&
+          Math.abs(lz) <= halfThick &&
+          nextY < barMaxY - 0.06 &&
+          nextY + PLAYER_H > barMinY + 0.1
+        )
+      }
 
       for (const rb of runtimeBlocks) {
-        // Fast stage/spatial culling
-        if (Math.abs(rb.curZ - nextZ) > rb.def.d * 0.5 + 8) continue
-        if (rb.def.kind === 'fade' && rb.fadeState === 'gone') continue
+        if (rb.def.kind === 'decor') continue
+        // Fast spatial culling
+        if (Math.abs(rb.curZ - nextZ) > Math.max(rb.def.d, rb.def.w) * 0.5 + 8) continue
+        if ((rb.def.kind === 'fade' || rb.def.kind === 'fake') && rb.fadeState === 'gone') continue
 
         if (rb.def.kind === 'spinner') {
-          // Oriented 2D bar collision in spinner local space
-          const dx = nextX - rb.curX
-          const dz = nextZ - rb.curZ
-          const cos = Math.cos(-rb.spinAngle)
-          const sin = Math.sin(-rb.spinAngle)
-          const lx = dx * cos - dz * sin
-          const lz = dx * sin + dz * cos
-          const halfLen = rb.def.w / 2 + PLAYER_R * 0.6
-          const halfThick = rb.def.d / 2 + PLAYER_R * 0.6
-          const barMinY = rb.curY - rb.def.h / 2
-          const barMaxY = rb.curY + rb.def.h / 2
-          if (
-            Math.abs(lx) <= halfLen &&
-            Math.abs(lz) <= halfThick &&
-            nextY < barMaxY - 0.06 &&
-            nextY + PLAYER_H > barMinY + 0.1
-          ) {
+          if (testSpinnerBlade(rb.spinAngle, rb) || (rb.def.spinnerCross && testSpinnerBlade(rb.spinAngle + Math.PI / 2, rb))) {
             hitHazard = true
             break
           }
@@ -1321,15 +1553,41 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
 
         const halfW = rb.def.w / 2
         const halfD = rb.def.d / 2
-        const minX = rb.curX - halfW - PLAYER_R
-        const maxX = rb.curX + halfW + PLAYER_R
-        const minZ = rb.curZ - halfD - PLAYER_R
-        const maxZ = rb.curZ + halfD + PLAYER_R
         const topY = rb.curY + rb.def.h / 2
         const botY = rb.curY - rb.def.h / 2
 
-        const insideXZ = nextX >= minX && nextX <= maxX && nextZ >= minZ && nextZ <= maxZ
+        // Cylinder test for round pillars & bounce cushions, AABB for box blocks
+        let insideXZ: boolean
+        if (rb.def.kind === 'pillar' || rb.def.kind === 'bounce') {
+          const rad = halfW + PLAYER_R * 0.85
+          const dx = nextX - rb.curX
+          const dz = nextZ - rb.curZ
+          insideXZ = dx * dx + dz * dz <= rad * rad
+        } else {
+          insideXZ =
+            nextX >= rb.curX - halfW - PLAYER_R &&
+            nextX <= rb.curX + halfW + PLAYER_R &&
+            nextZ >= rb.curZ - halfD - PLAYER_R &&
+            nextZ <= rb.curZ + halfD + PLAYER_R
+        }
         if (!insideXZ) continue
+
+        if (rb.def.kind === 'pusher') {
+          // Physical wall-pusher shoves player sideways off the walkway!
+          if (nextY < topY - 0.12 && nextY + PLAYER_H > botY + 0.1) {
+            const pushDir = nextX >= rb.curX ? 1 : -1
+            const deltaMove = rb.curX - rb.prevX
+            nextX = rb.curX + pushDir * (halfW + PLAYER_R + 0.08)
+            player.vx = (deltaMove !== 0 ? Math.sign(deltaMove) : pushDir) * 9.5
+          } else if (player.vy <= 0 && prevY >= topY - STEP_HEIGHT && nextY <= topY + 0.14) {
+            if (!groundedNow || topY > nextY) {
+              nextY = topY
+              groundedNow = true
+              landedBlock = rb
+            }
+          }
+          continue
+        }
 
         if (rb.def.kind === 'hazard') {
           if (nextY < topY - 0.05 && nextY + PLAYER_H > botY + 0.08) {
@@ -1341,12 +1599,30 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
 
         if (rb.def.kind === 'jumppad') {
           if (nextY <= topY + 0.45 && nextY >= botY - 0.4) {
-            hitJumpPadVel = rb.def.jumpVel ?? 21.8
+            hitJumpPadVel = rb.def.jumpVel ?? 22.0
           }
           continue
         }
 
-        // Solid / Checkpoint / Moving / Fade landing check
+        if (rb.def.kind === 'bounce') {
+          if (player.vy <= 2 && prevY >= topY - 0.65 && nextY <= topY + 0.35) {
+            hitJumpPadVel = Math.max(hitJumpPadVel, rb.def.jumpVel ?? 16.5)
+            hitBounceBlock = rb
+          }
+          continue
+        }
+
+        if (rb.def.kind === 'fake') {
+          // Fake glass immediately cracks & shatters on touch — drops player through!
+          if (prevY >= topY - 0.8 && nextY <= topY + 0.25 && rb.fadeState === 'solid') {
+            rb.fadeState = 'shaking'
+            rb.fadeTimer = 0
+            sfx.playClick()
+          }
+          continue
+        }
+
+        // Solid / Pillar / Checkpoint / Moving / Fade / Conveyor / Ice landing check
         if (player.vy <= 0 && prevY >= topY - STEP_HEIGHT && nextY <= topY + 0.14) {
           if (!groundedNow || topY > nextY) {
             nextY = topY
@@ -1368,6 +1644,9 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           player.vy = hitJumpPadVel
           player.grounded = false
           player.standingBlock = null
+          if (hitBounceBlock) {
+            hitBounceBlock.bouncePulse = 1
+          }
           sfx.playJumpPad()
           callbacksRef.current.onJumpPadUsed()
         } else if (groundedNow && landedBlock) {
@@ -1515,6 +1794,11 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
 
     return () => {
       cancelAnimationFrame(rafId)
+      ro.disconnect()
+      if (document.pointerLockElement === dom) {
+        document.exitPointerLock?.()
+      }
+      document.removeEventListener('pointerlockchange', onPointerLockChange)
       window.removeEventListener('resize', onResize)
       dom.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('pointermove', onPointerMove)
@@ -1538,17 +1822,30 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   }, [course, playerId, roomCode, showToast, t.obbyFinishedTitle])
 
   const currentZone = OBBY_ZONES[Math.min(9, Math.floor((currentStage - 1) / 10))]
+  const currentCp = course.checkpoints[Math.max(0, Math.min(99, currentStage - 1))]
+  const stageTitle = currentCp ? (lang === 'pl' ? currentCp.titlePl : currentCp.titleEn) : ''
   const progressPct = Math.round((currentStage / 100) * 100)
 
   return (
-    <div className="relative h-dvh w-full overflow-hidden bg-sky-950 select-none">
+    <div
+      className="fixed inset-x-0 z-30 w-full overflow-hidden bg-sky-950 select-none"
+      style={{
+        top: vp.offsetTop,
+        height: vp.height,
+        overscrollBehavior: 'none',
+      }}
+    >
       {/* 3D WebGL Canvas */}
       <div ref={mountRef} className="h-full w-full touch-none" />
 
-      {/* === TOP HUD BAR === */}
+      {/* === TOP HUD BAR (Zero-clipping across all mobile portrait, landscape & desktop viewports!) === */}
       <div
-        className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 p-2.5 sm:p-3.5"
-        style={{ paddingTop: 'max(0.6rem, env(safe-area-inset-top))' }}
+        className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-1.5 sm:gap-2"
+        style={{
+          paddingTop: 'max(0.45rem, calc(env(safe-area-inset-top) + 0.3rem))',
+          paddingLeft: 'max(0.55rem, calc(env(safe-area-inset-left) + 0.35rem))',
+          paddingRight: 'max(0.55rem, calc(env(safe-area-inset-right) + 0.35rem))',
+        }}
       >
         {/* Left: FreshBlox Quick Hub + Chat toggle */}
         <div className="pointer-events-auto flex items-center gap-1.5">
@@ -1618,9 +1915,9 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
               <ChevronLeft className="h-3.5 w-3.5" />
             </button>
 
-            <div className="flex flex-col items-center px-1 min-w-[110px] sm:min-w-[155px]">
-              <div className="flex items-center gap-1.5 text-xs sm:text-sm font-black tracking-tight">
-                <Flag className="h-3.5 w-3.5 text-sky-400" />
+            <div className="flex flex-col items-center px-1 min-w-[105px] sm:min-w-[175px]">
+              <div className="flex items-center gap-1.5 text-[11px] sm:text-sm font-black tracking-tight">
+                <Flag className="h-3.5 w-3.5 text-sky-400 shrink-0" />
                 <span>
                   Stage <span className="text-sky-300">{currentStage}</span> / 100
                 </span>
@@ -1634,8 +1931,12 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
                 </div>
                 <span className="font-mono text-[9px] font-bold text-sky-200">{formatTimeMs(elapsedMs)}</span>
               </div>
-              <div className="hidden sm:block text-[9px] font-bold uppercase tracking-wider text-sky-200/80">
-                {lang === 'pl' ? currentZone.namePl : currentZone.nameEn}
+              <div className="max-w-[135px] sm:max-w-[205px] truncate text-[9px] font-bold tracking-wide text-sky-100/90">
+                {stageTitle}
+                <span className="hidden md:inline text-sky-300/75">
+                  {' · '}
+                  {lang === 'pl' ? currentZone.namePl : currentZone.nameEn}
+                </span>
               </div>
             </div>
 
@@ -1666,12 +1967,27 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           </div>
         </div>
 
-        {/* Right: Live Wardrobe button */}
+        {/* Right: Shift-Lock (PC) + Live Wardrobe button */}
         <div className="pointer-events-auto flex items-center gap-1.5">
+          {!touchMode && (
+            <button
+              type="button"
+              onClick={() => toggleShiftLockRef.current?.()}
+              title="Shift-Lock (Tab)"
+              className={`hidden md:flex h-9 items-center gap-1 rounded-2xl border px-2.5 text-xs font-bold backdrop-blur-xl shadow-lg transition cursor-pointer ${
+                shiftLockActive
+                  ? 'border-sky-300/70 bg-sky-500/35 text-white'
+                  : 'border-white/15 bg-slate-950/65 text-sky-100 hover:bg-slate-900/80'
+              }`}
+            >
+              <Lock className="h-3.5 w-3.5 text-sky-300" />
+              <span>Shift-Lock</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => (wardrobeOpen ? closeLiveWardrobe() : openLiveWardrobe())}
-            className={`flex h-9 items-center gap-1.5 rounded-2xl border px-3 text-xs font-extrabold backdrop-blur-xl shadow-lg transition active:scale-95 cursor-pointer ${
+            className={`flex h-9 items-center gap-1.5 rounded-2xl border px-2.5 sm:px-3 text-xs font-extrabold backdrop-blur-xl shadow-lg transition active:scale-95 cursor-pointer ${
               wardrobeOpen
                 ? 'border-sky-300/70 bg-sky-500 text-white'
                 : 'border-white/15 bg-slate-950/65 text-white hover:bg-slate-900/80'
@@ -2019,15 +2335,26 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         </div>
       )}
 
-      {/* === MOBILE TOUCH CONTROLS === */}
+      {/* === SHIFT-LOCK RETICLE (Desktop) === */}
+      {shiftLockActive && !touchMode && (
+        <div className="pointer-events-none fixed inset-0 z-20 flex items-center justify-center">
+          <Crosshair className="h-5 w-5 text-white/80 drop-shadow" />
+        </div>
+      )}
+
+      {/* === MOBILE TOUCH CONTROLS (Ergonomic Floating Joystick + Auto-Sprint + Hold-to-Jump + Respawn) === */}
       {touchMode && !wardrobeOpen && (
         <MobileTouchControls
-          onMoveVector={(x, y) => {
+          onMoveVector={(x, y, autoSprint) => {
             joyRef.current.x = x
             joyRef.current.y = y
+            joyRef.current.autoSprint = Boolean(autoSprint)
           }}
           onJump={() => {
             jumpRequestRef.current = true
+          }}
+          onJumpHoldChange={(held) => {
+            jumpHeldRef.current = held
           }}
           sprintActive={touchSprint}
           onToggleSprint={() => {
@@ -2039,10 +2366,18 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           }}
           activeEmote={activeEmoteUi}
           onEmote={triggerEmote}
+          onRecenterCamera={() => recenterCamRef.current?.()}
+          onQuickRespawn={() => {
+            respawnToStageRef.current?.(currentStage)
+            sfx.playClick()
+          }}
+          compactHeight={vp.isCompactHeight}
           labels={{
             jumpBtn: t.jumpBtn,
             sprintBtn: t.sprintBtn,
             emotesLabel: t.emotesLabel,
+            respawnBtn: t.obbyRespawnBtn,
+            recenterBtn: lang === 'pl' ? 'Centruj kamerę' : 'Center camera',
             emotes: t.emotes,
           }}
         />
