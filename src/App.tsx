@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Home, Box, UserCircle2, Users, Sun, Moon, Globe, Flag, LogIn, Cloud } from 'lucide-react'
+import { Home, Box, UserCircle2, Users, Sun, Moon, Globe, Flag, Cloud, LogOut, Loader2 } from 'lucide-react'
 import { ARCTIC_SKY, getThemeTokens, ThemeMode } from './data/brandTheme'
 import { Lang, LOCALES } from './data/locales'
 import { WorldKind } from './data/catalog'
@@ -10,7 +10,7 @@ import { MainLobbyWorld } from './engine/MainLobbyWorld'
 import { TestObbyWorld } from './engine/TestObbyWorld'
 import { AvatarEditorView } from './components/avatar/AvatarEditorView'
 import { SocialProfileView } from './components/social/SocialProfileView'
-import { AuthModal } from './components/auth/AuthModal'
+import { AuthScreen } from './components/auth/AuthScreen'
 import {
   enterGameFullscreenLandscape,
   exitGameFullscreen,
@@ -20,33 +20,32 @@ import {
 
 type AppView = 'home' | 'world' | 'obby' | 'avatar' | 'social'
 
-function getInitialLaunchFromUrl(): { view: AppView; roomId: string } {
-  if (typeof window === 'undefined') return { view: 'home', roomId: 'PUBLIC-1' }
+function getInitialLaunchFromUrl(): { view: AppView; roomId: string; hasInvite: boolean } {
+  if (typeof window === 'undefined') return { view: 'home', roomId: 'PUBLIC-1', hasInvite: false }
   const params = new URLSearchParams(window.location.search)
   const worldParam = params.get('world')?.toLowerCase()
   const room = params.get('room')?.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 12)
   if (worldParam === 'obby') {
-    return { view: 'obby', roomId: room || 'OBBY-1' }
+    return { view: 'obby', roomId: room || 'OBBY-1', hasInvite: true }
   }
   if (room) {
-    return { view: 'world', roomId: room }
+    return { view: 'world', roomId: room, hasInvite: true }
   }
-  return { view: 'home', roomId: 'PUBLIC-1' }
+  return { view: 'home', roomId: 'PUBLIC-1', hasInvite: false }
 }
 
 export function App() {
-  const initialLaunch = getInitialLaunchFromUrl()
+  const [initialLaunch] = useState(() => getInitialLaunchFromUrl())
   const [view, setView] = useState<AppView>(initialLaunch.view)
   const [activeRoomId, setActiveRoomId] = useState<string>(initialLaunch.roomId)
   const [mode, setMode] = useState<ThemeMode>('dark')
   const [lang, setLang] = useState<Lang>('pl')
   const [isFullscreen, setIsFullscreen] = useState<boolean>(() => isDocumentFullscreen())
-  const [authModalOpen, setAuthModalOpen] = useState<boolean>(false)
-  const [authModalTab, setAuthModalTab] = useState<'login' | 'register'>('login')
 
   const {
     profile,
     authUser,
+    authLoading,
     cloudStatus,
     signUp,
     signIn,
@@ -89,7 +88,7 @@ export function App() {
 
   // Presence heartbeat in Supabase while inside a 3D world
   useEffect(() => {
-    if (view !== 'world' && view !== 'obby') return
+    if (!authUser || (view !== 'world' && view !== 'obby')) return
     const wk: WorldKind = view === 'obby' ? 'obby' : 'lobby'
     updatePresenceLocation(wk, activeRoomId)
     const id = window.setInterval(() => {
@@ -100,6 +99,47 @@ export function App() {
 
   const tokens = getThemeTokens(mode)
   const t = LOCALES[lang].nav
+  const ta = LOCALES[lang].auth
+
+  const handleSignOut = async () => {
+    exitGameFullscreen()
+    setView('home')
+    await signOut()
+  }
+
+  // 1) Wait for Supabase session check before rendering anything (prevents Home flash)
+  if (authLoading) {
+    return (
+      <div
+        className="flex min-h-dvh w-full flex-col items-center justify-center gap-4 px-4"
+        style={{ background: tokens.pageBg, color: tokens.textPrimary }}
+      >
+        <div className="flex items-center gap-2.5">
+          <FreshBloxLogo size={42} />
+          <FreshBloxWordmark mode={mode} size="md" />
+        </div>
+        <div className="flex items-center gap-2 text-xs font-bold" style={{ color: tokens.textSecondary }}>
+          <Loader2 className="h-4 w-4 animate-spin" style={{ color: ARCTIC_SKY.skyMain }} />
+          <span>{ta.checkingSession}</span>
+        </div>
+      </div>
+    )
+  }
+
+  // 2) Mandatory Authentication Gate — Home & 3D worlds are strictly inaccessible until signed in
+  if (!authUser) {
+    return (
+      <AuthScreen
+        mode={mode}
+        lang={lang}
+        pendingInviteRoom={initialLaunch.hasInvite ? activeRoomId : null}
+        onChangeMode={setMode}
+        onToggleLang={() => setLang((l) => (l === 'pl' ? 'en' : 'pl'))}
+        onSignIn={signIn}
+        onSignUp={signUp}
+      />
+    )
+  }
 
   const isIn3DGame = view === 'world' || view === 'obby'
 
@@ -121,11 +161,6 @@ export function App() {
 
   const handleEnterWorld = (world: WorldKind, roomId: string) => {
     navigateView(world === 'obby' ? 'obby' : 'world', roomId)
-  }
-
-  const openAuth = (tab: 'login' | 'register' = 'login') => {
-    setAuthModalTab(tab)
-    setAuthModalOpen(true)
   }
 
   const navItems: Array<{
@@ -182,31 +217,32 @@ export function App() {
               })}
             </nav>
 
-            {/* Right Controls: Account Auth / Cloud Status + Dark/Light + PL/EN */}
+            {/* Right Controls: Signed-in Account Pill + Sign Out + Dark/Light + PL/EN */}
             <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-              {authUser ? (
-                <button
-                  onClick={() => navigateView('social')}
-                  className="flex items-center gap-1.5 rounded-xl border px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-xs font-extrabold transition hover:scale-105 cursor-pointer"
-                  style={{
-                    borderColor: 'rgba(52, 211, 153, 0.45)',
-                    background: tokens.badgeBg,
-                    color: tokens.textPrimary,
-                  }}
-                >
-                  <Cloud className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                  <span className="max-w-[74px] sm:max-w-[110px] truncate">{profile.username}</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => openAuth('login')}
-                  className="flex items-center gap-1.5 rounded-xl px-2.5 sm:px-3.5 py-1.5 text-[11px] sm:text-xs font-extrabold text-white shadow transition hover:brightness-110 cursor-pointer"
-                  style={{ background: tokens.buttonGradient }}
-                >
-                  <LogIn className="h-3.5 w-3.5 shrink-0" />
-                  <span>{t.loginBtn}</span>
-                </button>
-              )}
+              <button
+                onClick={() => navigateView('social')}
+                className="flex items-center gap-1.5 rounded-xl border px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-xs font-extrabold transition hover:scale-105 cursor-pointer"
+                style={{
+                  borderColor: 'rgba(52, 211, 153, 0.45)',
+                  background: tokens.badgeBg,
+                  color: tokens.textPrimary,
+                }}
+                title={profile.username}
+              >
+                <Cloud className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                <span className="max-w-[74px] sm:max-w-[110px] truncate">{profile.username}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleSignOut()}
+                className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-xl border transition hover:bg-rose-500/15 hover:text-rose-400 cursor-pointer"
+                style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg, color: tokens.textSecondary }}
+                title={ta.logout}
+                aria-label={ta.logout}
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
 
               <div
                 className="flex items-center rounded-xl border p-0.5"
@@ -278,12 +314,10 @@ export function App() {
         {view === 'home' && (
           <HomeBentoView
             profile={profile}
-            authUser={authUser}
             mode={mode}
             lang={lang}
             onEnterWorld={handleEnterWorld}
             onOpenAvatar={() => navigateView('avatar')}
-            onOpenAuth={openAuth}
             onClaimQuest={claimQuest}
             onFetchLeaderboard={fetchObbyLeaderboard}
           />
@@ -294,7 +328,7 @@ export function App() {
             roomCode={activeRoomId}
             lang={lang}
             playerId={profile.playerId}
-            authUserId={authUser?.id ?? null}
+            authUserId={authUser.id}
             username={profile.username}
             freshGems={profile.freshGems}
             xp={profile.xp}
@@ -323,7 +357,7 @@ export function App() {
             roomCode={activeRoomId}
             lang={lang}
             playerId={profile.playerId}
-            authUserId={authUser?.id ?? null}
+            authUserId={authUser.id}
             username={profile.username}
             freshGems={profile.freshGems}
             xp={profile.xp}
@@ -363,7 +397,6 @@ export function App() {
         {view === 'social' && (
           <SocialProfileView
             profile={profile}
-            authUser={authUser}
             cloudStatus={cloudStatus}
             mode={mode}
             lang={lang}
@@ -372,22 +405,10 @@ export function App() {
             onRefreshFriends={refreshFriends}
             onSearchPlayers={searchPlayers}
             onJoinWorld={handleEnterWorld}
-            onOpenAuth={openAuth}
-            onSignOut={signOut}
+            onSignOut={handleSignOut}
           />
         )}
       </main>
-
-      {/* === SUPABASE AUTH MODAL (Sign In / Sign Up) === */}
-      <AuthModal
-        open={authModalOpen}
-        initialTab={authModalTab}
-        mode={mode}
-        lang={lang}
-        onClose={() => setAuthModalOpen(false)}
-        onSignIn={signIn}
-        onSignUp={signUp}
-      />
     </div>
   )
 }

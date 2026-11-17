@@ -15,35 +15,30 @@ import {
   Plus,
   Flag,
   Info,
-  LogIn,
   Cloud,
 } from 'lucide-react'
 import { ARCTIC_SKY, getThemeTokens, ThemeMode } from '../../data/brandTheme'
 import { Lang, LOCALES } from '../../data/locales'
 import { DAILY_QUESTS, getRankForXp, LOBBY_ROOMS, QuestDef, WorldKind } from '../../data/catalog'
-import { AuthUserInfo, CloudPlayerSummary, PlayerProfile } from '../../store/usePlayerStore'
+import { CloudPlayerSummary, PlayerProfile } from '../../store/usePlayerStore'
 import { sfx } from '../../lib/sfx'
 
 interface HomeBentoViewProps {
   profile: PlayerProfile
-  authUser: AuthUserInfo | null
   mode: ThemeMode
   lang: Lang
   onEnterWorld: (world: WorldKind, roomId: string) => void
   onOpenAvatar: () => void
-  onOpenAuth: (tab?: 'login' | 'register') => void
   onClaimQuest: (questId: QuestDef['id']) => boolean
   onFetchLeaderboard: () => Promise<CloudPlayerSummary[]>
 }
 
 export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
   profile,
-  authUser,
   mode,
   lang,
   onEnterWorld,
   onOpenAvatar,
-  onOpenAuth,
   onClaimQuest,
   onFetchLeaderboard,
 }) => {
@@ -110,22 +105,10 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
           </div>
         </div>
 
-        {!authUser ? (
-          <button
-            type="button"
-            onClick={() => onOpenAuth('register')}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-extrabold text-white shadow transition hover:brightness-110 cursor-pointer"
-            style={{ background: tokens.buttonGradient }}
-          >
-            <LogIn className="h-3.5 w-3.5" />
-            <span>{LOCALES[lang].nav.loginBtn}</span>
-          </button>
-        ) : (
-          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-emerald-400/35 bg-emerald-500/12 px-3 py-1.5 text-[11px] font-bold text-emerald-400">
-            <Cloud className="h-3.5 w-3.5" />
-            <span>{ta.cloudSynced}</span>
-          </span>
-        )}
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-emerald-400/35 bg-emerald-500/12 px-3 py-1.5 text-[11px] font-bold text-emerald-400">
+          <Cloud className="h-3.5 w-3.5" />
+          <span>{ta.cloudSynced}</span>
+        </span>
       </div>
 
       {/* === CREATOR BENTO (UI-02) TOP GRID === */}

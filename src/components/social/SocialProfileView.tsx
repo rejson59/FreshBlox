@@ -4,7 +4,6 @@ import {
   Check,
   Cloud,
   Flag,
-  LogIn,
   LogOut,
   Play,
   RefreshCw,
@@ -17,13 +16,12 @@ import {
 import { ARCTIC_SKY, getThemeTokens, ThemeMode } from '../../data/brandTheme'
 import { Lang, LOCALES } from '../../data/locales'
 import { BADGE_CATALOG, getRankForXp, WorldKind } from '../../data/catalog'
-import { AuthUserInfo, CloudPlayerSummary, PlayerProfile } from '../../store/usePlayerStore'
+import { CloudPlayerSummary, PlayerProfile } from '../../store/usePlayerStore'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { sfx } from '../../lib/sfx'
 
 interface SocialProfileViewProps {
   profile: PlayerProfile
-  authUser: AuthUserInfo | null
   cloudStatus: 'guest' | 'syncing' | 'synced' | 'offline'
   mode: ThemeMode
   lang: Lang
@@ -32,13 +30,11 @@ interface SocialProfileViewProps {
   onRefreshFriends: () => Promise<void>
   onSearchPlayers: (query: string) => Promise<CloudPlayerSummary[]>
   onJoinWorld: (world: WorldKind, roomId: string) => void
-  onOpenAuth: (tab?: 'login' | 'register') => void
   onSignOut: () => Promise<void>
 }
 
 export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
   profile,
-  authUser,
   cloudStatus,
   mode,
   lang,
@@ -47,7 +43,6 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
   onRefreshFriends,
   onSearchPlayers,
   onJoinWorld,
-  onOpenAuth,
   onSignOut,
 }) => {
   const [nickInput, setNickInput] = useState(profile.username)
@@ -119,40 +114,17 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
           </p>
         </div>
 
-        {authUser ? (
-          <button
-            type="button"
-            onClick={() => {
-              sfx.playClick()
-              void onSignOut()
-            }}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-rose-400/35 bg-rose-500/15 px-3.5 py-2 text-xs font-extrabold text-rose-300 hover:bg-rose-500/25 cursor-pointer"
-          >
-            <LogOut className="h-3.5 w-3.5" />
-            <span>{ta.logout}</span>
-          </button>
-        ) : (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onOpenAuth('login')}
-              className="inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-extrabold cursor-pointer"
-              style={{ borderColor: tokens.cardBorder, background: tokens.cardBg, color: tokens.textPrimary }}
-            >
-              <LogIn className="h-3.5 w-3.5" style={{ color: ARCTIC_SKY.skyMain }} />
-              <span>{ta.tabLogin}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onOpenAuth('register')}
-              className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold text-white shadow cursor-pointer"
-              style={{ background: tokens.buttonGradient }}
-            >
-              <UserPlus className="h-3.5 w-3.5" />
-              <span>{ta.tabRegister}</span>
-            </button>
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={() => {
+            sfx.playClick()
+            void onSignOut()
+          }}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-rose-400/35 bg-rose-500/15 px-3.5 py-2 text-xs font-extrabold text-rose-400 hover:bg-rose-500/25 cursor-pointer"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+          <span>{ta.logout}</span>
+        </button>
       </div>
 
       <div className="grid gap-4 sm:gap-5 lg:grid-cols-12">
@@ -224,6 +196,9 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
               </button>
             </div>
             {nickError && <div className="text-xs font-semibold text-rose-400">{nickError}</div>}
+            <p className="text-[11px]" style={{ color: tokens.textSecondary }}>
+              {ta.loginNameNote}
+            </p>
           </form>
 
           {/* Cloud account pill inside profile */}
@@ -231,34 +206,16 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
             className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-3.5 py-2.5 text-xs"
             style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg }}
           >
-            {authUser ? (
-              <>
-                <div className="min-w-0">
-                  <div className="font-bold text-emerald-400 flex items-center gap-1.5">
-                    <Cloud className="h-3.5 w-3.5" />
-                    <span>{cloudStatus === 'syncing' ? ta.cloudSyncing : ta.cloudSynced}</span>
-                  </div>
-                  <div className="truncate text-[11px]" style={{ color: tokens.textSecondary }}>
-                    {authUser.email}
-                  </div>
-                </div>
-                <ShieldCheck className="h-5 w-5 text-emerald-400 shrink-0" />
-              </>
-            ) : (
-              <>
-                <span className="flex-1 text-[11px] leading-snug" style={{ color: tokens.textSecondary }}>
-                  {ta.guestBanner}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onOpenAuth('register')}
-                  className="shrink-0 rounded-xl px-3 py-1.5 text-[11px] font-extrabold text-white cursor-pointer"
-                  style={{ background: tokens.buttonGradient }}
-                >
-                  {ta.tabRegister}
-                </button>
-              </>
-            )}
+            <div className="min-w-0">
+              <div className="font-bold text-emerald-400 flex items-center gap-1.5">
+                <Cloud className="h-3.5 w-3.5" />
+                <span>{cloudStatus === 'syncing' ? ta.cloudSyncing : ta.cloudSynced}</span>
+              </div>
+              <div className="truncate text-[11px]" style={{ color: tokens.textSecondary }}>
+                {ta.loggedAs}: <strong style={{ color: tokens.textPrimary }}>@{profile.username}</strong>
+              </div>
+            </div>
+            <ShieldCheck className="h-5 w-5 text-emerald-400 shrink-0" />
           </div>
         </div>
 
@@ -274,17 +231,15 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
                 {t.friendsCard}
               </h2>
               <div className="flex items-center gap-2">
-                {authUser && (
-                  <button
-                    type="button"
-                    onClick={() => void onRefreshFriends()}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg border hover:opacity-80 cursor-pointer"
-                    style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg, color: tokens.textPrimary }}
-                    title="Odśwież"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => void onRefreshFriends()}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border hover:opacity-80 cursor-pointer"
+                  style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg, color: tokens.textPrimary }}
+                  title="Odśwież"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </button>
                 <span className="rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ background: tokens.badgeBg, color: tokens.badgeText }}>
                   {profile.friends.length}
                 </span>
@@ -388,7 +343,7 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
               </div>
             ) : (
               cloudPlayers.map((p) => {
-                const isSelf = p.id === authUser?.id
+                const isSelf = p.id === profile.playerId
                 return (
                   <div
                     key={p.id}

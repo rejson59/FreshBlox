@@ -46,6 +46,9 @@ CREATE INDEX IF NOT EXISTS idx_fb_lobby_messages_room_created
 CREATE INDEX IF NOT EXISTS idx_fb_profiles_obby_best
   ON public.fb_profiles (obby_best_stage DESC, obby_completions DESC, xp DESC);
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fb_profiles_username_lower
+  ON public.fb_profiles (lower(username));
+
 ALTER TABLE public.fb_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fb_friendships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fb_lobby_messages ENABLE ROW LEVEL SECURITY;
@@ -71,6 +74,58 @@ CREATE POLICY "Lobby messages readable by all" ON public.fb_lobby_messages FOR S
 DROP POLICY IF EXISTS "Authenticated users post lobby messages" ON public.fb_lobby_messages;
 CREATE POLICY "Authenticated users post lobby messages" ON public.fb_lobby_messages FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+CREATE OR REPLACE FUNCTION public.is_freshblox_username_available(p_username TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  clean_name TEXT;
+BEGIN
+  clean_name := trim(COALESCE(p_username, ''));
+  IF char_length(clean_name) < 3 OR char_length(clean_name) > 20 THEN
+    RETURN FALSE;
+  END IF;
+  RETURN NOT EXISTS (
+    SELECT 1 FROM public.fb_profiles WHERE lower(username) = lower(clean_name)
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.is_freshblox_username_available(TEXT) TO anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.resolve_freshblox_login_email(p_username TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+  clean_name TEXT;
+  found_email TEXT;
+BEGIN
+  clean_name := trim(COALESCE(p_username, ''));
+  IF char_length(clean_name) < 2 THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT u.email INTO found_email
+  FROM public.fb_profiles p
+  JOIN auth.users u ON u.id = p.id
+  WHERE lower(p.username) = lower(clean_name)
+  LIMIT 1;
+
+  IF found_email IS NOT NULL AND found_email LIKE '%@accounts.freshblox.app' THEN
+    RETURN found_email;
+  END IF;
+
+  RETURN NULL;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.resolve_freshblox_login_email(TEXT) TO anon, authenticated;
+
 CREATE OR REPLACE FUNCTION public.handle_new_fb_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -84,14 +139,14 @@ DECLARE
 BEGIN
   rnd_code := lpad((floor(random() * 9000) + 1000)::int::text, 4, '0');
   base_name := COALESCE(NULLIF(trim(NEW.raw_user_meta_data ->> 'username'), ''), 'FreshPlayer' || substr(rnd_code, 1, 2));
-  base_name := left(regexp_replace(base_name, '[^a-zA-Z0-9_ąćęłńóśźżĄĆĘŁŃÓŚŹŻ-]', '', 'g'), 18);
-  IF char_length(base_name) < 2 THEN
+  base_name := left(regexp_replace(base_name, '[^a-zA-Z0-9_-]', '', 'g'), 20);
+  IF char_length(base_name) < 3 THEN
     base_name := 'FreshPlayer' || substr(rnd_code, 1, 2);
   END IF;
 
   final_name := base_name;
   IF EXISTS (SELECT 1 FROM public.fb_profiles WHERE lower(username) = lower(final_name)) THEN
-    final_name := left(base_name, 13) || '_' || rnd_code;
+    final_name := left(base_name, 15) || '_' || rnd_code;
   END IF;
 
   INSERT INTO public.fb_profiles (id, username, fresh_tag, fresh_gems, xp)

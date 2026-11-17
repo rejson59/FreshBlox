@@ -66,6 +66,19 @@ export interface CloudPlayerSummary {
   isOnline: boolean
 }
 
+export const USERNAME_REGEX = /^[a-zA-Z0-9_-]{3,20}$/
+
+export function validateFreshBloxUsername(raw: string): { valid: boolean; clean: string } {
+  const clean = raw.trim()
+  return { valid: USERNAME_REGEX.test(clean), clean }
+}
+
+function makeSyntheticAuthEmail(cleanUsername: string): string {
+  const slug = cleanUsername.toLowerCase().replace(/[^a-z0-9_-]/g, '')
+  const rand = Math.random().toString(36).slice(2, 8)
+  return `u_${slug}_${rand}@accounts.freshblox.app`
+}
+
 const STORAGE_KEY = 'freshblox_player_profile_v2'
 const LEGACY_STORAGE_KEY = 'freshblox_player_profile_v1'
 
@@ -361,12 +374,20 @@ export function usePlayerStore() {
       }
     })
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return
       if (session?.user) {
         const info = { id: session.user.id, email: session.user.email ?? null }
-        setAuthUser(info)
-        void hydrateCloudProfile(info.id, info.email)
+        if (event === 'SIGNED_IN' && !hydratedFromCloudRef.current) {
+          void hydrateCloudProfile(info.id, info.email).finally(() => {
+            if (mounted) setAuthUser(info)
+          })
+        } else {
+          setAuthUser(info)
+          if (!hydratedFromCloudRef.current) {
+            void hydrateCloudProfile(info.id, info.email)
+          }
+        }
       } else {
         hydratedFromCloudRef.current = false
         setAuthUser(null)
@@ -430,21 +451,32 @@ export function usePlayerStore() {
   ])
 
   const signUp = useCallback(
-    async (email: string, password: string, username: string): Promise<{ ok: boolean; error?: string }> => {
-      if (!supabase) return { ok: false, error: 'Supabase not configured' }
-      const cleanName = username.trim().slice(0, 18)
-      if (cleanName.length < 2) return { ok: false, error: 'Nazwa gracza musi mieć min. 2 znaki.' }
+    async (username: string, password: string): Promise<{ ok: boolean; error?: string }> => {
+      if (!supabase) return { ok: false, error: 'SUPABASE_NOT_CONFIGURED' }
+      const { valid, clean } = validateFreshBloxUsername(username)
+      if (!valid) return { ok: false, error: 'INVALID_USERNAME' }
+      if (password.length < 6) return { ok: false, error: 'SHORT_PASSWORD' }
 
+      // Check case-insensitive username availability in Postgres first
+      const { data: isAvailable, error: rpcErr } = await supabase.rpc('is_freshblox_username_available', {
+        p_username: clean,
+      })
+      if (!rpcErr && isAvailable === false) {
+        return { ok: false, error: 'USERNAME_TAKEN' }
+      }
+
+      const syntheticEmail = makeSyntheticAuthEmail(clean)
       const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: syntheticEmail,
         password,
         options: {
-          data: { username: cleanName },
+          data: { username: clean },
         },
       })
       if (error) return { ok: false, error: error.message }
       if (data.user) {
         await hydrateCloudProfile(data.user.id, data.user.email ?? null)
+        setAuthUser({ id: data.user.id, email: data.user.email ?? null })
       }
       return { ok: true }
     },
@@ -452,15 +484,29 @@ export function usePlayerStore() {
   )
 
   const signIn = useCallback(
-    async (email: string, password: string): Promise<{ ok: boolean; error?: string }> => {
-      if (!supabase) return { ok: false, error: 'Supabase not configured' }
+    async (username: string, password: string): Promise<{ ok: boolean; error?: string }> => {
+      if (!supabase) return { ok: false, error: 'SUPABASE_NOT_CONFIGURED' }
+      const clean = username.trim()
+      if (clean.length < 2 || !password) {
+        return { ok: false, error: 'INVALID_CREDENTIALS' }
+      }
+
+      // Resolve current username -> synthetic auth email via Postgres RPC
+      const { data: resolvedEmail, error: resolveErr } = await supabase.rpc('resolve_freshblox_login_email', {
+        p_username: clean,
+      })
+      if (resolveErr || !resolvedEmail || typeof resolvedEmail !== 'string') {
+        return { ok: false, error: 'INVALID_CREDENTIALS' }
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: resolvedEmail,
         password,
       })
-      if (error) return { ok: false, error: error.message }
+      if (error) return { ok: false, error: 'INVALID_CREDENTIALS' }
       if (data.user) {
         await hydrateCloudProfile(data.user.id, data.user.email ?? null)
+        setAuthUser({ id: data.user.id, email: data.user.email ?? null })
       }
       return { ok: true }
     },
@@ -474,6 +520,11 @@ export function usePlayerStore() {
     setAuthUser(null)
     setCloudStatus('guest')
     setProfile(createDefaultProfile())
+    try {
+      localStorage.removeItem(STORAGE_KEY)
+    } catch {
+      // ignore
+    }
   }, [])
 
   const updatePresenceLocation = useCallback((world: WorldKind, roomCode: string) => {
@@ -490,8 +541,13 @@ export function usePlayerStore() {
   }, [])
 
   const setUsername = useCallback(async (name: string): Promise<{ ok: boolean; error?: string }> => {
-    const clean = name.trim().slice(0, 20)
-    if (clean.length < 2) return { ok: false, error: 'Min. 2 znaki' }
+    const { valid, clean } = validateFreshBloxUsername(name)
+    if (!valid) {
+      return {
+        ok: false,
+        error: '3–20 znaków: litery (A-Z), cyfry (0-9), _ lub -',
+      }
+    }
 
     if (supabase && authUserRef.current) {
       const { error } = await supabase
