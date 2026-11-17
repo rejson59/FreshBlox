@@ -53,6 +53,34 @@ class FreshSFX {
     osc.stop(now + 0.14)
   }
 
+  playLedgeGrab() {
+    const ctx = this.ensureCtx()
+    if (!ctx) return
+    const now = ctx.currentTime
+    // Crisp tactile hand-catch thump followed by light upward vault whoosh
+    const thump = ctx.createOscillator()
+    const thumpGain = ctx.createGain()
+    thump.type = 'triangle'
+    thump.frequency.setValueAtTime(190, now)
+    thump.frequency.exponentialRampToValueAtTime(95, now + 0.065)
+    thumpGain.gain.setValueAtTime(0.13, now)
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.075)
+    thump.connect(thumpGain).connect(ctx.destination)
+    thump.start(now)
+    thump.stop(now + 0.08)
+
+    const pull = ctx.createOscillator()
+    const pullGain = ctx.createGain()
+    pull.type = 'sine'
+    pull.frequency.setValueAtTime(280, now + 0.06)
+    pull.frequency.exponentialRampToValueAtTime(460, now + 0.19)
+    pullGain.gain.setValueAtTime(0.075, now + 0.06)
+    pullGain.gain.exponentialRampToValueAtTime(0.001, now + 0.21)
+    pull.connect(pullGain).connect(ctx.destination)
+    pull.start(now + 0.06)
+    pull.stop(now + 0.22)
+  }
+
   playJumpPad() {
     const ctx = this.ensureCtx()
     if (!ctx) return

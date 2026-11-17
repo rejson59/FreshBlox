@@ -178,3 +178,96 @@ CREATE TRIGGER on_auth_user_created_fb
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_fb_user();
 
 ALTER PUBLICATION supabase_realtime ADD TABLE public.fb_lobby_messages;
+
+-- === FEEDBACK & UPDATE IDEAS SYSTEM ===
+CREATE TABLE IF NOT EXISTS public.fb_feedback (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  username text NOT NULL,
+  kind text NOT NULL CHECK (kind IN ('bug', 'idea')),
+  title text NOT NULL CHECK (char_length(trim(title)) >= 3 AND char_length(title) <= 120),
+  description text NOT NULL CHECK (char_length(trim(description)) >= 5 AND char_length(description) <= 1500),
+  context text NOT NULL DEFAULT 'Home',
+  device_info text NOT NULL DEFAULT 'PC',
+  status text NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'reviewing', 'planned', 'done')),
+  upvotes integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS fb_feedback_kind_created_idx ON public.fb_feedback (kind, created_at DESC);
+CREATE INDEX IF NOT EXISTS fb_feedback_user_created_idx ON public.fb_feedback (user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.fb_feedback_votes (
+  feedback_id uuid NOT NULL REFERENCES public.fb_feedback(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (feedback_id, user_id)
+);
+
+ALTER TABLE public.fb_feedback ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.fb_feedback_votes ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "fb_feedback_select_ideas_or_own" ON public.fb_feedback;
+CREATE POLICY "fb_feedback_select_ideas_or_own"
+  ON public.fb_feedback
+  FOR SELECT
+  TO authenticated
+  USING (kind = 'idea' OR user_id = auth.uid());
+
+DROP POLICY IF EXISTS "fb_feedback_insert_own" ON public.fb_feedback;
+CREATE POLICY "fb_feedback_insert_own"
+  ON public.fb_feedback
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "fb_feedback_votes_select_own" ON public.fb_feedback_votes;
+CREATE POLICY "fb_feedback_votes_select_own"
+  ON public.fb_feedback_votes
+  FOR SELECT
+  TO authenticated
+  USING (user_id = auth.uid());
+
+CREATE OR REPLACE FUNCTION public.toggle_feedback_upvote(p_feedback_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_exists boolean;
+  v_voted boolean;
+  v_count integer;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+
+  SELECT EXISTS (
+    SELECT 1 FROM public.fb_feedback WHERE id = p_feedback_id AND kind = 'idea'
+  ) INTO v_exists;
+
+  IF NOT v_exists THEN
+    RAISE EXCEPTION 'Idea not found';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.fb_feedback_votes WHERE feedback_id = p_feedback_id AND user_id = v_uid
+  ) THEN
+    DELETE FROM public.fb_feedback_votes WHERE feedback_id = p_feedback_id AND user_id = v_uid;
+    v_voted := false;
+  ELSE
+    INSERT INTO public.fb_feedback_votes (feedback_id, user_id) VALUES (p_feedback_id, v_uid);
+    v_voted := true;
+  END IF;
+
+  SELECT count(*)::integer INTO v_count FROM public.fb_feedback_votes WHERE feedback_id = p_feedback_id;
+  UPDATE public.fb_feedback SET upvotes = v_count WHERE id = p_feedback_id;
+
+  RETURN jsonb_build_object('voted', v_voted, 'upvotes', v_count);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.toggle_feedback_upvote(uuid) TO authenticated;
+

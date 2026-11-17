@@ -633,10 +633,63 @@ export function evaluateR6Pose(
       out.rLegRot.z = 0.07
     }
     out.snappiness = 26
+  } else if (pose === 'mantle') {
+    // PARKOUR LEDGE GRAB & CLIMB-UP MANTLE (~0.34s):
+    // Phase 1 (0–34%): Both hands snap high overhead onto the platform lip, body tucked against wall.
+    // Phase 2 (34–82%): Powerful pull-up — arms drive down past chest while knee climbs onto ledge.
+    // Phase 3 (82–100%): Smooth athletic stand-up ready to sprint or jump immediately!
+    const p = clamp01(poseTime / 0.34)
+    if (p < 0.34) {
+      const t = easeOutQuad(p / 0.34)
+      out.comPos.y = -0.14 * t
+      out.torsoRot.x = 0.14 * t
+      out.headRot.x = -0.34 * t
+      // Both hands gripping high on the ledge lip (spread naturally shoulder-width)
+      out.lArmRot.x = mix(-2.1, -2.72, t)
+      out.lArmRot.z = -0.22
+      out.rArmRot.x = mix(-2.1, -2.72, t)
+      out.rArmRot.z = 0.22
+      // Legs braced against the ledge wall
+      out.lLegRot.x = -0.46 * t
+      out.lLegRot.z = -0.09
+      out.rLegRot.x = 0.28 * t
+      out.rLegRot.z = 0.09
+      out.scaleY = 1 + 0.04 * t
+      out.scaleXZ = 1 - 0.02 * t
+    } else if (p < 0.82) {
+      const t = easeInOutCubic((p - 0.34) / 0.48)
+      out.comPos.y = mix(-0.14, 0.04, t)
+      out.torsoRot.x = mix(0.14, 0.44, Math.sin(t * Math.PI))
+      out.headRot.x = mix(-0.34, 0.08, t)
+      // Arms pull hard downward pushing torso over the edge!
+      out.lArmRot.x = mix(-2.72, 0.42, t)
+      out.lArmRot.z = mix(-0.22, -0.34, Math.sin(t * Math.PI))
+      out.rArmRot.x = mix(-2.72, 0.42, t)
+      out.rArmRot.z = mix(0.22, 0.34, Math.sin(t * Math.PI))
+      // High climbing knee swing onto platform surface
+      out.lLegRot.x = mix(-0.46, -1.08, Math.sin(t * Math.PI))
+      out.lLegRot.z = -0.12
+      out.rLegRot.x = mix(0.28, -0.32, t)
+      out.rLegRot.z = 0.1
+      out.scaleY = 1 - 0.05 * Math.sin(t * Math.PI)
+      out.scaleXZ = 1 + 0.03 * Math.sin(t * Math.PI)
+    } else {
+      const t = easeOutQuad((p - 0.82) / 0.18)
+      out.comPos.y = mix(0.04, 0, t)
+      out.torsoRot.x = mix(0.18, 0.04, t)
+      out.headRot.x = mix(0.06, 0, t)
+      out.lArmRot.x = mix(0.32, -0.06, t)
+      out.lArmRot.z = -0.12
+      out.rArmRot.x = mix(0.32, -0.06, t)
+      out.rArmRot.z = 0.12
+      out.lLegRot.x = mix(-0.25, 0, t)
+      out.rLegRot.x = mix(-0.12, 0, t)
+    }
+    out.snappiness = 28
   }
 
   // Automatic juicy Landing Squash overlay after jumping/falling (with OUTWARD stabilizing arms!)
-  if (landingImpact > 0.005 && pose !== 'jump' && pose !== 'fall' && pose !== 'backflip') {
+  if (landingImpact > 0.005 && pose !== 'jump' && pose !== 'fall' && pose !== 'backflip' && pose !== 'mantle') {
     const k = Math.sin(landingImpact * Math.PI)
     out.comPos.y -= 0.2 * k
     out.torsoRot.x += 0.2 * k

@@ -14,6 +14,7 @@ import {
   LogOut,
   Maximize2,
   MessageSquare,
+  MessageSquarePlus,
   Moon,
   RotateCcw,
   Send,
@@ -117,6 +118,8 @@ interface TestObbyWorldProps {
   onChatSent: () => void
   onEmoteUsed: () => void
   onJumpPadUsed: () => void
+  feedbackOpen?: boolean
+  onOpenFeedback?: (context: string) => void
 }
 
 function makeStageSignTexture(stageNum: number, isFinish: boolean): THREE.CanvasTexture {
@@ -224,6 +227,8 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   onChatSent,
   onEmoteUsed,
   onJumpPadUsed,
+  feedbackOpen = false,
+  onOpenFeedback,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null)
   const vp = useVisualViewport()
@@ -302,6 +307,8 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   currentStageRef.current = currentStage
   const maxUnlockedRef = useRef<number>(maxUnlockedStage)
   maxUnlockedRef.current = maxUnlockedStage
+  const feedbackOpenRef = useRef<boolean>(feedbackOpen)
+  feedbackOpenRef.current = feedbackOpen
 
   const callbacksRef = useRef({
     onStageReached,
@@ -442,9 +449,17 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     sfx.playClick()
   }, [])
 
-  // Keyboard bindings
+  // Keyboard bindings (focus-safe so clicking HUD buttons NEVER eats Space jump!)
   useEffect(() => {
+    const isTextFieldFocused = () => {
+      const el = document.activeElement
+      if (!el) return false
+      if (el === chatInputRef.current) return true
+      const tag = el.tagName
+      return tag === 'INPUT' || tag === 'TEXTAREA' || (el as HTMLElement).isContentEditable
+    }
     const onKeyDown = (e: KeyboardEvent) => {
+      if (feedbackOpenRef.current) return
       if (e.key === 'Escape') {
         if (wardrobeOpenRef.current) {
           closeLiveWardrobe()
@@ -454,7 +469,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         sfx.playClick()
         return
       }
-      if (document.activeElement === chatInputRef.current) return
+      if (isTextFieldFocused()) return
       const code = e.code
       if (code === 'Tab') {
         e.preventDefault()
@@ -467,7 +482,14 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       }
       if (code === 'Space') {
         e.preventDefault()
-        jumpRequestRef.current = true
+        // If a HUD button kept focus, blur it so Space always triggers a crisp jump instead of clicking UI!
+        const activeEl = document.activeElement as HTMLElement | null
+        if (activeEl && activeEl.tagName === 'BUTTON') {
+          activeEl.blur()
+        }
+        if (!e.repeat) {
+          jumpRequestRef.current = true
+        }
         jumpHeldRef.current = true
       }
       if (code === 'KeyR') {
@@ -489,11 +511,18 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       }
       keysRef.current.delete(e.code)
     }
+    const onWindowBlur = () => {
+      keysRef.current.clear()
+      jumpHeldRef.current = false
+      jumpRequestRef.current = false
+    }
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onWindowBlur)
     return () => {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onWindowBlur)
     }
   }, [closeLiveWardrobe])
 
@@ -1059,6 +1088,22 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     scene.add(localRig.root)
     localRigRef.current = localRig
 
+    interface LedgeMantleState {
+      elapsed: number
+      duration: number
+      startX: number
+      startY: number
+      startZ: number
+      grabX: number
+      grabY: number
+      grabZ: number
+      endX: number
+      endY: number
+      endZ: number
+      faceYaw: number
+      block: RuntimeBlock
+    }
+
     const player = {
       x: startCp.x,
       y: startCp.spawnY,
@@ -1068,11 +1113,13 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       vz: 0,
       rotY: Math.PI, // face -Z along the course!
       grounded: true,
-      coyoteTimer: 0.12,
+      coyoteTimer: 0.15,
       jumpBufferTimer: 0,
       pose: 'idle' as PlayerPose,
       wasGrounded: true,
       standingBlock: null as RuntimeBlock | null,
+      mantle: null as LedgeMantleState | null,
+      mantleCooldown: 0,
     }
 
     // Third-person orbit camera (facing -Z initially!)
@@ -1104,6 +1151,10 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       player.rotY = Math.PI
       player.grounded = false
       player.standingBlock = null
+      player.mantle = null
+      player.mantleCooldown = 0
+      player.coyoteTimer = 0
+      player.jumpBufferTimer = 0
       camState.yaw = 0
       camState.pitch = 0.34
       updateZoneVisibility(stage)
@@ -1449,11 +1500,27 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         }
       }
 
-      // 2. Carry player with moving platform or conveyor belt if standing on one
+      // 2. Carry player (or active ledge mantle!) with moving platform / conveyor / ice
       let standingOnIce = false
       let convVx = 0
       let convVz = 0
-      if (player.grounded && player.standingBlock) {
+      if (player.mantle) {
+        const mb = player.mantle.block
+        if (mb.def.kind === 'moving') {
+          const mdx = mb.curX - mb.prevX
+          const mdy = mb.curY - mb.prevY
+          const mdz = mb.curZ - mb.prevZ
+          player.mantle.startX += mdx
+          player.mantle.startY += mdy
+          player.mantle.startZ += mdz
+          player.mantle.grabX += mdx
+          player.mantle.grabY += mdy
+          player.mantle.grabZ += mdz
+          player.mantle.endX += mdx
+          player.mantle.endY += mdy
+          player.mantle.endZ += mdz
+        }
+      } else if (player.grounded && player.standingBlock) {
         const sb = player.standingBlock
         if (sb.def.kind === 'moving') {
           player.x += sb.curX - sb.prevX
@@ -1469,14 +1536,15 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
 
       // 3. Movement input + smooth Q/E camera rotation
       const keys = keysRef.current
-      if (!wardrobeOpenRef.current) {
+      const inputBlocked = wardrobeOpenRef.current || feedbackOpenRef.current
+      if (!inputBlocked) {
         if (keys.has('KeyQ')) camState.yaw += 2.2 * dt
         if (keys.has('KeyE')) camState.yaw -= 2.2 * dt
       }
 
       let inputFwd = 0
       let inputRight = 0
-      if (!wardrobeOpenRef.current) {
+      if (!inputBlocked) {
         if (keys.has('KeyW') || keys.has('ArrowUp')) inputFwd += 1
         if (keys.has('KeyS') || keys.has('ArrowDown')) inputFwd -= 1
         if (keys.has('KeyD') || keys.has('ArrowRight')) inputRight += 1
@@ -1502,265 +1570,588 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       const moveX = camFwdX * inputFwd + camRightX * inputRight
       const moveZ = camFwdZ * inputFwd + camRightZ * inputRight
 
-      if (mag > 0.08) {
-        activeEmoteRef.current = null
-        const targetVx = moveX * speed + convVx
-        const targetVz = moveZ * speed + convVz
-        if (standingOnIce) {
-          // Authentic slippery glacier momentum!
-          const iceAccel = Math.min(1, dt * 3.1)
-          player.vx += (targetVx - player.vx) * iceAccel
-          player.vz += (targetVz - player.vz) * iceAccel
-        } else {
-          const groundAccel = player.grounded ? Math.min(1, dt * 22) : Math.min(1, dt * 11)
-          player.vx += (targetVx - player.vx) * groundAccel
-          player.vz += (targetVz - player.vz) * groundAccel
+      // Helper: trigger checkpoint / fade tile upon stepping or mantling onto a platform
+      const handleLandedBlockEffects = (landedBlock: RuntimeBlock) => {
+        if (landedBlock.def.kind === 'fade' && landedBlock.fadeState === 'solid') {
+          landedBlock.fadeState = 'shaking'
+          landedBlock.fadeTimer = 0
         }
-        const desiredRot = Math.atan2(moveX, moveZ)
-        let diff = desiredRot - player.rotY
-        while (diff > Math.PI) diff -= Math.PI * 2
-        while (diff < -Math.PI) diff += Math.PI * 2
-        player.rotY += diff * Math.min(1, dt * 15)
-      } else {
-        if (standingOnIce) {
-          // Glide smoothly across ice!
-          const iceGlide = Math.max(0, 1 - dt * 1.45)
-          player.vx *= iceGlide
-          player.vz *= iceGlide
-        } else {
-          // Conveyor still carries stationary player smoothly!
-          const stopRate = Math.min(1, dt * 16)
-          player.vx += (convVx - player.vx) * stopRate
-          player.vz += (convVz - player.vz) * stopRate
+        if (landedBlock.def.kind === 'checkpoint' && landedBlock.def.checkpointStage) {
+          const stg = landedBlock.def.checkpointStage
+          if (stg > currentStageRef.current) {
+            currentStageRef.current = stg
+            setCurrentStage(stg)
+            if (stg > maxUnlockedRef.current) {
+              maxUnlockedRef.current = stg
+              setMaxUnlockedStage(stg)
+            }
+            updateZoneVisibility(stg)
+            const flagMesh = checkpointFlagMap.get(stg)
+            if (flagMesh) flagMesh.material = flagActiveMat
+
+            const nowElapsed = Date.now() - runStartTimeRef.current
+            if (stg === 100) {
+              sfx.playQuestClaim()
+              setFinishedBanner({ elapsedMs: nowElapsed })
+              callbacksRef.current.onStageReached(100, nowElapsed)
+              showToast(`🏆 ${t.obbyFinishedTitle}`)
+            } else {
+              sfx.playGemCollect()
+              callbacksRef.current.onStageReached(stg)
+              showToast(`Stage ${stg} / 100 ✓`)
+            }
+            rebuildRoster()
+          }
         }
       }
 
-      // Coyote Time + Jump Buffer + Hold-to-Jump (auto-hop!)
-      if (player.grounded) {
-        player.coyoteTimer = 0.13
-      } else {
-        player.coyoteTimer = Math.max(0, player.coyoteTimer - dt)
-      }
+      // Tick mantle cooldown
+      player.mantleCooldown = Math.max(0, player.mantleCooldown - dt)
 
-      if (jumpRequestRef.current || (jumpHeldRef.current && player.grounded)) {
-        player.jumpBufferTimer = 0.14
+      // Update jump buffer (generous 180ms buffer + instant hold-to-jump — zero felt cooldown!)
+      const holdJump = !inputBlocked && (jumpHeldRef.current || keys.has('Space'))
+      if (jumpRequestRef.current && !inputBlocked) {
+        player.jumpBufferTimer = 0.18
         jumpRequestRef.current = false
       } else {
         player.jumpBufferTimer = Math.max(0, player.jumpBufferTimer - dt)
       }
 
-      if (player.jumpBufferTimer > 0 && player.coyoteTimer > 0 && !wardrobeOpenRef.current) {
-        player.vy = JUMP_VEL
-        player.grounded = false
-        player.standingBlock = null
-        player.coyoteTimer = 0
-        player.jumpBufferTimer = 0
-        activeEmoteRef.current = null
-        sfx.playJump()
-      }
+      const isSolidPlatformKind = (k: RuntimeBlock['def']['kind']) =>
+        k === 'solid' ||
+        k === 'checkpoint' ||
+        k === 'moving' ||
+        k === 'ice' ||
+        k === 'conveyor' ||
+        k === 'pillar' ||
+        k === 'fade'
 
-      player.vy += GRAVITY * dt
-
-      const prevY = player.y
-      let nextX = player.x + player.vx * dt
-      let nextZ = player.z + player.vz * dt
-      let nextY = player.y + player.vy * dt
-
-      // 4. Resolve collisions against nearby blocks (all 14 block kinds!)
-      let groundedNow = false
-      let landedBlock: RuntimeBlock | null = null
-      let hitHazard = false
-      let hitJumpPadVel = 0
-      let hitBounceBlock: RuntimeBlock | null = null
-
-      const testSpinnerBlade = (angle: number, rb: RuntimeBlock) => {
-        const dx = nextX - rb.curX
-        const dz = nextZ - rb.curZ
-        const cos = Math.cos(-angle)
-        const sin = Math.sin(-angle)
-        const lx = dx * cos - dz * sin
-        const lz = dx * sin + dz * cos
-        const halfLen = rb.def.w / 2 + PLAYER_R * 0.58
-        const halfThick = rb.def.d / 2 + PLAYER_R * 0.58
-        const barMinY = rb.curY - rb.def.h / 2
-        const barMaxY = rb.curY + rb.def.h / 2
-        return (
-          Math.abs(lx) <= halfLen &&
-          Math.abs(lz) <= halfThick &&
-          nextY < barMaxY - 0.06 &&
-          nextY + PLAYER_H > barMinY + 0.1
-        )
-      }
-
-      for (const rb of runtimeBlocks) {
-        if (rb.def.kind === 'decor') continue
-        // Fast spatial culling
-        if (Math.abs(rb.curZ - nextZ) > Math.max(rb.def.d, rb.def.w) * 0.5 + 8) continue
-        if ((rb.def.kind === 'fade' || rb.def.kind === 'fake') && rb.fadeState === 'gone') continue
-
-        if (rb.def.kind === 'spinner') {
-          if (testSpinnerBlade(rb.spinAngle, rb) || (rb.def.spinnerCross && testSpinnerBlade(rb.spinAngle + Math.PI / 2, rb))) {
-            hitHazard = true
-            break
-          }
-          continue
-        }
-
-        const halfW = rb.def.w / 2
-        const halfD = rb.def.d / 2
-        const topY = rb.curY + rb.def.h / 2
-        const botY = rb.curY - rb.def.h / 2
-
-        // Cylinder test for round pillars & bounce cushions, AABB for box blocks
-        let insideXZ: boolean
-        if (rb.def.kind === 'pillar' || rb.def.kind === 'bounce') {
-          const rad = halfW + PLAYER_R * 0.85
-          const dx = nextX - rb.curX
-          const dz = nextZ - rb.curZ
-          insideXZ = dx * dx + dz * dz <= rad * rad
-        } else {
-          insideXZ =
-            nextX >= rb.curX - halfW - PLAYER_R &&
-            nextX <= rb.curX + halfW + PLAYER_R &&
-            nextZ >= rb.curZ - halfD - PLAYER_R &&
-            nextZ <= rb.curZ + halfD + PLAYER_R
-        }
-        if (!insideXZ) continue
-
-        if (rb.def.kind === 'pusher') {
-          // Physical wall-pusher shoves player sideways off the walkway!
-          if (nextY < topY - 0.12 && nextY + PLAYER_H > botY + 0.1) {
-            const pushDir = nextX >= rb.curX ? 1 : -1
-            const deltaMove = rb.curX - rb.prevX
-            nextX = rb.curX + pushDir * (halfW + PLAYER_R + 0.08)
-            player.vx = (deltaMove !== 0 ? Math.sign(deltaMove) : pushDir) * 9.5
-          } else if (player.vy <= 0 && prevY >= topY - STEP_HEIGHT && nextY <= topY + 0.14) {
-            if (!groundedNow || topY > nextY) {
-              nextY = topY
-              groundedNow = true
-              landedBlock = rb
+      // Verify standing headroom at candidate climb-up destination
+      const hasHeadroomAt = (tx: number, ty: number, tz: number, ignore: RuntimeBlock): boolean => {
+        for (const ob of runtimeBlocks) {
+          if (ob === ignore || !isSolidPlatformKind(ob.def.kind)) continue
+          if (ob.def.kind === 'fade' && ob.fadeState === 'gone') continue
+          if (Math.abs(ob.curZ - tz) > Math.max(ob.def.d, ob.def.w) * 0.5 + 3) continue
+          const oTop = ob.curY + ob.def.h / 2
+          const oBot = ob.curY - ob.def.h / 2
+          if (ty + PLAYER_H - 0.1 <= oBot || ty + 0.15 >= oTop) continue
+          const oHW = ob.def.w / 2
+          const oHD = ob.def.d / 2
+          if (ob.def.kind === 'pillar') {
+            const rad = oHW + PLAYER_R * 0.72
+            if ((tx - ob.curX) ** 2 + (tz - ob.curZ) ** 2 < rad * rad) return false
+          } else {
+            if (
+              tx > ob.curX - oHW - PLAYER_R * 0.75 &&
+              tx < ob.curX + oHW + PLAYER_R * 0.75 &&
+              tz > ob.curZ - oHD - PLAYER_R * 0.75 &&
+              tz < ob.curZ + oHD + PLAYER_R * 0.75
+            ) {
+              return false
             }
           }
-          continue
         }
-
-        if (rb.def.kind === 'hazard') {
-          if (nextY < topY - 0.05 && nextY + PLAYER_H > botY + 0.08) {
-            hitHazard = true
-            break
-          }
-          continue
-        }
-
-        if (rb.def.kind === 'jumppad') {
-          if (nextY <= topY + 0.45 && nextY >= botY - 0.4) {
-            hitJumpPadVel = rb.def.jumpVel ?? 22.0
-          }
-          continue
-        }
-
-        if (rb.def.kind === 'bounce') {
-          if (player.vy <= 2 && prevY >= topY - 0.65 && nextY <= topY + 0.35) {
-            hitJumpPadVel = Math.max(hitJumpPadVel, rb.def.jumpVel ?? 16.5)
-            hitBounceBlock = rb
-          }
-          continue
-        }
-
-        if (rb.def.kind === 'fake') {
-          // Fake glass immediately cracks & shatters on touch — drops player through!
-          if (prevY >= topY - 0.8 && nextY <= topY + 0.25 && rb.fadeState === 'solid') {
-            rb.fadeState = 'shaking'
-            rb.fadeTimer = 0
-            sfx.playClick()
-          }
-          continue
-        }
-
-        // Solid / Pillar / Checkpoint / Moving / Fade / Conveyor / Ice landing check
-        if (player.vy <= 0 && prevY >= topY - STEP_HEIGHT && nextY <= topY + 0.14) {
-          if (!groundedNow || topY > nextY) {
-            nextY = topY
-            groundedNow = true
-            landedBlock = rb
-          }
-        }
+        return true
       }
 
-      if (hitHazard) {
-        sfx.playClick()
-        respawnToStage(currentStageRef.current)
-      } else {
-        player.x = nextX
-        player.z = nextZ
-        player.y = nextY
-
-        if (hitJumpPadVel > 0) {
-          player.vy = hitJumpPadVel
+      // === ACTIVE LEDGE GRAB & CLIMB-UP MANTLE ===
+      if (player.mantle) {
+        const m = player.mantle
+        // If a fading tile vanishes mid-climb, abort cleanly so player falls
+        if (m.block.def.kind === 'fade' && m.block.fadeState === 'gone') {
+          player.mantle = null
           player.grounded = false
           player.standingBlock = null
-          if (hitBounceBlock) {
-            hitBounceBlock.bouncePulse = 1
+          player.vy = -1.5
+        } else {
+          m.elapsed += dt
+          const p = Math.min(1, m.elapsed / m.duration)
+          // Rotate smoothly to face the platform ledge during climb
+          let diff = m.faceYaw - player.rotY
+          while (diff > Math.PI) diff -= Math.PI * 2
+          while (diff < -Math.PI) diff += Math.PI * 2
+          player.rotY += diff * Math.min(1, dt * 22)
+
+          if (p < 0.3) {
+            // Phase 1: Hands catch the ledge lip against the side wall
+            const k = 1 - Math.pow(1 - p / 0.3, 2)
+            player.x = m.startX + (m.grabX - m.startX) * k
+            player.y = m.startY + (m.grabY - m.startY) * k
+            player.z = m.startZ + (m.grabZ - m.startZ) * k
+          } else {
+            // Phase 2: Lift body cleanly UP first, then glide forward onto the top deck (never clips corner!)
+            const t = (p - 0.3) / 0.7
+            const ty = 1 - Math.pow(1 - Math.min(1, t / 0.76), 2)
+            const rawXZ = Math.max(0, Math.min(1, (t - 0.22) / 0.78))
+            const txz = rawXZ < 0.5 ? 4 * rawXZ * rawXZ * rawXZ : 1 - Math.pow(-2 * rawXZ + 2, 3) / 2
+            player.x = m.grabX + (m.endX - m.grabX) * txz
+            player.y = m.grabY + (m.endY - m.grabY) * ty
+            player.z = m.grabZ + (m.endZ - m.grabZ) * txz
           }
-          sfx.playJumpPad()
-          callbacksRef.current.onJumpPadUsed()
-        } else if (groundedNow && landedBlock) {
+
+          player.vx = 0
           player.vy = 0
-          player.grounded = true
-          player.standingBlock = landedBlock
+          player.vz = 0
+          player.grounded = false
+          player.pose = 'mantle'
 
-          // Trigger fade tile shake on step
-          if (landedBlock.def.kind === 'fade' && landedBlock.fadeState === 'solid') {
-            landedBlock.fadeState = 'shaking'
-            landedBlock.fadeTimer = 0
-          }
-
-          // Check if player reached a NEW checkpoint!
-          if (landedBlock.def.kind === 'checkpoint' && landedBlock.def.checkpointStage) {
-            const stg = landedBlock.def.checkpointStage
-            if (stg > currentStageRef.current) {
-              currentStageRef.current = stg
-              setCurrentStage(stg)
-              if (stg > maxUnlockedRef.current) {
-                maxUnlockedRef.current = stg
-                setMaxUnlockedStage(stg)
-              }
-              updateZoneVisibility(stg)
-              const flagMesh = checkpointFlagMap.get(stg)
-              if (flagMesh) flagMesh.material = flagActiveMat
-
-              const nowElapsed = Date.now() - runStartTimeRef.current
-              if (stg === 100) {
-                sfx.playQuestClaim()
-                setFinishedBanner({ elapsedMs: nowElapsed })
-                callbacksRef.current.onStageReached(100, nowElapsed)
-                showToast(`🏆 ${t.obbyFinishedTitle}`)
-              } else {
-                sfx.playGemCollect()
-                callbacksRef.current.onStageReached(stg)
-                showToast(`Stage ${stg} / 100 ✓`)
-              }
-              rebuildRoster()
+          if (p >= 1) {
+            player.x = m.endX
+            player.y = m.endY
+            player.z = m.endZ
+            player.vy = 0
+            player.grounded = true
+            player.coyoteTimer = 0.16
+            player.standingBlock = m.block
+            player.mantle = null
+            player.mantleCooldown = 0.14
+            handleLandedBlockEffects(m.block)
+            // If player buffered or held jump at the end of mantle, launch smoothly right away!
+            if (player.jumpBufferTimer > 0) {
+              player.vy = JUMP_VEL
+              player.grounded = false
+              player.standingBlock = null
+              player.coyoteTimer = 0
+              player.jumpBufferTimer = 0
+              sfx.playJump()
             }
           }
+        }
+      } else {
+        // Horizontal movement acceleration
+        if (mag > 0.08) {
+          activeEmoteRef.current = null
+          const targetVx = moveX * speed + convVx
+          const targetVz = moveZ * speed + convVz
+          if (standingOnIce) {
+            const iceAccel = Math.min(1, dt * 3.1)
+            player.vx += (targetVx - player.vx) * iceAccel
+            player.vz += (targetVz - player.vz) * iceAccel
+          } else {
+            const groundAccel = player.grounded ? Math.min(1, dt * 22) : Math.min(1, dt * 11.5)
+            player.vx += (targetVx - player.vx) * groundAccel
+            player.vz += (targetVz - player.vz) * groundAccel
+          }
+          const desiredRot = Math.atan2(moveX, moveZ)
+          let diff = desiredRot - player.rotY
+          while (diff > Math.PI) diff -= Math.PI * 2
+          while (diff < -Math.PI) diff += Math.PI * 2
+          player.rotY += diff * Math.min(1, dt * 15)
         } else {
-          player.grounded = false
-          player.standingBlock = null
+          if (standingOnIce) {
+            const iceGlide = Math.max(0, 1 - dt * 1.45)
+            player.vx *= iceGlide
+            player.vz *= iceGlide
+          } else {
+            const stopRate = Math.min(1, dt * 16)
+            player.vx += (convVx - player.vx) * stopRate
+            player.vz += (convVz - player.vz) * stopRate
+          }
         }
 
-        // Void fall respawn check
-        const cpRef = course.checkpoints[Math.max(0, Math.min(99, currentStageRef.current - 1))]
-        const floorCutoff = (cpRef?.y ?? 0) - 14
-        if (player.y < floorCutoff) {
+        // Coyote Time (150ms forgiveness when stepping off ledges!)
+        if (player.grounded) {
+          player.coyoteTimer = 0.15
+        } else {
+          player.coyoteTimer = Math.max(0, player.coyoteTimer - dt)
+        }
+
+        // Instant zero-cooldown jump execution (tap buffer OR held jump on ground!)
+        const tryExecuteJump = () => {
+          if (inputBlocked) return false
+          const canJump = player.grounded || player.coyoteTimer > 0
+          const wantsJump = player.jumpBufferTimer > 0 || (holdJump && player.grounded)
+          if (canJump && wantsJump) {
+            player.vy = JUMP_VEL
+            player.grounded = false
+            player.standingBlock = null
+            player.coyoteTimer = 0
+            player.jumpBufferTimer = 0
+            activeEmoteRef.current = null
+            sfx.playJump()
+            return true
+          }
+          return false
+        }
+
+        tryExecuteJump()
+
+        // 4. Sub-stepped 3D collision resolution (ZERO tunneling, solid side walls, ceiling checks, & Ledge Grab!)
+        const subSteps = Math.max(1, Math.min(4, Math.ceil(dt / 0.011)))
+        const sdt = dt / subSteps
+
+        const testSpinnerBlade = (angle: number, rb: RuntimeBlock, px: number, py: number, pz: number) => {
+          const dx = px - rb.curX
+          const dz = pz - rb.curZ
+          const cos = Math.cos(-angle)
+          const sin = Math.sin(-angle)
+          const lx = dx * cos - dz * sin
+          const lz = dx * sin + dz * cos
+          const halfLen = rb.def.w / 2 + PLAYER_R * 0.58
+          const halfThick = rb.def.d / 2 + PLAYER_R * 0.58
+          const barMinY = rb.curY - rb.def.h / 2
+          const barMaxY = rb.curY + rb.def.h / 2
+          return (
+            Math.abs(lx) <= halfLen &&
+            Math.abs(lz) <= halfThick &&
+            py < barMaxY - 0.06 &&
+            py + PLAYER_H > barMinY + 0.1
+          )
+        }
+
+        let hitHazard = false
+        let startedMantle = false
+
+        for (let step = 0; step < subSteps; step++) {
+          player.vy += GRAVITY * sdt
+
+          const prevX = player.x
+          const prevY = player.y
+          const prevZ = player.z
+          let nextX = prevX + player.vx * sdt
+          let nextZ = prevZ + player.vz * sdt
+          let nextY = prevY + player.vy * sdt
+
+          let groundedNow = false
+          let landedBlock: RuntimeBlock | null = null
+          let hitJumpPadVel = 0
+          let hitBounceBlock: RuntimeBlock | null = null
+          let autoStepY = prevY
+
+          // Pass A: Horizontal side collisions + Ledge Grab & Mantle detection against solid blocks
+          for (const rb of runtimeBlocks) {
+            if (rb.def.kind === 'decor') continue
+            if (Math.abs(rb.curZ - nextZ) > Math.max(rb.def.d, rb.def.w) * 0.5 + 8) continue
+            if ((rb.def.kind === 'fade' || rb.def.kind === 'fake') && rb.fadeState === 'gone') continue
+
+            if (rb.def.kind === 'spinner') {
+              if (
+                testSpinnerBlade(rb.spinAngle, rb, nextX, nextY, nextZ) ||
+                (rb.def.spinnerCross && testSpinnerBlade(rb.spinAngle + Math.PI / 2, rb, nextX, nextY, nextZ))
+              ) {
+                hitHazard = true
+                break
+              }
+              continue
+            }
+
+            const halfW = rb.def.w / 2
+            const halfD = rb.def.d / 2
+            const topY = rb.curY + rb.def.h / 2
+            const botY = rb.curY - rb.def.h / 2
+
+            if (rb.def.kind === 'hazard') {
+              const inside =
+                nextX >= rb.curX - halfW - PLAYER_R &&
+                nextX <= rb.curX + halfW + PLAYER_R &&
+                nextZ >= rb.curZ - halfD - PLAYER_R &&
+                nextZ <= rb.curZ + halfD + PLAYER_R
+              if (inside && nextY < topY - 0.05 && nextY + PLAYER_H > botY + 0.08) {
+                hitHazard = true
+                break
+              }
+              continue
+            }
+
+            if (rb.def.kind === 'pusher') {
+              const inside =
+                nextX >= rb.curX - halfW - PLAYER_R &&
+                nextX <= rb.curX + halfW + PLAYER_R &&
+                nextZ >= rb.curZ - halfD - PLAYER_R &&
+                nextZ <= rb.curZ + halfD + PLAYER_R
+              if (inside) {
+                if (prevY < topY - 0.14 && prevY + PLAYER_H > botY + 0.08) {
+                  const pushDir = nextX >= rb.curX ? 1 : -1
+                  const deltaMove = rb.curX - rb.prevX
+                  nextX = rb.curX + pushDir * (halfW + PLAYER_R + 0.08)
+                  player.vx = (deltaMove !== 0 ? Math.sign(deltaMove) : pushDir) * 9.5
+                }
+              }
+              continue
+            }
+
+            if (!isSolidPlatformKind(rb.def.kind)) continue
+
+            // Only perform side-wall collision when player's body overlaps the block's vertical side span
+            if (!(prevY < topY - 0.08 && prevY + PLAYER_H > botY + 0.08)) continue
+
+            if (rb.def.kind === 'pillar') {
+              const rad = halfW + PLAYER_R * 0.86
+              const dx = nextX - rb.curX
+              const dz = nextZ - rb.curZ
+              const distSq = dx * dx + dz * dz
+              if (distSq < rad * rad) {
+                const ledgeDelta = topY - prevY
+                if (player.grounded && ledgeDelta > 0 && ledgeDelta <= STEP_HEIGHT && hasHeadroomAt(nextX, topY, nextZ, rb)) {
+                  autoStepY = Math.max(autoStepY, topY)
+                } else {
+                  const dist = Math.max(0.0001, Math.sqrt(distSq))
+                  const nx = dx / dist
+                  const nz = dz / dist
+
+                  // Check last-second Ledge Grab & Mantle onto pillar top!
+                  const towardDot =
+                    (mag > 0.08 ? moveX * -nx + moveZ * -nz : 0) +
+                    (player.vx * -nx + player.vz * -nz) * 0.08 +
+                    (Math.sin(player.rotY) * -nx + Math.cos(player.rotY) * -nz) * 0.35
+                  if (
+                    !player.grounded &&
+                    player.mantleCooldown <= 0 &&
+                    player.vy <= 6.2 &&
+                    ledgeDelta >= 0.28 &&
+                    ledgeDelta <= 2.35 &&
+                    (towardDot > -0.15 || holdJump || player.jumpBufferTimer > 0)
+                  ) {
+                    const inset = Math.min(0.45, halfW * 0.65)
+                    const endX = rb.curX + nx * Math.max(0, halfW - inset)
+                    const endZ = rb.curZ + nz * Math.max(0, halfW - inset)
+                    if (hasHeadroomAt(endX, topY, endZ, rb)) {
+                      player.mantle = {
+                        elapsed: 0,
+                        duration: 0.34,
+                        startX: prevX,
+                        startY: prevY,
+                        startZ: prevZ,
+                        grabX: rb.curX + nx * (rad + 0.02),
+                        grabY: Math.min(topY - 1.35, Math.max(prevY, topY - 1.75)),
+                        grabZ: rb.curZ + nz * (rad + 0.02),
+                        endX,
+                        endY: topY,
+                        endZ,
+                        faceYaw: Math.atan2(-nx, -nz),
+                        block: rb,
+                      }
+                      player.pose = 'mantle'
+                      activeEmoteRef.current = null
+                      sfx.playLedgeGrab()
+                      startedMantle = true
+                      break
+                    }
+                  }
+
+                  // Solid cylindrical wall pushout (prevents clipping into pillar!)
+                  nextX = rb.curX + nx * (rad + 0.005)
+                  nextZ = rb.curZ + nz * (rad + 0.005)
+                  const vn = player.vx * nx + player.vz * nz
+                  if (vn < 0) {
+                    player.vx -= vn * nx
+                    player.vz -= vn * nz
+                  }
+                }
+              }
+              continue
+            }
+
+            // Box AABB side collision
+            const penX = halfW + PLAYER_R - Math.abs(nextX - rb.curX)
+            const penZ = halfD + PLAYER_R - Math.abs(nextZ - rb.curZ)
+            if (penX > 0 && penZ > 0) {
+              const ledgeDelta = topY - prevY
+              if (player.grounded && ledgeDelta > 0 && ledgeDelta <= STEP_HEIGHT && hasHeadroomAt(nextX, topY, nextZ, rb)) {
+                autoStepY = Math.max(autoStepY, topY)
+              } else {
+                // Determine closest side wall normal (nx, nz) pointing OUT of the block
+                let nx = 0
+                let nz = 0
+                if (penX < penZ) {
+                  nx = nextX >= rb.curX ? 1 : -1
+                } else {
+                  nz = nextZ >= rb.curZ ? 1 : -1
+                }
+
+                // Check last-second Ledge Grab & Mantle!
+                const towardDot =
+                  (mag > 0.08 ? moveX * -nx + moveZ * -nz : 0) +
+                  (player.vx * -nx + player.vz * -nz) * 0.08 +
+                  (Math.sin(player.rotY) * -nx + Math.cos(player.rotY) * -nz) * 0.35
+
+                if (
+                  !player.grounded &&
+                  player.mantleCooldown <= 0 &&
+                  player.vy <= 6.2 &&
+                  ledgeDelta >= 0.28 &&
+                  ledgeDelta <= 2.35 &&
+                  (towardDot > -0.15 || holdJump || player.jumpBufferTimer > 0)
+                ) {
+                  const grabX = nx !== 0 ? rb.curX + nx * (halfW + PLAYER_R + 0.02) : Math.max(rb.curX - halfW + 0.25, Math.min(rb.curX + halfW - 0.25, nextX))
+                  const grabZ = nz !== 0 ? rb.curZ + nz * (halfD + PLAYER_R + 0.02) : Math.max(rb.curZ - halfD + 0.25, Math.min(rb.curZ + halfD - 0.25, nextZ))
+                  const insetX = Math.min(0.55, halfW * 0.72)
+                  const insetZ = Math.min(0.55, halfD * 0.72)
+                  const endX =
+                    nx !== 0
+                      ? rb.curX + nx * Math.max(0, halfW - insetX)
+                      : Math.max(rb.curX - halfW + 0.28, Math.min(rb.curX + halfW - 0.28, nextX))
+                  const endZ =
+                    nz !== 0
+                      ? rb.curZ + nz * Math.max(0, halfD - insetZ)
+                      : Math.max(rb.curZ - halfD + 0.28, Math.min(rb.curZ + halfD - 0.28, nextZ))
+
+                  if (hasHeadroomAt(endX, topY, endZ, rb)) {
+                    player.mantle = {
+                      elapsed: 0,
+                      duration: 0.34,
+                      startX: prevX,
+                      startY: prevY,
+                      startZ: prevZ,
+                      grabX,
+                      grabY: Math.min(topY - 1.35, Math.max(prevY, topY - 1.75)),
+                      grabZ,
+                      endX,
+                      endY: topY,
+                      endZ,
+                      faceYaw: Math.atan2(-nx, -nz),
+                      block: rb,
+                    }
+                    player.pose = 'mantle'
+                    activeEmoteRef.current = null
+                    sfx.playLedgeGrab()
+                    startedMantle = true
+                    break
+                  }
+                }
+
+                // Solid side-wall pushout (player NEVER clips through platforms when falling short!)
+                if (nx !== 0) {
+                  nextX = rb.curX + nx * (halfW + PLAYER_R + 0.005)
+                  if (player.vx * nx < 0) player.vx = 0
+                } else {
+                  nextZ = rb.curZ + nz * (halfD + PLAYER_R + 0.005)
+                  if (player.vz * nz < 0) player.vz = 0
+                }
+              }
+            }
+          }
+
+          if (hitHazard || startedMantle) break
+
+          if (autoStepY > prevY) {
+            nextY = Math.max(nextY, autoStepY)
+            player.vy = Math.max(0, player.vy)
+          }
+
+          // Pass B: Vertical landing, ceiling bump, bounce cushions, jump pads & fake glass
+          for (const rb of runtimeBlocks) {
+            if (rb.def.kind === 'decor' || rb.def.kind === 'spinner' || rb.def.kind === 'hazard') continue
+            if (Math.abs(rb.curZ - nextZ) > Math.max(rb.def.d, rb.def.w) * 0.5 + 8) continue
+            if ((rb.def.kind === 'fade' || rb.def.kind === 'fake') && rb.fadeState === 'gone') continue
+
+            const halfW = rb.def.w / 2
+            const halfD = rb.def.d / 2
+            const topY = rb.curY + rb.def.h / 2
+            const botY = rb.curY - rb.def.h / 2
+
+            let insideXZ: boolean
+            if (rb.def.kind === 'pillar' || rb.def.kind === 'bounce') {
+              const rad = halfW + PLAYER_R * 0.85
+              const dx = nextX - rb.curX
+              const dz = nextZ - rb.curZ
+              insideXZ = dx * dx + dz * dz <= rad * rad
+            } else {
+              insideXZ =
+                nextX >= rb.curX - halfW - PLAYER_R &&
+                nextX <= rb.curX + halfW + PLAYER_R &&
+                nextZ >= rb.curZ - halfD - PLAYER_R &&
+                nextZ <= rb.curZ + halfD + PLAYER_R
+            }
+            if (!insideXZ) continue
+
+            if (rb.def.kind === 'jumppad') {
+              if (nextY <= topY + 0.45 && nextY >= botY - 0.4) {
+                hitJumpPadVel = rb.def.jumpVel ?? 22.0
+              }
+              continue
+            }
+
+            if (rb.def.kind === 'bounce') {
+              if (player.vy <= 2 && prevY >= topY - 0.65 && nextY <= topY + 0.35) {
+                hitJumpPadVel = Math.max(hitJumpPadVel, rb.def.jumpVel ?? 16.5)
+                hitBounceBlock = rb
+              }
+              continue
+            }
+
+            if (rb.def.kind === 'fake') {
+              if (prevY >= topY - 0.8 && nextY <= topY + 0.25 && rb.fadeState === 'solid') {
+                rb.fadeState = 'shaking'
+                rb.fadeTimer = 0
+                sfx.playClick()
+              }
+              continue
+            }
+
+            if (rb.def.kind === 'pusher') {
+              if (player.vy <= 0 && prevY >= topY - STEP_HEIGHT && nextY <= topY + 0.14) {
+                if (!groundedNow || topY > nextY) {
+                  nextY = topY
+                  groundedNow = true
+                  landedBlock = rb
+                }
+              }
+              continue
+            }
+
+            // Solid platform: Top landing + Underside ceiling bump!
+            const stickAllowance = player.standingBlock === rb && player.vy <= 0 ? 0.2 : 0.12
+            if (player.vy <= 0 && prevY >= topY - STEP_HEIGHT && nextY <= topY + stickAllowance) {
+              if (!groundedNow || topY > nextY) {
+                nextY = topY
+                groundedNow = true
+                landedBlock = rb
+              }
+            } else if (player.vy > 0 && prevY + PLAYER_H <= botY + 0.24 && nextY + PLAYER_H >= botY) {
+              // Head hits underside of overhead block (no clipping upwards through platforms!)
+              nextY = botY - PLAYER_H
+              player.vy = 0
+            }
+          }
+
+          player.x = nextX
+          player.z = nextZ
+          player.y = nextY
+
+          if (hitJumpPadVel > 0) {
+            player.vy = hitJumpPadVel
+            player.grounded = false
+            player.standingBlock = null
+            if (hitBounceBlock) {
+              hitBounceBlock.bouncePulse = 1
+            }
+            sfx.playJumpPad()
+            callbacksRef.current.onJumpPadUsed()
+          } else if (groundedNow && landedBlock) {
+            player.vy = 0
+            player.grounded = true
+            player.coyoteTimer = 0.15
+            player.standingBlock = landedBlock
+            handleLandedBlockEffects(landedBlock)
+            // Instant re-jump on exact landing frame if Space/Jump was buffered or held (ZERO cooldown!)
+            tryExecuteJump()
+          } else {
+            player.grounded = false
+            player.standingBlock = null
+          }
+        }
+
+        if (hitHazard) {
           sfx.playClick()
           respawnToStage(currentStageRef.current)
+        } else if (!startedMantle) {
+          // Void fall respawn check
+          const cpRef = course.checkpoints[Math.max(0, Math.min(99, currentStageRef.current - 1))]
+          const floorCutoff = (cpRef?.y ?? 0) - 14
+          if (player.y < floorCutoff) {
+            sfx.playClick()
+            respawnToStage(currentStageRef.current)
+          }
         }
       }
 
       // Determine R6 pose
       const hSpeed = Math.hypot(player.vx, player.vz)
       const activeEmote = activeEmoteRef.current
-      if (activeEmote && now < activeEmote.until) {
+      if (player.mantle) {
+        player.pose = 'mantle'
+      } else if (activeEmote && now < activeEmote.until) {
         player.pose = activeEmote.pose
       } else {
         activeEmoteRef.current = null
@@ -2022,8 +2413,22 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           </div>
         </div>
 
-        {/* Right: Shift-Lock (PC) + Live Wardrobe button */}
+        {/* Right: Feedback + Shift-Lock (PC) + Live Wardrobe button */}
         <div className="pointer-events-auto flex items-center gap-1.5">
+          {onOpenFeedback && (
+            <button
+              type="button"
+              onClick={() => {
+                sfx.playClick()
+                onOpenFeedback(`Test Obby 100 · Stage ${currentStage}`)
+              }}
+              title={lang === 'pl' ? 'Zgłoś błąd lub pomysł' : 'Report bug or idea'}
+              className="flex h-9 items-center gap-1 rounded-2xl border border-white/15 bg-slate-950/65 px-2.5 text-xs font-bold text-sky-100 backdrop-blur-xl shadow-lg transition hover:bg-slate-900/80 active:scale-95 cursor-pointer"
+            >
+              <MessageSquarePlus className="h-4 w-4 text-sky-300" />
+              <span className="hidden lg:inline">{lang === 'pl' ? 'Zgłoś' : 'Feedback'}</span>
+            </button>
+          )}
           {!touchMode && (
             <button
               type="button"

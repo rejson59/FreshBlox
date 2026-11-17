@@ -132,9 +132,14 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
   }
 
   const handleJumpDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault()
     e.stopPropagation()
     jumpPointerIdRef.current = e.pointerId
-    e.currentTarget.setPointerCapture(e.pointerId)
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      // ignore if capture unavailable
+    }
     setJumpPressed(true)
     onJumpHoldChange?.(true)
     onJump()
@@ -322,13 +327,16 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
             </button>
           </div>
 
-          {/* PRIMARY JUMP BUTTON — Always 100% visible, supports Hold-to-Jump! */}
+          {/* PRIMARY JUMP BUTTON — Always 100% visible, supports instant Hold-to-Jump (zero cooldown!) */}
           <button
             type="button"
             onPointerDown={handleJumpDown}
             onPointerUp={handleJumpUp}
             onPointerCancel={handleJumpUp}
+            onLostPointerCapture={handleJumpUp}
+            onContextMenu={(e) => e.preventDefault()}
             style={{
+              touchAction: 'none',
               background: jumpPressed
                 ? 'linear-gradient(135deg, #38BDF8 0%, #BAE6FD 70%, #FFFFFF 100%)'
                 : 'linear-gradient(135deg, #0284C7 0%, #38BDF8 62%, #BAE6FD 100%)',

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Home, Box, UserCircle2, Users, Sun, Moon, Globe, Flag, Cloud, LogOut, Loader2 } from 'lucide-react'
+import { Home, Box, UserCircle2, Users, Sun, Moon, Globe, Flag, Cloud, LogOut, Loader2, MessageSquarePlus } from 'lucide-react'
 import { ARCTIC_SKY, getThemeTokens, ThemeMode } from './data/brandTheme'
 import { Lang, LOCALES } from './data/locales'
 import { WorldKind } from './data/catalog'
@@ -11,6 +11,7 @@ import { TestObbyWorld } from './engine/TestObbyWorld'
 import { AvatarEditorView } from './components/avatar/AvatarEditorView'
 import { SocialProfileView } from './components/social/SocialProfileView'
 import { AuthScreen } from './components/auth/AuthScreen'
+import { FeedbackModal } from './components/feedback/FeedbackModal'
 import {
   enterGameFullscreenLandscape,
   exitGameFullscreen,
@@ -41,6 +42,8 @@ export function App() {
   const [mode, setMode] = useState<ThemeMode>('dark')
   const [lang, setLang] = useState<Lang>('pl')
   const [isFullscreen, setIsFullscreen] = useState<boolean>(() => isDocumentFullscreen())
+  const [feedbackOpen, setFeedbackOpen] = useState<boolean>(false)
+  const [feedbackContext, setFeedbackContext] = useState<string>('Strona główna')
 
   const {
     profile,
@@ -183,6 +186,26 @@ export function App() {
     navigateView(world === 'obby' ? 'obby' : 'world', roomId)
   }
 
+  const openFeedback = (customContext?: string) => {
+    if (typeof document !== 'undefined' && document.pointerLockElement) {
+      try {
+        document.exitPointerLock()
+      } catch {
+        // ignore
+      }
+    }
+    if (customContext) {
+      setFeedbackContext(customContext)
+    } else if (view === 'avatar') {
+      setFeedbackContext(lang === 'pl' ? 'Szatnia R6' : 'Avatar Wardrobe')
+    } else if (view === 'social') {
+      setFeedbackContext(lang === 'pl' ? 'Społeczność / Profil' : 'Social / Profile')
+    } else {
+      setFeedbackContext(lang === 'pl' ? 'Strona główna' : 'Home')
+    }
+    setFeedbackOpen(true)
+  }
+
   const navItems: Array<{
     id: AppView
     label: string
@@ -237,8 +260,23 @@ export function App() {
               })}
             </nav>
 
-            {/* Right Controls: Signed-in Account Pill + Sign Out + Dark/Light + PL/EN */}
+            {/* Right Controls: Feedback + Signed-in Account Pill + Sign Out + Dark/Light + PL/EN */}
             <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+              <button
+                type="button"
+                onClick={() => openFeedback()}
+                className="inline-flex h-7 sm:h-8 items-center gap-1.5 rounded-xl border px-2 sm:px-2.5 text-[11px] sm:text-xs font-extrabold transition hover:scale-105 cursor-pointer"
+                style={{
+                  borderColor: `${ARCTIC_SKY.skyMain}52`,
+                  background: `${ARCTIC_SKY.skyMain}18`,
+                  color: tokens.textPrimary,
+                }}
+                title={lang === 'pl' ? 'Zgłoś błąd lub pomysł na aktualizację' : 'Report a bug or suggest an idea'}
+              >
+                <MessageSquarePlus className="h-3.5 w-3.5 shrink-0" style={{ color: ARCTIC_SKY.skyMain }} />
+                <span className="hidden md:inline">{lang === 'pl' ? 'Zgłoś / Pomysły' : 'Feedback'}</span>
+              </button>
+
               <button
                 onClick={() => navigateView('social')}
                 className="flex items-center gap-1.5 rounded-xl border px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-xs font-extrabold transition hover:scale-105 cursor-pointer"
@@ -373,6 +411,8 @@ export function App() {
               awardGemsAndXp(0, 50)
               incrementQuest('q_tower', 1)
             }}
+            feedbackOpen={feedbackOpen}
+            onOpenFeedback={openFeedback}
           />
         )}
 
@@ -403,6 +443,8 @@ export function App() {
             onChatSent={() => incrementQuest('q_chat', 1)}
             onEmoteUsed={() => incrementQuest('q_emote', 1)}
             onJumpPadUsed={() => incrementQuest('q_jumppad', 1)}
+            feedbackOpen={feedbackOpen}
+            onOpenFeedback={openFeedback}
           />
         )}
 
@@ -433,6 +475,16 @@ export function App() {
           />
         )}
       </main>
+
+      <FeedbackModal
+        open={feedbackOpen}
+        mode={mode}
+        lang={lang}
+        userId={authUser.id}
+        username={profile.username}
+        contextLabel={feedbackContext}
+        onClose={() => setFeedbackOpen(false)}
+      />
     </div>
   )
 }

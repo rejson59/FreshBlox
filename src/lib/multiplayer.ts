@@ -8,6 +8,7 @@ export type PlayerPose =
   | 'run'
   | 'jump'
   | 'fall'
+  | 'mantle'
   | 'wave'
   | 'dance'
   | 'cheer'

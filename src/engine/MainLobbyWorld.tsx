@@ -12,6 +12,7 @@ import {
   LogOut,
   Maximize2,
   MessageSquare,
+  MessageSquarePlus,
   Minimize2,
   Moon,
   Navigation,
@@ -121,6 +122,8 @@ interface MainLobbyWorldProps {
   onBuyAndEquip: (category: 'outfit' | 'hat' | 'face', itemId: string, price: number) => boolean
   onBuyBundle: (items: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; price: number }>) => boolean
   onSkinChange: (hex: string) => void
+  feedbackOpen?: boolean
+  onOpenFeedback?: (context: string) => void
 }
 
 function detectDefaultQuality(): GraphicsQuality {
@@ -161,6 +164,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   onBuyAndEquip,
   onBuyBundle,
   onSkinChange,
+  feedbackOpen = false,
+  onOpenFeedback,
 }) => {
   const t = LOCALES[lang].world
   const mountRef = useRef<HTMLDivElement>(null)
@@ -255,6 +260,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   const activeEmoteRef = useRef<PlayerPose | null>(null)
   const emoteTimerRef = useRef<number>(0)
   const chatInputFocusedRef = useRef(false)
+  const feedbackOpenRef = useRef<boolean>(feedbackOpen)
+  feedbackOpenRef.current = feedbackOpen
   const mpRef = useRef<LobbyMultiplayerClient | null>(null)
   const localRigRef = useRef<R6RigHandle | null>(null)
   const speechTimeoutRef = useRef<number | null>(null)
@@ -977,6 +984,21 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     localRigRef.current = localRig
     localRigKeyRef.current = avatarKey(displayedAvatarRef.current)
 
+    interface LobbyMantleState {
+      elapsed: number
+      duration: number
+      startX: number
+      startY: number
+      startZ: number
+      grabX: number
+      grabY: number
+      grabZ: number
+      endX: number
+      endY: number
+      endZ: number
+      faceYaw: number
+    }
+
     const player = {
       x: 0,
       y: 0.2,
@@ -986,6 +1008,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       vz: 0,
       rotY: Math.PI,
       grounded: false,
+      coyoteTimer: 0,
+      jumpBufferTimer: 0,
+      mantle: null as LobbyMantleState | null,
+      mantleCooldown: 0,
       reachedTerrace: false,
       visualStepOffset: 0,
     }
@@ -1038,6 +1064,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       player.vy = 0
       player.vz = 0
       player.rotY = Math.PI
+      player.mantle = null
+      player.mantleCooldown = 0
+      player.coyoteTimer = 0
+      player.jumpBufferTimer = 0
       sfx.playJump()
     }
 
@@ -1264,11 +1294,28 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     const activePointers = new Map<number, { x: number; y: number }>()
     let lastPinchDist = 0
 
+    const isTextFieldFocused = () => {
+      if (chatInputFocusedRef.current) return true
+      const el = document.activeElement
+      if (!el) return false
+      const tag = el.tagName
+      return tag === 'INPUT' || tag === 'TEXTAREA' || (el as HTMLElement).isContentEditable
+    }
+
     const onKeyDown = (e: KeyboardEvent) => {
-      if (chatInputFocusedRef.current) return
+      if (feedbackOpenRef.current || isTextFieldFocused()) return
       const code = e.code
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(code)) {
         e.preventDefault()
+      }
+      if (code === 'Space') {
+        const activeEl = document.activeElement as HTMLElement | null
+        if (activeEl && activeEl.tagName === 'BUTTON') {
+          activeEl.blur()
+        }
+        if (!e.repeat) {
+          jumpQueuedRef.current = true
+        }
       }
       if (code === 'Tab') {
         toggleShiftLockRef.current()
@@ -1306,6 +1353,11 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       if (code === 'Digit6') triggerEmote('backflip')
     }
     const onKeyUp = (e: KeyboardEvent) => keys.delete(e.code)
+    const onWindowBlur = () => {
+      keys.clear()
+      jumpQueuedRef.current = false
+      jumpHeldRef.current = false
+    }
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 2) return
@@ -1364,6 +1416,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     document.addEventListener('pointerlockchange', onPointerLockChange)
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onWindowBlur)
     renderer.domElement.addEventListener('pointerdown', onPointerDown)
     renderer.domElement.addEventListener('pointermove', onPointerMove)
     renderer.domElement.addEventListener('pointerup', onPointerEnd)
@@ -1428,37 +1481,49 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       }
 
       // Combine keyboard + analog virtual thumbstick inputs
+      const inputBlocked = feedbackOpenRef.current
       let inputX = 0
       let inputZ = 0
-      if (keys.has('KeyW') || keys.has('ArrowUp')) inputZ += 1
-      if (keys.has('KeyS') || keys.has('ArrowDown')) inputZ -= 1
-      if (keys.has('KeyA') || keys.has('ArrowLeft')) inputX -= 1
-      if (keys.has('KeyD') || keys.has('ArrowRight')) inputX += 1
+      if (!inputBlocked) {
+        if (keys.has('KeyW') || keys.has('ArrowUp')) inputZ += 1
+        if (keys.has('KeyS') || keys.has('ArrowDown')) inputZ -= 1
+        if (keys.has('KeyA') || keys.has('ArrowLeft')) inputX -= 1
+        if (keys.has('KeyD') || keys.has('ArrowRight')) inputX += 1
 
-      const stickX = touchMoveRef.current.x
-      const stickY = touchMoveRef.current.y
-      if (Math.abs(stickX) > 0.08 || Math.abs(stickY) > 0.08) {
-        inputX += stickX
-        inputZ -= stickY
-      }
+        const stickX = touchMoveRef.current.x
+        const stickY = touchMoveRef.current.y
+        if (Math.abs(stickX) > 0.08 || Math.abs(stickY) > 0.08) {
+          inputX += stickX
+          inputZ -= stickY
+        }
 
-      // Keyboard smooth camera yaw rotation (Q / E when not near bench/portal)
-      if (keys.has('KeyQ')) camYaw += 2.2 * dt
-      if (keys.has('KeyE') && !nearBenchRef.current && !seatedBenchRef.current && nearPortalRef.current?.action !== 'obby') {
-        camYaw -= 2.2 * dt
+        // Keyboard smooth camera yaw rotation (Q / E when not near bench/portal)
+        if (keys.has('KeyQ')) camYaw += 2.2 * dt
+        if (keys.has('KeyE') && !nearBenchRef.current && !seatedBenchRef.current && nearPortalRef.current?.action !== 'obby') {
+          camYaw -= 2.2 * dt
+        }
       }
 
       const isMoving = Math.abs(inputX) > 0.06 || Math.abs(inputZ) > 0.06
-      const wantJump = keys.has('Space') || jumpQueuedRef.current || jumpHeldRef.current
-      jumpQueuedRef.current = false
+      const holdJump = !inputBlocked && (keys.has('Space') || jumpHeldRef.current)
+      if (!inputBlocked && jumpQueuedRef.current) {
+        player.jumpBufferTimer = 0.18
+        jumpQueuedRef.current = false
+      } else {
+        player.jumpBufferTimer = Math.max(0, player.jumpBufferTimer - dt)
+      }
+      player.mantleCooldown = Math.max(0, player.mantleCooldown - dt)
 
       // If seated on a bench, moving or jumping stands you right back up!
       if (seatedBenchRef.current) {
-        if (isMoving || wantJump) {
+        if (isMoving || holdJump || player.jumpBufferTimer > 0) {
+          const triggeredJump = holdJump || player.jumpBufferTimer > 0
           standUpFromBench()
-          if (wantJump) {
-            player.vy = 10.6
+          if (triggeredJump) {
+            player.vy = 10.8
             player.grounded = false
+            player.coyoteTimer = 0
+            player.jumpBufferTimer = 0
             sfx.playJump()
           }
         }
@@ -1472,135 +1537,284 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       const speed = isSprinting ? 12.6 : 7.8
 
       if (!seatedBenchRef.current) {
-        if (isMoving && activeEmoteRef.current) {
-          activeEmoteRef.current = null
-          setActiveEmote(null)
-        }
-
-        camForward.set(-Math.sin(camYaw), 0, -Math.cos(camYaw))
-        camRight.set(Math.cos(camYaw), 0, -Math.sin(camYaw))
-        moveVec.set(0, 0, 0).addScaledVector(camForward, inputZ).addScaledVector(camRight, inputX)
-        const mag = moveVec.length()
-        if (mag > 1) moveVec.divideScalar(mag)
-
-        player.vx = moveVec.x * speed
-        player.vz = moveVec.z * speed
-
-        if (shiftLockRef.current) {
-          const targetAngle = camYaw + Math.PI
-          let diff = targetAngle - player.rotY
+        if (player.mantle) {
+          // === ACTIVE LEDGE GRAB & CLIMB-UP MANTLE ===
+          const m = player.mantle
+          m.elapsed += dt
+          const p = Math.min(1, m.elapsed / m.duration)
+          let diff = m.faceYaw - player.rotY
           while (diff > Math.PI) diff -= Math.PI * 2
           while (diff < -Math.PI) diff += Math.PI * 2
-          player.rotY += diff * Math.min(1, dt * 18)
-        } else if (isMoving) {
-          const targetAngle = Math.atan2(player.vx, player.vz)
-          let diff = targetAngle - player.rotY
-          while (diff > Math.PI) diff -= Math.PI * 2
-          while (diff < -Math.PI) diff += Math.PI * 2
-          player.rotY += diff * Math.min(1, dt * 14)
-        }
+          player.rotY += diff * Math.min(1, dt * 22)
 
-        if (wantJump && player.grounded) {
-          player.vy = 11.4
-          player.grounded = false
-          sfx.playJump()
-        }
-
-        player.vy -= 28 * dt
-
-        // === SMOOTH AUTO-STEP-UP COLLISION (Walkways, Paths, Plaza Layers & Stairs!) ===
-        const prevY = player.y
-        let autoSteppedToY = player.y
-
-        // Move X with auto-step check
-        player.x += player.vx * dt
-        for (const b of colliders) {
-          if (player.y + 3.15 > b.minY + 0.15 && player.y < b.maxY - 0.04) {
-            if (
-              player.x + playerR > b.minX &&
-              player.x - playerR < b.maxX &&
-              player.z + playerR > b.minZ &&
-              player.z - playerR < b.maxZ
-            ) {
-              const ledgeHeight = b.maxY - player.y
-              if (player.grounded && ledgeHeight > 0 && ledgeHeight <= STEP_HEIGHT && hasHeadroomAt(player.x, player.z, b.maxY)) {
-                autoSteppedToY = Math.max(autoSteppedToY, b.maxY)
-              } else {
-                if (player.vx > 0) player.x = b.minX - playerR
-                else if (player.vx < 0) player.x = b.maxX + playerR
-              }
-            }
+          if (p < 0.3) {
+            const k = 1 - Math.pow(1 - p / 0.3, 2)
+            player.x = m.startX + (m.grabX - m.startX) * k
+            player.y = m.startY + (m.grabY - m.startY) * k
+            player.z = m.startZ + (m.grabZ - m.startZ) * k
+          } else {
+            const t = (p - 0.3) / 0.7
+            const ty = 1 - Math.pow(1 - Math.min(1, t / 0.76), 2)
+            const rawXZ = Math.max(0, Math.min(1, (t - 0.22) / 0.78))
+            const txz = rawXZ < 0.5 ? 4 * rawXZ * rawXZ * rawXZ : 1 - Math.pow(-2 * rawXZ + 2, 3) / 2
+            player.x = m.grabX + (m.endX - m.grabX) * txz
+            player.y = m.grabY + (m.endY - m.grabY) * ty
+            player.z = m.grabZ + (m.endZ - m.grabZ) * txz
           }
-        }
-
-        // Move Z with auto-step check
-        player.z += player.vz * dt
-        for (const b of colliders) {
-          if (player.y + 3.15 > b.minY + 0.15 && player.y < b.maxY - 0.04) {
-            if (
-              player.x + playerR > b.minX &&
-              player.x - playerR < b.maxX &&
-              player.z + playerR > b.minZ &&
-              player.z - playerR < b.maxZ
-            ) {
-              const ledgeHeight = b.maxY - player.y
-              if (player.grounded && ledgeHeight > 0 && ledgeHeight <= STEP_HEIGHT && hasHeadroomAt(player.x, player.z, b.maxY)) {
-                autoSteppedToY = Math.max(autoSteppedToY, b.maxY)
-              } else {
-                if (player.vz > 0) player.z = b.minZ - playerR
-                else if (player.vz < 0) player.z = b.maxZ + playerR
-              }
-            }
-          }
-        }
-
-        if (autoSteppedToY > player.y) {
-          const delta = autoSteppedToY - player.y
-          player.y = autoSteppedToY
-          player.visualStepOffset -= delta // keeps visual ascent silky-smooth!
-          player.vy = Math.max(0, player.vy)
-        }
-
-        // Move Y & land on tops
-        player.y += player.vy * dt
-        player.grounded = false
-        for (const b of colliders) {
-          if (
-            player.x + playerR > b.minX &&
-            player.x - playerR < b.maxX &&
-            player.z + playerR > b.minZ &&
-            player.z - playerR < b.maxZ
-          ) {
-            if (player.vy <= 0 && prevY >= b.maxY - STEP_HEIGHT && player.y <= b.maxY + 0.02) {
-              player.y = b.maxY
-              player.vy = 0
-              player.grounded = true
-            }
-          }
-        }
-
-        // Decay visual step smoothing quickly
-        player.visualStepOffset *= Math.max(0, 1 - dt * 18)
-
-        // Plaza boundary & safety respawn
-        player.x = Math.max(-35, Math.min(35, player.x))
-        player.z = Math.max(-35, Math.min(35, player.z))
-        if (player.y < -12) {
-          player.x = 0
-          player.y = 1.5
-          player.z = 9
+          player.vx = 0
           player.vy = 0
-        }
+          player.vz = 0
+          player.grounded = false
+          player.visualStepOffset = 0
 
-        // Jump-Pads
-        for (const jp of jumpPads) {
-          jp.ring.scale.setScalar(1 + Math.sin(elapsed * 5) * 0.06)
-          const dSq = (player.x - jp.x) ** 2 + (player.z - jp.z) ** 2
-          if (dSq < jp.radius * jp.radius && Math.abs(player.y - jp.y) < 0.7 && player.vy <= 1) {
-            player.vy = jp.boost
+          if (p >= 1) {
+            player.x = m.endX
+            player.y = m.endY
+            player.z = m.endZ
+            player.vy = 0
+            player.grounded = true
+            player.coyoteTimer = 0.15
+            player.mantle = null
+            player.mantleCooldown = 0.14
+            if (player.jumpBufferTimer > 0) {
+              player.vy = 11.4
+              player.grounded = false
+              player.coyoteTimer = 0
+              player.jumpBufferTimer = 0
+              sfx.playJump()
+            }
+          }
+        } else {
+          if (isMoving && activeEmoteRef.current) {
+            activeEmoteRef.current = null
+            setActiveEmote(null)
+          }
+
+          camForward.set(-Math.sin(camYaw), 0, -Math.cos(camYaw))
+          camRight.set(Math.cos(camYaw), 0, -Math.sin(camYaw))
+          moveVec.set(0, 0, 0).addScaledVector(camForward, inputZ).addScaledVector(camRight, inputX)
+          const mag = moveVec.length()
+          if (mag > 1) moveVec.divideScalar(mag)
+
+          player.vx = moveVec.x * speed
+          player.vz = moveVec.z * speed
+
+          if (shiftLockRef.current) {
+            const targetAngle = camYaw + Math.PI
+            let diff = targetAngle - player.rotY
+            while (diff > Math.PI) diff -= Math.PI * 2
+            while (diff < -Math.PI) diff += Math.PI * 2
+            player.rotY += diff * Math.min(1, dt * 18)
+          } else if (isMoving) {
+            const targetAngle = Math.atan2(player.vx, player.vz)
+            let diff = targetAngle - player.rotY
+            while (diff > Math.PI) diff -= Math.PI * 2
+            while (diff < -Math.PI) diff += Math.PI * 2
+            player.rotY += diff * Math.min(1, dt * 14)
+          }
+
+          // Coyote Time (150ms) + Jump Buffer (180ms) + Instant Hold-to-Jump (ZERO felt cooldown!)
+          if (player.grounded) {
+            player.coyoteTimer = 0.15
+          } else {
+            player.coyoteTimer = Math.max(0, player.coyoteTimer - dt)
+          }
+
+          const tryLobbyJump = () => {
+            if (inputBlocked) return false
+            const canJump = player.grounded || player.coyoteTimer > 0
+            const wantsJump = player.jumpBufferTimer > 0 || (holdJump && player.grounded)
+            if (canJump && wantsJump) {
+              player.vy = 11.4
+              player.grounded = false
+              player.coyoteTimer = 0
+              player.jumpBufferTimer = 0
+              if (activeEmoteRef.current) {
+                activeEmoteRef.current = null
+                setActiveEmote(null)
+              }
+              sfx.playJump()
+              return true
+            }
+            return false
+          }
+
+          tryLobbyJump()
+
+          // === SUB-STEPPED SOLID 3D COLLISION + AUTO-STEP + LEDGE GRAB & MANTLE ===
+          const PLAYER_H = 3.15
+          const subSteps = Math.max(1, Math.min(4, Math.ceil(dt / 0.011)))
+          const sdt = dt / subSteps
+
+          for (let step = 0; step < subSteps; step++) {
+            player.vy -= 28 * sdt
+
+            const prevX = player.x
+            const prevY = player.y
+            const prevZ = player.z
+            let autoSteppedToY = prevY
+            let startedMantle = false
+
+            const tryTriggerLobbyMantle = (b: AABB, nx: number, nz: number, curX: number, curZ: number) => {
+              if (player.grounded || player.mantleCooldown > 0 || player.vy > 5.8) return false
+              const ledgeDelta = b.maxY - prevY
+              if (ledgeDelta < 0.28 || ledgeDelta > 2.35) return false
+              // Ignore narrow tree trunks so players don't climb straight up tree bark
+              if (b.maxX - b.minX < 1.45 && b.maxZ - b.minZ < 1.45) return false
+
+              const towardDot =
+                (isMoving ? moveVec.x * -nx + moveVec.z * -nz : 0) +
+                (Math.sin(player.rotY) * -nx + Math.cos(player.rotY) * -nz) * 0.4
+              if (towardDot <= -0.15 && !holdJump && player.jumpBufferTimer <= 0) return false
+
+              const halfW = (b.maxX - b.minX) * 0.5
+              const halfD = (b.maxZ - b.minZ) * 0.5
+              const cx = (b.minX + b.maxX) * 0.5
+              const cz = (b.minZ + b.maxZ) * 0.5
+              const grabX = nx !== 0 ? cx + nx * (halfW + playerR + 0.02) : Math.max(b.minX + 0.25, Math.min(b.maxX - 0.25, curX))
+              const grabZ = nz !== 0 ? cz + nz * (halfD + playerR + 0.02) : Math.max(b.minZ + 0.25, Math.min(b.maxZ - 0.25, curZ))
+              const insetX = Math.min(0.55, halfW * 0.72)
+              const insetZ = Math.min(0.55, halfD * 0.72)
+              const endX = nx !== 0 ? cx + nx * Math.max(0, halfW - insetX) : Math.max(b.minX + 0.28, Math.min(b.maxX - 0.28, curX))
+              const endZ = nz !== 0 ? cz + nz * Math.max(0, halfD - insetZ) : Math.max(b.minZ + 0.28, Math.min(b.maxZ - 0.28, curZ))
+
+              if (!hasHeadroomAt(endX, endZ, b.maxY)) return false
+
+              player.mantle = {
+                elapsed: 0,
+                duration: 0.34,
+                startX: prevX,
+                startY: prevY,
+                startZ: prevZ,
+                grabX,
+                grabY: Math.min(b.maxY - 1.35, Math.max(prevY, b.maxY - 1.75)),
+                grabZ,
+                endX,
+                endY: b.maxY,
+                endZ,
+                faceYaw: Math.atan2(-nx, -nz),
+              }
+              if (activeEmoteRef.current) {
+                activeEmoteRef.current = null
+                setActiveEmote(null)
+              }
+              sfx.playLedgeGrab()
+              return true
+            }
+
+            // Move X with solid side wall & auto-step / mantle check
+            player.x += player.vx * sdt
+            for (const b of colliders) {
+              if (prevY + PLAYER_H > b.minY + 0.08 && prevY < b.maxY - 0.06) {
+                if (
+                  player.x + playerR > b.minX &&
+                  player.x - playerR < b.maxX &&
+                  player.z + playerR > b.minZ &&
+                  player.z - playerR < b.maxZ
+                ) {
+                  const ledgeHeight = b.maxY - prevY
+                  if (player.grounded && ledgeHeight > 0 && ledgeHeight <= STEP_HEIGHT && hasHeadroomAt(player.x, player.z, b.maxY)) {
+                    autoSteppedToY = Math.max(autoSteppedToY, b.maxY)
+                  } else {
+                    const nx = prevX >= (b.minX + b.maxX) * 0.5 ? 1 : -1
+                    if (tryTriggerLobbyMantle(b, nx, 0, player.x, player.z)) {
+                      startedMantle = true
+                      break
+                    }
+                    if (nx < 0) player.x = b.minX - playerR - 0.002
+                    else player.x = b.maxX + playerR + 0.002
+                  }
+                }
+              }
+            }
+            if (startedMantle) break
+
+            // Move Z with solid side wall & auto-step / mantle check
+            player.z += player.vz * sdt
+            for (const b of colliders) {
+              if (prevY + PLAYER_H > b.minY + 0.08 && prevY < b.maxY - 0.06) {
+                if (
+                  player.x + playerR > b.minX &&
+                  player.x - playerR < b.maxX &&
+                  player.z + playerR > b.minZ &&
+                  player.z - playerR < b.maxZ
+                ) {
+                  const ledgeHeight = b.maxY - prevY
+                  if (player.grounded && ledgeHeight > 0 && ledgeHeight <= STEP_HEIGHT && hasHeadroomAt(player.x, player.z, b.maxY)) {
+                    autoSteppedToY = Math.max(autoSteppedToY, b.maxY)
+                  } else {
+                    const nz = prevZ >= (b.minZ + b.maxZ) * 0.5 ? 1 : -1
+                    if (tryTriggerLobbyMantle(b, 0, nz, player.x, player.z)) {
+                      startedMantle = true
+                      break
+                    }
+                    if (nz < 0) player.z = b.minZ - playerR - 0.002
+                    else player.z = b.maxZ + playerR + 0.002
+                  }
+                }
+              }
+            }
+            if (startedMantle) break
+
+            if (autoSteppedToY > prevY) {
+              const delta = autoSteppedToY - prevY
+              player.y = autoSteppedToY
+              player.visualStepOffset -= delta
+              player.vy = Math.max(0, player.vy)
+            }
+
+            // Move Y: Land on tops + Ceiling bump (no head clipping under arches/ledges!)
+            player.y += player.vy * sdt
             player.grounded = false
-            sfx.playJumpPad()
-            callbacksRef.current.onJumpPadUsed()
+            for (const b of colliders) {
+              if (
+                player.x + playerR > b.minX &&
+                player.x - playerR < b.maxX &&
+                player.z + playerR > b.minZ &&
+                player.z - playerR < b.maxZ
+              ) {
+                if (player.vy <= 0 && prevY >= b.maxY - STEP_HEIGHT && player.y <= b.maxY + 0.05) {
+                  player.y = b.maxY
+                  player.vy = 0
+                  player.grounded = true
+                } else if (player.vy > 0 && prevY + PLAYER_H <= b.minY + 0.24 && player.y + PLAYER_H >= b.minY) {
+                  player.y = b.minY - PLAYER_H
+                  player.vy = 0
+                }
+              }
+            }
+
+            if (player.grounded) {
+              player.coyoteTimer = 0.15
+              // Instant re-jump on exact landing frame if Space/Jump was buffered or held!
+              tryLobbyJump()
+            }
+          }
+
+          // Decay visual step smoothing quickly
+          player.visualStepOffset *= Math.max(0, 1 - dt * 18)
+
+          // Plaza boundary & safety respawn
+          player.x = Math.max(-35, Math.min(35, player.x))
+          player.z = Math.max(-35, Math.min(35, player.z))
+          if (player.y < -12) {
+            player.x = 0
+            player.y = 1.5
+            player.z = 9
+            player.vy = 0
+          }
+
+          // Jump-Pads
+          for (const jp of jumpPads) {
+            jp.ring.scale.setScalar(1 + Math.sin(elapsed * 5) * 0.06)
+            const dSq = (player.x - jp.x) ** 2 + (player.z - jp.z) ** 2
+            if (dSq < jp.radius * jp.radius && Math.abs(player.y - jp.y) < 0.7 && player.vy <= 1) {
+              player.vy = jp.boost
+              player.grounded = false
+              player.coyoteTimer = 0
+              sfx.playJumpPad()
+              callbacksRef.current.onJumpPadUsed()
+            }
           }
         }
       }
@@ -1673,7 +1887,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       }
 
       let currentPose: PlayerPose = 'idle'
-      if (seatedBenchRef.current) currentPose = 'sit'
+      if (player.mantle) currentPose = 'mantle'
+      else if (seatedBenchRef.current) currentPose = 'sit'
       else if (!player.grounded) currentPose = player.vy > 0 ? 'jump' : 'fall'
       else if (activeEmoteRef.current) currentPose = activeEmoteRef.current
       else if (isMoving) currentPose = isSprinting ? 'run' : 'walk'
@@ -1826,6 +2041,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       document.removeEventListener('pointerlockchange', onPointerLockChange)
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onWindowBlur)
       window.removeEventListener('resize', onResize)
       renderer.domElement.removeEventListener('pointerdown', onPointerDown)
       renderer.domElement.removeEventListener('pointermove', onPointerMove)
@@ -1967,6 +2183,21 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
             <span className="sm:hidden">Obby</span>
             <span className="hidden sm:inline">Test Obby 100</span>
           </button>
+
+          {onOpenFeedback && (
+            <button
+              type="button"
+              onClick={() => {
+                sfx.playClick()
+                onOpenFeedback(`Lobby Główne (${roomCode})`)
+              }}
+              title={lang === 'pl' ? 'Zgłoś błąd lub pomysł' : 'Report bug or idea'}
+              className="flex h-9 sm:h-10 items-center gap-1 rounded-2xl border border-white/15 bg-slate-950/75 px-2.5 text-xs font-bold text-sky-100 shadow-lg backdrop-blur-xl hover:bg-slate-900/90 active:scale-95 transition cursor-pointer"
+            >
+              <MessageSquarePlus className="h-4 w-4 text-sky-300 shrink-0" />
+              <span className="hidden lg:inline">{lang === 'pl' ? 'Zgłoś' : 'Feedback'}</span>
+            </button>
+          )}
 
           {!touchMode && (
             <button
