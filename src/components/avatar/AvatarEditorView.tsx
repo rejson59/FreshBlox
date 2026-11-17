@@ -31,7 +31,8 @@ import {
 } from '../../data/catalog'
 import { PlayerProfile } from '../../store/usePlayerStore'
 import { FreshGemShard } from '../brand/FreshBloxBrand'
-import { createR6Rig, getSharedFreshStudTexture, R6RigHandle } from '../../engine/r6Builder'
+import { createR6Rig, R6RigHandle } from '../../engine/r6Builder'
+import { cloneFreshTexturesWithRepeat } from '../../engine/freshTextures'
 import { PlayerPose } from '../../lib/multiplayer'
 import { sfx } from '../../lib/sfx'
 
@@ -245,17 +246,19 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
     scene.add(fill)
     fillRef.current = fill
 
-    // === CLEAN FRESH GLOSSY TURNTABLE PODIUM (ZERO NEON / ZERO LED) ===
-    const studMap = track(getSharedFreshStudTexture().clone())
-    studMap.needsUpdate = true
-    studMap.repeat.set(3, 3)
+    // === CLEAN FRESH ARCHITECTURAL MARBLE TURNTABLE PODIUM (ZERO ROBLOX STUDS / ZERO NEON) ===
+    const podiumTex = cloneFreshTexturesWithRepeat('marble', 2, 2, track)
+    const flutedTex = cloneFreshTexturesWithRepeat('fluted', 1, 2, track)
+    const baseStoneTex = cloneFreshTexturesWithRepeat('terrazzo', 3, 1, track)
 
     const podiumMat = track(
       new THREE.MeshStandardMaterial({
         color: '#F4FAFF',
-        map: studMap,
+        map: podiumTex.map,
+        bumpMap: podiumTex.bumpMap,
+        bumpScale: podiumTex.bumpScale,
         roughness: 0.28,
-        metalness: 0.04,
+        metalness: 0.05,
       }),
     )
     podiumMatRef.current = podiumMat
@@ -265,12 +268,12 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
     topDisc.receiveShadow = true
     scene.add(topDisc)
 
-    // Clean glossy sky-stone trim ring (no emissive neon!)
+    // Clean satin sky-stone trim ring (no emissive neon!)
     const trimMat = track(
       new THREE.MeshStandardMaterial({
         color: '#7DD3FC',
         roughness: 0.24,
-        metalness: 0.08,
+        metalness: 0.14,
       }),
     )
     trimMatRef.current = trimMat
@@ -281,14 +284,32 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
 
     const lowerBase = new THREE.Mesh(
       track(new THREE.CylinderGeometry(2.9, 3.15, 0.38, 32)),
-      track(new THREE.MeshStandardMaterial({ color: '#334155', roughness: 0.42, metalness: 0.08 })),
+      track(
+        new THREE.MeshStandardMaterial({
+          color: '#334155',
+          map: baseStoneTex.map,
+          bumpMap: baseStoneTex.bumpMap,
+          bumpScale: baseStoneTex.bumpScale,
+          roughness: 0.44,
+          metalness: 0.08,
+        }),
+      ),
     )
     lowerBase.position.y = -0.52
     lowerBase.receiveShadow = true
     scene.add(lowerBase)
 
-    // Subtle open-air pavilion backdrop pillars (matte architectural stone — no LED strips!)
-    const archMat = track(new THREE.MeshStandardMaterial({ color: '#E2F1FC', roughness: 0.36, metalness: 0.05 }))
+    // Subtle open-air pavilion backdrop fluted columns (matte architectural stone — no LED strips!)
+    const archMat = track(
+      new THREE.MeshStandardMaterial({
+        color: '#E2F1FC',
+        map: flutedTex.map,
+        bumpMap: flutedTex.bumpMap,
+        bumpScale: flutedTex.bumpScale,
+        roughness: 0.36,
+        metalness: 0.05,
+      }),
+    )
     archMatRef.current = archMat
     const pillarGeo = track(new RoundedBoxGeometry(0.56, 5.8, 0.56, 2, 0.09))
 

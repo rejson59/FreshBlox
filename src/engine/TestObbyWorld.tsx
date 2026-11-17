@@ -44,7 +44,8 @@ import {
 } from '../lib/multiplayer'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { sfx } from '../lib/sfx'
-import { createR6Rig, getSharedFreshStudTexture, R6RigHandle } from './r6Builder'
+import { createR6Rig, R6RigHandle } from './r6Builder'
+import { cloneFreshTexturesWithRepeat, FreshSurfaceKind, getFreshTexturePair } from './freshTextures'
 import { generateTestObbyCourse, OBBY_ZONES, ObbyBlockDef } from './obbyCourse'
 import { MobileTouchControls } from '../components/hud/MobileTouchControls'
 import { InGameWardrobeDrawer } from '../components/hud/InGameWardrobeDrawer'
@@ -146,11 +147,21 @@ function makeConveyorArrowTexture(dir: 'fwd' | 'back' | 'left' | 'right'): THREE
   c.width = 128
   c.height = 128
   const ctx = c.getContext('2d')!
-  ctx.fillStyle = '#0369A1'
+  // Textured dark slate-sky rubberized belt base
+  ctx.fillStyle = '#075985'
   ctx.fillRect(0, 0, 128, 128)
-  // Subtle deck lines
-  ctx.fillStyle = '#0284C7'
-  ctx.fillRect(4, 4, 120, 120)
+  ctx.fillStyle = '#0369A1'
+  ctx.fillRect(8, 4, 112, 120)
+
+  // Subtle horizontal belt tread ribs
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.08)'
+  for (let y = 0; y < 128; y += 16) {
+    ctx.fillRect(10, y, 108, 4)
+  }
+  // Brushed side rails
+  ctx.fillStyle = '#0C4A6E'
+  ctx.fillRect(0, 0, 10, 128)
+  ctx.fillRect(118, 0, 10, 128)
 
   ctx.save()
   ctx.translate(64, 64)
@@ -158,16 +169,16 @@ function makeConveyorArrowTexture(dir: 'fwd' | 'back' | 'left' | 'right'): THREE
   else if (dir === 'left') ctx.rotate(-Math.PI / 2)
   else if (dir === 'right') ctx.rotate(Math.PI / 2)
 
-  // Clean crisp chevron arrow (zero neon!)
+  // Clean crisp architectural chevron arrow (zero neon!)
   ctx.fillStyle = '#F8FAFC'
   ctx.beginPath()
   ctx.moveTo(0, -40)
-  ctx.lineTo(38, 10)
-  ctx.lineTo(18, 10)
-  ctx.lineTo(18, 38)
-  ctx.lineTo(-18, 38)
-  ctx.lineTo(-18, 10)
-  ctx.lineTo(-38, 10)
+  ctx.lineTo(36, 8)
+  ctx.lineTo(17, 8)
+  ctx.lineTo(17, 36)
+  ctx.lineTo(-17, 36)
+  ctx.lineTo(-17, 8)
+  ctx.lineTo(-36, 8)
   ctx.closePath()
   ctx.fill()
   ctx.restore()
@@ -702,17 +713,30 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     applyTimeOfDayRef.current = applyTimeOfDay
     applyTimeOfDay(worldTimeRef.current)
 
-    // Shared textures & material cache for ultra-fast 100-stage rendering!
-    const studTex = getSharedFreshStudTexture()
+    // Autorskie materiały FreshBlox z mapami albedo + bumpMap (zero studsów z Robloksa, zero płaskiego plastiku!)
+    const trackTex = <T extends THREE.Texture>(t: T): T => {
+      texturesToDispose.push(t)
+      return t
+    }
     const matCache = new Map<string, THREE.MeshStandardMaterial>()
-    const getStudMat = (hex: string, roughness = 0.34, metalness = 0.08): THREE.MeshStandardMaterial => {
-      const key = `${hex}_${roughness}_${metalness}`
+    const getSurfaceMat = (
+      surface: FreshSurfaceKind,
+      hex: string,
+      rx = 1,
+      ry = 1,
+      roughness = 0.34,
+      metalness = 0.07,
+    ): THREE.MeshStandardMaterial => {
+      const key = `${surface}_${hex}_${rx}_${ry}_${roughness}_${metalness}`
       const existing = matCache.get(key)
       if (existing) return existing
+      const pair = cloneFreshTexturesWithRepeat(surface, rx, ry, trackTex)
       const m = trackMat(
         new THREE.MeshStandardMaterial({
           color: hex,
-          map: studTex,
+          map: pair.map,
+          bumpMap: pair.bumpMap,
+          bumpScale: pair.bumpScale,
           roughness,
           metalness,
         }),
@@ -721,45 +745,58 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       return m
     }
 
+    const hazardPair = getFreshTexturePair('hazard')
     const hazardMat = trackMat(
       new THREE.MeshStandardMaterial({
         color: '#EF4444',
-        roughness: 0.25,
+        map: hazardPair.map,
+        bumpMap: hazardPair.bumpMap,
+        bumpScale: hazardPair.defaultBumpScale,
+        roughness: 0.32,
         metalness: 0.08,
       }),
     )
+    const gripPair = getFreshTexturePair('grip')
     const jumpPadMat = trackMat(
       new THREE.MeshStandardMaterial({
         color: '#0EA5E9',
-        roughness: 0.22,
+        map: gripPair.map,
+        bumpMap: gripPair.bumpMap,
+        bumpScale: gripPair.defaultBumpScale,
+        roughness: 0.26,
         metalness: 0.14,
       }),
     )
+    const icePair = getFreshTexturePair('ice')
     const iceMat = trackMat(
       new THREE.MeshStandardMaterial({
         color: '#BAE6FD',
-        roughness: 0.07,
-        metalness: 0.12,
+        map: icePair.map,
+        bumpMap: icePair.bumpMap,
+        bumpScale: icePair.defaultBumpScale,
+        roughness: 0.1,
+        metalness: 0.14,
         transparent: true,
-        opacity: 0.86,
+        opacity: 0.88,
       }),
     )
+    const marblePair = getFreshTexturePair('marble')
     const conveyorTexFwd = makeConveyorArrowTexture('fwd')
     const conveyorTexBack = makeConveyorArrowTexture('back')
     const conveyorTexLeft = makeConveyorArrowTexture('left')
     const conveyorTexRight = makeConveyorArrowTexture('right')
     texturesToDispose.push(conveyorTexFwd, conveyorTexBack, conveyorTexLeft, conveyorTexRight)
 
-    const conveyorMatFwd = trackMat(new THREE.MeshStandardMaterial({ map: conveyorTexFwd, roughness: 0.35, metalness: 0.08 }))
-    const conveyorMatBack = trackMat(new THREE.MeshStandardMaterial({ map: conveyorTexBack, roughness: 0.35, metalness: 0.08 }))
-    const conveyorMatLeft = trackMat(new THREE.MeshStandardMaterial({ map: conveyorTexLeft, roughness: 0.35, metalness: 0.08 }))
-    const conveyorMatRight = trackMat(new THREE.MeshStandardMaterial({ map: conveyorTexRight, roughness: 0.35, metalness: 0.08 }))
+    const conveyorMatFwd = trackMat(new THREE.MeshStandardMaterial({ map: conveyorTexFwd, bumpMap: gripPair.bumpMap, bumpScale: 0.03, roughness: 0.38, metalness: 0.08 }))
+    const conveyorMatBack = trackMat(new THREE.MeshStandardMaterial({ map: conveyorTexBack, bumpMap: gripPair.bumpMap, bumpScale: 0.03, roughness: 0.38, metalness: 0.08 }))
+    const conveyorMatLeft = trackMat(new THREE.MeshStandardMaterial({ map: conveyorTexLeft, bumpMap: gripPair.bumpMap, bumpScale: 0.03, roughness: 0.38, metalness: 0.08 }))
+    const conveyorMatRight = trackMat(new THREE.MeshStandardMaterial({ map: conveyorTexRight, bumpMap: gripPair.bumpMap, bumpScale: 0.03, roughness: 0.38, metalness: 0.08 }))
 
     const poleMat = trackMat(new THREE.MeshStandardMaterial({ color: '#E2E8F0', roughness: 0.3, metalness: 0.35 }))
-    const whiteTrimMat = trackMat(new THREE.MeshStandardMaterial({ color: '#F8FAFC', roughness: 0.25, metalness: 0.05 }))
-    const flagInactiveMat = trackMat(new THREE.MeshStandardMaterial({ color: '#38BDF8', roughness: 0.3 }))
-    const flagActiveMat = trackMat(new THREE.MeshStandardMaterial({ color: '#22C55E', roughness: 0.28 }))
-    const goldMat = trackMat(new THREE.MeshStandardMaterial({ color: '#FBBF24', roughness: 0.24, metalness: 0.45 }))
+    const whiteTrimMat = getSurfaceMat('marble', '#F8FAFC', 1, 1, 0.28, 0.06)
+    const flagInactiveMat = trackMat(new THREE.MeshStandardMaterial({ color: '#38BDF8', roughness: 0.32 }))
+    const flagActiveMat = trackMat(new THREE.MeshStandardMaterial({ color: '#22C55E', roughness: 0.3 }))
+    const goldMat = getSurfaceMat('marble', '#FBBF24', 1, 1, 0.24, 0.42)
 
     // Shared geometries
     const unitBoxGeo = trackGeo(new THREE.BoxGeometry(1, 1, 1))
@@ -784,6 +821,10 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       let mat: THREE.MeshStandardMaterial
       let geo: THREE.BufferGeometry = unitBoxGeo
 
+      // Proportional UV repeats so long bridges & wide decks stay razor-crisp (never stretched!)
+      const rx = Math.max(1, Math.min(6, Math.round(b.w / 3.2)))
+      const rz = Math.max(1, Math.min(8, Math.round(Math.max(b.d, b.h) / 3.2)))
+
       if (b.kind === 'hazard' || b.kind === 'spinner') {
         mat = hazardMat
       } else if (b.kind === 'jumppad') {
@@ -798,11 +839,15 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         } else {
           mat = vz <= 0 ? conveyorMatFwd : conveyorMatBack
         }
+      } else if (b.kind === 'checkpoint') {
+        mat = getSurfaceMat('marble', b.color, Math.max(2, rx), Math.max(2, rz), 0.28, b.checkpointStage === 100 ? 0.28 : 0.06)
       } else if (b.kind === 'fade') {
         mat = trackMat(
           new THREE.MeshStandardMaterial({
             color: b.color,
-            map: studTex,
+            map: marblePair.map,
+            bumpMap: marblePair.bumpMap,
+            bumpScale: marblePair.defaultBumpScale,
             roughness: 0.28,
             metalness: 0.06,
             transparent: true,
@@ -810,23 +855,30 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           }),
         )
       } else if (b.kind === 'fake') {
-        // Semi-transparent smooth glass without studs (gives observant players a fair visual clue!)
+        // Frosted semi-transparent glass (smooth, no architectural bevels — observant players can spot the real marble slabs!)
         mat = trackMat(
           new THREE.MeshStandardMaterial({
             color: b.color,
-            roughness: 0.1,
+            roughness: 0.12,
             metalness: 0.1,
             transparent: true,
             opacity: 0.62,
           }),
         )
-      } else if (b.kind === 'pillar' || b.kind === 'bounce') {
+      } else if (b.kind === 'pillar') {
         geo = unitCylGeo
-        mat = getStudMat(b.color, b.kind === 'bounce' ? 0.24 : 0.34, 0.06)
+        mat = getSurfaceMat('fluted', b.color, 2, 1, 0.34, 0.06)
+      } else if (b.kind === 'bounce') {
+        geo = unitCylGeo
+        mat = getSurfaceMat('grip', b.color, 2, 2, 0.26, 0.08)
       } else if (b.kind === 'pusher') {
-        mat = getStudMat(b.color, 0.26, 0.14)
+        mat = getSurfaceMat('grip', b.color, 2, 1, 0.3, 0.16)
+      } else if (b.kind === 'decor') {
+        mat = getSurfaceMat('fluted', b.color, 1, Math.max(1, Math.round(b.h / 2.5)), 0.36, 0.06)
+      } else if (b.kind === 'moving') {
+        mat = getSurfaceMat('terrazzo', b.color, rx, rz, 0.32, 0.1)
       } else {
-        mat = getStudMat(b.color)
+        mat = getSurfaceMat('facetTile', b.color, rx, rz, 0.32, 0.07)
       }
 
       const mesh = new THREE.Mesh(geo, mat)
@@ -937,7 +989,10 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       stem.position.y = 0.95
       const cup = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(1.15, 0.55, 1.45, 18)), goldMat)
       cup.position.y = 2.1
-      const crown = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(0.9, 0.9, 0.9, 3, 0.12)), getStudMat('#38BDF8', 0.2, 0.25))
+      const crown = new THREE.Mesh(
+        trackGeo(new RoundedBoxGeometry(0.9, 0.9, 0.9, 3, 0.12)),
+        getSurfaceMat('ice', '#38BDF8', 1, 1, 0.16, 0.28),
+      )
       crown.position.y = 3.25
       trophyGroup.add(base, stem, cup, crown)
       trophyGroup.position.set(finishCp.x, finishCp.y + 1.45, finishCp.z - 3.6)
@@ -952,7 +1007,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       for (let i = 0; i < 36; i++) {
         const cm = new THREE.Mesh(
           confGeo,
-          getStudMat(confettiColors[i % confettiColors.length], 0.35, 0.05),
+          getSurfaceMat('facetTile', confettiColors[i % confettiColors.length], 1, 1, 0.32, 0.05),
         )
         const ang = (i / 36) * Math.PI * 2
         const rad = 3.5 + (i % 5) * 1.4

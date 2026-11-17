@@ -43,7 +43,8 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { FreshBloxLogo } from '../components/brand/FreshBloxBrand'
 import { MobileTouchControls } from '../components/hud/MobileTouchControls'
 import { InGameWardrobeDrawer } from '../components/hud/InGameWardrobeDrawer'
-import { createR6Rig, getSharedFreshStudTexture, R6RigHandle } from './r6Builder'
+import { createR6Rig, R6RigHandle } from './r6Builder'
+import { cloneFreshTexturesWithRepeat, FreshSurfaceKind } from './freshTextures'
 
 export type GraphicsQuality = 'low' | 'medium' | 'high'
 type WorldTimeMode = 'day' | 'night'
@@ -561,30 +562,32 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     scene.add(sun)
     sunLightRef.current = sun
 
-    // Shared Stud Texture & Pooled Materials
-    const baseStudTex = getSharedFreshStudTexture()
-    const studMatCache = new Map<string, THREE.MeshStandardMaterial>()
+    // Autorskie materiały FreshBlox z mapami albedo + bumpMap (zero studsów z Robloksa, zero płaskiego plastiku!)
+    const surfaceMatCache = new Map<string, THREE.MeshStandardMaterial>()
 
-    const getStudMat = (color: string, rx: number, rz: number, roughness = 0.26) => {
-      const key = `${color}_${rx}_${rz}_${roughness}`
-      const hit = studMatCache.get(key)
+    const getSurfaceMat = (
+      surface: FreshSurfaceKind,
+      color: string,
+      rx: number,
+      rz: number,
+      roughness = 0.32,
+      metalness = 0.05,
+    ) => {
+      const key = `${surface}_${color}_${rx}_${rz}_${roughness}_${metalness}`
+      const hit = surfaceMatCache.get(key)
       if (hit) return hit
-      let mapTex: THREE.Texture = baseStudTex
-      if (rx !== 1 || rz !== 1) {
-        const cloned = trackTex(baseStudTex.clone())
-        cloned.needsUpdate = true
-        cloned.repeat.set(rx, rz)
-        mapTex = cloned
-      }
+      const pair = cloneFreshTexturesWithRepeat(surface, rx, rz, trackTex)
       const mat = trackMat(
         new THREE.MeshStandardMaterial({
           color,
-          map: mapTex,
+          map: pair.map,
+          bumpMap: pair.bumpMap,
+          bumpScale: pair.bumpScale,
           roughness,
-          metalness: 0.05,
+          metalness,
         }),
       )
-      studMatCache.set(key, mat)
+      surfaceMatCache.set(key, mat)
       return mat
     }
 
@@ -598,15 +601,29 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       h: number,
       d: number,
       color: string,
-      opts?: { solid?: boolean; studs?: boolean; radius?: number; roughness?: number; castShadow?: boolean },
+      opts?: {
+        solid?: boolean
+        surface?: FreshSurfaceKind
+        radius?: number
+        roughness?: number
+        metalness?: number
+        tileUnit?: number
+        castShadow?: boolean
+      },
     ) => {
-      const { solid = true, studs = true, radius = 0.14, roughness = 0.26, castShadow = true } = opts ?? {}
-      const rx = Math.max(1, Math.round(w / 2))
-      const rz = Math.max(1, Math.round(d / 2))
+      const {
+        solid = true,
+        surface = 'facetTile',
+        radius = 0.14,
+        roughness = 0.32,
+        metalness = 0.05,
+        tileUnit = 2.6,
+        castShadow = true,
+      } = opts ?? {}
+      const rx = Math.max(1, Math.round(w / tileUnit))
+      const rz = Math.max(1, Math.round(Math.max(d, h) / tileUnit))
       const geo = trackGeo(new RoundedBoxGeometry(w, h, d, 2, Math.min(radius, h * 0.35)))
-      const mat = studs
-        ? getStudMat(color, rx, rz, roughness)
-        : trackMat(new THREE.MeshStandardMaterial({ color, roughness, metalness: 0.06 }))
+      const mat = getSurfaceMat(surface, color, rx, rz, roughness, metalness)
       const mesh = new THREE.Mesh(geo, mat)
       mesh.position.set(x, y, z)
       mesh.castShadow = castShadow
@@ -626,41 +643,65 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     }
 
     // === MAIN LOBBY (LOBBY GŁÓWNE) WORLD GEOMETRY ===
-    addBlock(0, -1.5, 0, 74, 3, 74, '#E0F2FE', { radius: 0.28, roughness: 0.34, castShadow: false })
-    addBlock(0, -0.02, 0, 26, 0.3, 26, '#BAE6FD', { radius: 0.12, roughness: 0.28, castShadow: false })
-    addBlock(0, 0.06, 0, 14, 0.26, 14, '#7DD3FC', { radius: 0.1, roughness: 0.24, castShadow: false })
+    // Main plaza deck: Arctic architectural terrazzo stone pavers
+    addBlock(0, -1.5, 0, 74, 3, 74, '#E2F1FC', {
+      surface: 'terrazzo',
+      tileUnit: 4.5,
+      radius: 0.28,
+      roughness: 0.44,
+      castShadow: false,
+    })
+    addBlock(0, -0.02, 0, 26, 0.3, 26, '#C4E5FB', {
+      surface: 'marble',
+      tileUnit: 3.6,
+      radius: 0.12,
+      roughness: 0.32,
+      castShadow: false,
+    })
+    addBlock(0, 0.06, 0, 14, 0.26, 14, '#8FD4FC', {
+      surface: 'facetTile',
+      tileUnit: 2.8,
+      radius: 0.1,
+      roughness: 0.28,
+      castShadow: false,
+    })
 
-    // Four cardinal walkway carpets (raised 0.025 above plaza top to prevent z-fighting; still smoothly auto-stepped!)
-    addBlock(0, 0.055, 18, 6.2, 0.2, 22, '#F0F9FF', { radius: 0.08, castShadow: false })
-    addBlock(0, 0.055, -18, 6.2, 0.2, 22, '#F0F9FF', { radius: 0.08, castShadow: false })
-    addBlock(18, 0.055, 0, 22, 0.2, 6.2, '#F0F9FF', { radius: 0.08, castShadow: false })
-    addBlock(-18, 0.055, 0, 22, 0.2, 6.2, '#F0F9FF', { radius: 0.08, castShadow: false })
+    // Four cardinal walkway runners: honed light marble slabs
+    addBlock(0, 0.055, 18, 6.2, 0.2, 22, '#F4F9FE', { surface: 'marble', tileUnit: 3.1, radius: 0.08, roughness: 0.3, castShadow: false })
+    addBlock(0, 0.055, -18, 6.2, 0.2, 22, '#F4F9FE', { surface: 'marble', tileUnit: 3.1, radius: 0.08, roughness: 0.3, castShadow: false })
+    addBlock(18, 0.055, 0, 22, 0.2, 6.2, '#F4F9FE', { surface: 'marble', tileUnit: 3.1, radius: 0.08, roughness: 0.3, castShadow: false })
+    addBlock(-18, 0.055, 0, 22, 0.2, 6.2, '#F4F9FE', { surface: 'marble', tileUnit: 3.1, radius: 0.08, roughness: 0.3, castShadow: false })
 
-    // Central FreshBlox Crystal Fountain Monument
-    addBlock(0, 0.45, 0, 6.4, 0.9, 6.4, '#F8FAFC', { radius: 0.16 })
+    // Central FreshBlox Crystal Fountain Monument (Marble basin + sunlit stylized water + natural crystal)
+    addBlock(0, 0.45, 0, 6.4, 0.9, 6.4, '#F8FAFC', { surface: 'marble', tileUnit: 2.4, radius: 0.16, roughness: 0.28 })
+    const waterPair = cloneFreshTexturesWithRepeat('water', 2, 2, trackTex)
     const waterPoolMat = trackMat(
       new THREE.MeshStandardMaterial({
         color: '#38BDF8',
-        emissive: '#0284C7',
-        emissiveIntensity: 0.3,
-        roughness: 0.1,
-        metalness: 0.18,
+        map: waterPair.map,
+        bumpMap: waterPair.bumpMap,
+        bumpScale: waterPair.bumpScale,
+        roughness: 0.14,
+        metalness: 0.12,
       }),
     )
     const waterPool = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(5.2, 0.28, 5.2, 2, 0.08)), waterPoolMat)
     waterPool.position.set(0, 0.88, 0)
+    waterPool.receiveShadow = true
     scene.add(waterPool)
 
-    addBlock(0, 1.55, 0, 1.8, 1.4, 1.8, '#0284C7', { radius: 0.14 })
+    addBlock(0, 1.55, 0, 1.8, 1.4, 1.8, '#0284C7', { surface: 'fluted', tileUnit: 1.8, radius: 0.14, roughness: 0.28 })
+    const crystalPair = cloneFreshTexturesWithRepeat('ice', 1, 1, trackTex)
     const centerCrystal = new THREE.Mesh(
       trackGeo(new THREE.OctahedronGeometry(1.15, 0)),
       trackMat(
         new THREE.MeshStandardMaterial({
           color: '#7DD3FC',
-          emissive: '#0EA5E9',
-          emissiveIntensity: 0.55,
+          map: crystalPair.map,
+          bumpMap: crystalPair.bumpMap,
+          bumpScale: 0.04,
           roughness: 0.12,
-          metalness: 0.2,
+          metalness: 0.22,
         }),
       ),
     )
@@ -668,10 +709,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     centerCrystal.castShadow = true
     scene.add(centerCrystal)
 
-    // === INTERACTIVE HANGOUT BENCHES (5 sculpted glossy benches with backrests!) ===
-    const benchSeatMat = trackMat(new THREE.MeshStandardMaterial({ color: '#0369A1', roughness: 0.25, metalness: 0.08 }))
-    const benchBackMat = trackMat(new THREE.MeshStandardMaterial({ color: '#0EA5E9', roughness: 0.24, metalness: 0.08 }))
-    const benchLegMat = trackMat(new THREE.MeshStandardMaterial({ color: '#F8FAFC', roughness: 0.26 }))
+    // === INTERACTIVE HANGOUT BENCHES (5 sculpted timber-and-stone benches with backrests!) ===
+    const benchSeatMat = getSurfaceMat('wood', '#C28A5B', 2, 1, 0.56, 0.02)
+    const benchBackMat = getSurfaceMat('wood', '#B0774A', 2, 1, 0.58, 0.02)
+    const benchLegMat = getSurfaceMat('terrazzo', '#E2E8F0', 1, 1, 0.42, 0.05)
     const benchSeatGeo = trackGeo(new RoundedBoxGeometry(3.6, 0.3, 1.2, 2, 0.08))
     const benchBackGeo = trackGeo(new RoundedBoxGeometry(3.6, 0.72, 0.24, 2, 0.06))
     const benchLegGeo = trackGeo(new RoundedBoxGeometry(0.4, 0.52, 0.96, 2, 0.06))
@@ -720,20 +761,13 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     }
 
     // Hangout Stage / Dance Platform (South side) + Walk-up stairs!
-    addBlock(0, 0.45, 24, 13, 0.9, 8.5, '#0F172A', { radius: 0.16 })
+    addBlock(0, 0.45, 24, 13, 0.9, 8.5, '#1E293B', { surface: 'terrazzo', tileUnit: 3.0, radius: 0.16, roughness: 0.44 })
     // Seamless auto-step-up front stair leading onto the stage
-    addBlock(0, 0.22, 19.3, 6.4, 0.45, 1.4, '#38BDF8', { radius: 0.08 })
-    const danceFloorMat = trackMat(
-      new THREE.MeshStandardMaterial({
-        color: '#0EA5E9',
-        emissive: '#0284C7',
-        emissiveIntensity: 0.42,
-        roughness: 0.18,
-        metalness: 0.15,
-      }),
-    )
+    addBlock(0, 0.22, 19.3, 6.4, 0.45, 1.4, '#38BDF8', { surface: 'facetTile', tileUnit: 2.0, radius: 0.08 })
+    const danceFloorMat = getSurfaceMat('facetTile', '#0EA5E9', 5, 3, 0.24, 0.12)
     const danceFloor = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(11.6, 0.16, 7.2, 2, 0.05)), danceFloorMat)
     danceFloor.position.set(0, 0.92, 24)
+    danceFloor.receiveShadow = true
     scene.add(danceFloor)
 
     // Game Mode Portals (North side) — Test Obby 100 is LIVE!
@@ -743,9 +777,9 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     ]
 
     const createPortalArch = (x: number, z: number, label: string, sub: string, color: string) => {
-      addBlock(x - 3.1, 3.1, z, 1.1, 6.2, 1.2, '#F8FAFC', { radius: 0.14 })
-      addBlock(x + 3.1, 3.1, z, 1.1, 6.2, 1.2, '#F8FAFC', { radius: 0.14 })
-      addBlock(x, 6.3, z, 7.4, 1.1, 1.3, color, { radius: 0.16 })
+      addBlock(x - 3.1, 3.1, z, 1.1, 6.2, 1.2, '#F8FAFC', { surface: 'fluted', tileUnit: 2.0, radius: 0.14, roughness: 0.34 })
+      addBlock(x + 3.1, 3.1, z, 1.1, 6.2, 1.2, '#F8FAFC', { surface: 'fluted', tileUnit: 2.0, radius: 0.14, roughness: 0.34 })
+      addBlock(x, 6.3, z, 7.4, 1.1, 1.3, color, { surface: 'facetTile', tileUnit: 2.2, radius: 0.16, roughness: 0.28 })
 
       const gate = new THREE.Mesh(
         trackGeo(new THREE.PlaneGeometry(5.1, 5.4)),
@@ -801,8 +835,13 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       { x: 21.5, y: 5.3, z: 7.5, w: 4.5, h: 0.7, d: 4.5, c: '#38BDF8' },
       { x: 25.5, y: 6.8, z: 13.5, w: 8.6, h: 0.9, d: 8.6, c: '#F0F9FF' },
     ]
-    for (const s of terraceSteps) {
-      addBlock(s.x, s.y, s.z, s.w, s.h, s.d, s.c, { radius: 0.14 })
+    for (let i = 0; i < terraceSteps.length; i++) {
+      const s = terraceSteps[i]
+      addBlock(s.x, s.y, s.z, s.w, s.h, s.d, s.c, {
+        surface: i === terraceSteps.length - 1 ? 'marble' : 'facetTile',
+        tileUnit: 2.2,
+        radius: 0.14,
+      })
     }
 
     const terraceBeacon = new THREE.Mesh(
@@ -810,34 +849,39 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       trackMat(
         new THREE.MeshStandardMaterial({
           color: '#38BDF8',
-          emissive: '#0EA5E9',
-          emissiveIntensity: 0.7,
-          roughness: 0.12,
+          map: crystalPair.map,
+          bumpMap: crystalPair.bumpMap,
+          bumpScale: 0.04,
+          roughness: 0.14,
+          metalness: 0.24,
         }),
       ),
     )
     terraceBeacon.position.set(25.5, 9.2, 13.5)
     scene.add(terraceBeacon)
 
-    // Stylized Fresh Glossy Block Trees
+    // Stylized FreshBlox Sculpted Trees (textured wood bark + painterly leaf canopy!)
     const trunkGeo = trackGeo(new RoundedBoxGeometry(1.1, 3.6, 1.1, 2, 0.12))
-    const trunkMat = trackMat(new THREE.MeshStandardMaterial({ color: '#92400E', roughness: 0.52 }))
-    const foliageGeo1 = trackGeo(new RoundedBoxGeometry(3.8, 2.2, 3.8, 2, 0.26))
-    const foliageGeo2 = trackGeo(new RoundedBoxGeometry(2.5, 1.6, 2.5, 2, 0.22))
-    const foliageMat1 = trackMat(new THREE.MeshStandardMaterial({ color: '#38BDF8', roughness: 0.28 }))
-    const foliageMat2 = trackMat(new THREE.MeshStandardMaterial({ color: '#BAE6FD', roughness: 0.24 }))
+    const trunkMat = getSurfaceMat('wood', '#9A633C', 1, 2, 0.68, 0.02)
+    const foliageGeo1 = trackGeo(new RoundedBoxGeometry(3.8, 2.2, 3.8, 2, 0.28))
+    const foliageGeo2 = trackGeo(new RoundedBoxGeometry(2.5, 1.6, 2.5, 2, 0.24))
+    const foliageMat1 = getSurfaceMat('foliage', '#38BDF8', 2, 2, 0.42, 0.02)
+    const foliageMat2 = getSurfaceMat('foliage', '#BAE6FD', 2, 2, 0.36, 0.02)
 
     const addTree = (x: number, z: number) => {
       const trunk = new THREE.Mesh(trunkGeo, trunkMat)
       trunk.position.set(x, 1.8, z)
       trunk.castShadow = true
+      trunk.receiveShadow = true
       scene.add(trunk)
       const f1 = new THREE.Mesh(foliageGeo1, foliageMat1)
       f1.position.set(x, 4.1, z)
       f1.castShadow = true
+      f1.receiveShadow = true
       scene.add(f1)
       const f2 = new THREE.Mesh(foliageGeo2, foliageMat2)
       f2.position.set(x, 5.5, z)
+      f2.castShadow = true
       scene.add(f2)
       colliders.push({ minX: x - 0.65, maxX: x + 0.65, minY: 0, maxY: 3.6, minZ: z - 0.65, maxZ: z + 0.65 })
     }
@@ -854,17 +898,16 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     ]
     for (const [tx, tz] of treeCoords) addTree(tx, tz)
 
-    // Jump-Pads
+    // Jump-Pads (tactile athletic grip deck + crisp satin sky ring — zero neon!)
     const jumpPads: JumpPad[] = []
-    const padBaseGeo = trackGeo(new THREE.CylinderGeometry(1.55, 1.8, 0.28, 16))
-    const padBaseMat = trackMat(new THREE.MeshStandardMaterial({ color: '#0F172A', roughness: 0.3 }))
-    const padRingGeo = trackGeo(new THREE.TorusGeometry(1.22, 0.14, 8, 20))
+    const padBaseGeo = trackGeo(new THREE.CylinderGeometry(1.55, 1.8, 0.28, 20))
+    const padBaseMat = getSurfaceMat('grip', '#1E293B', 2, 2, 0.38, 0.12)
+    const padRingGeo = trackGeo(new THREE.TorusGeometry(1.22, 0.14, 10, 24))
     const padRingMat = trackMat(
       new THREE.MeshStandardMaterial({
         color: '#38BDF8',
-        emissive: '#0EA5E9',
-        emissiveIntensity: 0.85,
-        roughness: 0.16,
+        roughness: 0.2,
+        metalness: 0.24,
       }),
     )
 
@@ -1605,7 +1648,11 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         showToast(t.terraceUnlocked)
       }
 
-      // Animate monument crystals & clouds
+      // Animate monument crystals, fountain water ripples & clouds
+      waterPair.map.offset.x = (elapsed * 0.06) % 1
+      waterPair.map.offset.y = (elapsed * 0.045) % 1
+      waterPair.bumpMap.offset.x = waterPair.map.offset.x
+      waterPair.bumpMap.offset.y = waterPair.map.offset.y
       centerCrystal.rotation.y = elapsed * 0.9
       centerCrystal.position.y = 3.85 + Math.sin(elapsed * 2.1) * 0.28
       terraceBeacon.rotation.y = -elapsed * 1.4

@@ -5,7 +5,6 @@ import { PlayerPose } from '../lib/multiplayer'
 import { createEmptyPoseTarget, evaluateR6Pose } from './r6Animations'
 
 // Cached shared geometries & lightweight textures to slash GPU memory & draw-call setup
-let sharedStudTex: THREE.CanvasTexture | null = null
 let sharedBlobShadowTex: THREE.CanvasTexture | null = null
 let sharedR6Geos: {
   torso: THREE.BufferGeometry
@@ -28,48 +27,6 @@ export function getSharedR6Geometries() {
     }
   }
   return sharedR6Geos
-}
-
-/** Shared subtle Fresh Glossy stud texture — reused across the entire 3D world */
-export function getSharedFreshStudTexture(): THREE.CanvasTexture {
-  if (sharedStudTex) return sharedStudTex
-  const canvas = document.createElement('canvas')
-  canvas.width = 128
-  canvas.height = 128
-  const ctx = canvas.getContext('2d')!
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, 128, 128)
-
-  const positions = [32, 96]
-  for (const x of positions) {
-    for (const y of positions) {
-      ctx.beginPath()
-      ctx.arc(x, y + 2, 16, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.075)'
-      ctx.fill()
-
-      const grad = ctx.createRadialGradient(x - 4, y - 4, 2, x, y, 16)
-      grad.addColorStop(0, 'rgba(255, 255, 255, 0.96)')
-      grad.addColorStop(0.75, 'rgba(226, 238, 248, 0.9)')
-      grad.addColorStop(1, 'rgba(148, 163, 184, 0.22)')
-      ctx.beginPath()
-      ctx.arc(x, y, 15, 0, Math.PI * 2)
-      ctx.fillStyle = grad
-      ctx.fill()
-
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)'
-      ctx.lineWidth = 1.5
-      ctx.stroke()
-    }
-  }
-
-  const tex = new THREE.CanvasTexture(canvas)
-  tex.wrapS = THREE.RepeatWrapping
-  tex.wrapT = THREE.RepeatWrapping
-  tex.colorSpace = THREE.SRGBColorSpace
-  tex.anisotropy = 2
-  sharedStudTex = tex
-  return tex
 }
 
 /** Lightweight radial foot shadow texture (keeps avatars grounded even when shadow maps are off) */
