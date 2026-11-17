@@ -3,6 +3,7 @@ import { Check, Crown, Eye, Lock, Palette, RotateCcw, Shirt, ShoppingBag, Smile,
 import {
   FACE_CATALOG,
   FaceId,
+  GEMS_SYSTEM_IN_PROGRESS,
   HAT_CATALOG,
   HatId,
   OUTFIT_CATALOG,
@@ -140,7 +141,7 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
         const isEquipped = isOwned && equippedOwnedId === item.id
         const isTryingOn = !isOwned && previewedId === item.id
         const isSelected = previewedId === item.id
-        const canAfford = freshGems >= item.price
+        const canAfford = !GEMS_SYSTEM_IN_PROGRESS && freshGems >= item.price
         const sw = category === 'outfit' ? OUTFIT_SWATCHES[item.id as OutfitId] : null
 
         return (
@@ -216,11 +217,17 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
                 className={`mt-2 flex w-full items-center justify-center gap-1 rounded-xl py-1 text-[10px] font-extrabold transition cursor-pointer ${
                   canAfford
                     ? 'bg-sky-400 text-slate-950 hover:bg-sky-300 active:scale-95'
-                    : 'bg-rose-500/20 text-rose-300 opacity-65 cursor-not-allowed'
+                    : 'bg-amber-500/15 text-amber-200/90 opacity-85 cursor-not-allowed'
                 }`}
               >
                 {!canAfford && <Lock className="h-2.5 w-2.5" />}
-                <span>{canAfford ? `${t.buy} • ${item.price}` : t.notEnough}</span>
+                <span>
+                  {GEMS_SYSTEM_IN_PROGRESS
+                    ? LOCALES[lang].gemsNotice.shopLocked
+                    : canAfford
+                      ? `${t.buy} • ${item.price}`
+                      : t.notEnough}
+                </span>
               </button>
             )}
           </div>
@@ -250,10 +257,17 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          <div className="flex items-center gap-1 rounded-xl bg-white/8 border border-white/10 px-2 py-1 text-xs font-extrabold text-sky-100">
-            <FreshGemShard size={13} />
-            <span>{freshGems}</span>
-          </div>
+          {GEMS_SYSTEM_IN_PROGRESS ? (
+            <div className="flex items-center gap-1 rounded-xl bg-amber-500/15 border border-amber-400/30 px-2 py-1 text-[10px] font-extrabold text-amber-200">
+              <FreshGemShard size={12} />
+              <span>{LOCALES[lang].nav.gemsWipPill}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 rounded-xl bg-white/8 border border-white/10 px-2 py-1 text-xs font-extrabold text-sky-100">
+              <FreshGemShard size={13} />
+              <span>{freshGems}</span>
+            </div>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -352,23 +366,29 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
             </button>
           </div>
 
-          <button
-            type="button"
-            disabled={freshGems < totalTryOnPrice}
-            onClick={handleBuyBundle}
-            className={`flex w-full items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-extrabold transition cursor-pointer ${
-              freshGems >= totalTryOnPrice
-                ? 'bg-sky-400 text-slate-950 hover:bg-sky-300 active:scale-[0.98]'
-                : 'bg-rose-500/20 text-rose-300 cursor-not-allowed'
-            }`}
-          >
-            <ShoppingBag className="h-3.5 w-3.5" />
-            <span>
-              {freshGems >= totalTryOnPrice
-                ? `${t.buySelected} (${totalTryOnPrice} Gems)`
-                : `${t.notEnough} (${totalTryOnPrice} Gems)`}
-            </span>
-          </button>
+          {GEMS_SYSTEM_IN_PROGRESS ? (
+            <div className="rounded-xl bg-slate-950/60 border border-amber-400/25 px-2.5 py-1.5 text-[10px] font-semibold text-amber-100/90 leading-snug">
+              {LOCALES[lang].gemsNotice.short}
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={freshGems < totalTryOnPrice}
+              onClick={handleBuyBundle}
+              className={`flex w-full items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-extrabold transition cursor-pointer ${
+                freshGems >= totalTryOnPrice
+                  ? 'bg-sky-400 text-slate-950 hover:bg-sky-300 active:scale-[0.98]'
+                  : 'bg-rose-500/20 text-rose-300 cursor-not-allowed'
+              }`}
+            >
+              <ShoppingBag className="h-3.5 w-3.5" />
+              <span>
+                {freshGems >= totalTryOnPrice
+                  ? `${t.buySelected} (${totalTryOnPrice} Gems)`
+                  : `${t.notEnough} (${totalTryOnPrice} Gems)`}
+              </span>
+            </button>
+          )}
         </div>
       )}
 

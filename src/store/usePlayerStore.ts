@@ -1,18 +1,27 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   DAILY_QUESTS,
   FaceId,
+  GEMS_SYSTEM_IN_PROGRESS,
   HatId,
+  OUTFIT_CATALOG,
+  HAT_CATALOG,
+  FACE_CATALOG,
   OutfitId,
   QuestDef,
   R6AvatarConfig,
+  WorldKind,
 } from '../data/catalog'
+import { isSupabaseConfigured, supabase } from '../lib/supabase'
 
 export interface FriendEntry {
   id: string
   username: string
+  freshTag?: string
   status: 'online' | 'in-lobby' | 'offline'
   roomCode?: string
+  world?: WorldKind
+  obbyBestStage?: number
 }
 
 export interface QuestProgressState {
@@ -33,9 +42,49 @@ export interface PlayerProfile {
   badges: string[]
   quests: QuestProgressState
   friends: FriendEntry[]
+  obbyStage: number
+  obbyBestStage: number
+  obbyCompletions: number
+  obbyBestTimeMs: number | null
 }
 
-const STORAGE_KEY = 'freshblox_player_profile_v1'
+export interface AuthUserInfo {
+  id: string
+  email: string | null
+}
+
+export interface CloudPlayerSummary {
+  id: string
+  username: string
+  freshTag: string
+  xp: number
+  obbyBestStage: number
+  obbyCompletions: number
+  obbyBestTimeMs: number | null
+  lastWorld: WorldKind
+  lastRoom: string
+  isOnline: boolean
+}
+
+const STORAGE_KEY = 'freshblox_player_profile_v2'
+const LEGACY_STORAGE_KEY = 'freshblox_player_profile_v1'
+
+const DEFAULT_QUEST_PROGRESS: QuestProgressState = {
+  progress: {
+    q_obby: 0,
+    q_chat: 0,
+    q_emote: 0,
+    q_jumppad: 0,
+    q_tower: 0,
+  },
+  claimed: {
+    q_obby: false,
+    q_chat: false,
+    q_emote: false,
+    q_jumppad: false,
+    q_tower: false,
+  },
+}
 
 function createDefaultProfile(): PlayerProfile {
   const rnd = Math.floor(1000 + Math.random() * 8999)
@@ -43,8 +92,8 @@ function createDefaultProfile(): PlayerProfile {
     playerId: `fb_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
     username: `FreshPlayer${rnd.toString().slice(0, 2)}`,
     freshTag: `#FB-${rnd}`,
-    freshGems: 250,
-    xp: 80,
+    freshGems: 0,
+    xp: 0,
     avatar: {
       outfitId: 'fresh-creator',
       faceId: 'fresh-smile',
@@ -56,65 +105,114 @@ function createDefaultProfile(): PlayerProfile {
     unlockedFaces: ['fresh-smile', 'wink-pro'],
     badges: ['pioneer'],
     quests: {
-      progress: {
-        q_gems: 0,
-        q_chat: 0,
-        q_emote: 0,
-        q_jumppad: 0,
-        q_tower: 0,
-      },
-      claimed: {
-        q_gems: false,
-        q_chat: false,
-        q_emote: false,
-        q_jumppad: false,
-        q_tower: false,
-      },
+      progress: { ...DEFAULT_QUEST_PROGRESS.progress },
+      claimed: { ...DEFAULT_QUEST_PROGRESS.claimed },
     },
-    friends: [
-      { id: 'f1', username: 'KubaDev', status: 'in-lobby', roomCode: 'PUBLIC-1' },
-      { id: 'f2', username: 'NadiaSky', status: 'in-lobby', roomCode: 'PUBLIC-1' },
-      { id: 'f3', username: 'MatiBlox', status: 'online', roomCode: 'CHILL-PL' },
-    ],
+    friends: [],
+    obbyStage: 1,
+    obbyBestStage: 1,
+    obbyCompletions: 0,
+    obbyBestTimeMs: null,
   }
 }
 
-function loadProfile(): PlayerProfile {
+function migrateOutfitId(id?: string): OutfitId {
+  if (id === 'midnight-neon') return 'midnight-slate'
+  if (OUTFIT_CATALOG.some((o) => o.id === id)) return id as OutfitId
+  return 'fresh-creator'
+}
+
+function normalizeUnlocked(items: string[] | undefined) {
+  const set = new Set((items ?? []).map((x) => (x === 'midnight-neon' ? 'midnight-slate' : x)))
+  const outfits = OUTFIT_CATALOG.filter((o) => o.price === 0 || set.has(o.id)).map((o) => o.id)
+  const hats = HAT_CATALOG.filter((h) => h.price === 0 || set.has(h.id)).map((h) => h.id)
+  const faces = FACE_CATALOG.filter((f) => f.price === 0 || set.has(f.id)).map((f) => f.id)
+  return { outfits, hats, faces }
+}
+
+function loadLocalProfile(): PlayerProfile {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
     if (!raw) return createDefaultProfile()
     const parsed = JSON.parse(raw) as Partial<PlayerProfile>
     const def = createDefaultProfile()
-    const migrateOutfit = (id?: string): OutfitId =>
-      id === 'midnight-neon' ? 'midnight-slate' : ((id as OutfitId) ?? def.avatar.outfitId)
     const unlockedOutfits = Array.isArray(parsed.unlockedOutfits)
-      ? Array.from(new Set(parsed.unlockedOutfits.map((id) => migrateOutfit(id))))
+      ? Array.from(new Set(['fresh-creator', 'classic-remaster', ...parsed.unlockedOutfits.map((id) => migrateOutfitId(id))]))
       : def.unlockedOutfits
+    const unlockedHats = Array.isArray(parsed.unlockedHats)
+      ? Array.from(new Set(['none', ...parsed.unlockedHats])) as HatId[]
+      : def.unlockedHats
+    const unlockedFaces = Array.isArray(parsed.unlockedFaces)
+      ? Array.from(new Set(['fresh-smile', 'wink-pro', ...parsed.unlockedFaces])) as FaceId[]
+      : def.unlockedFaces
+
     return {
       ...def,
       ...parsed,
-      unlockedOutfits,
+      freshGems: GEMS_SYSTEM_IN_PROGRESS ? 0 : (parsed.freshGems ?? 0),
+      unlockedOutfits: unlockedOutfits as OutfitId[],
+      unlockedHats,
+      unlockedFaces,
       avatar: {
-        outfitId: migrateOutfit(parsed.avatar?.outfitId),
+        outfitId: migrateOutfitId(parsed.avatar?.outfitId),
         faceId: parsed.avatar?.faceId ?? def.avatar.faceId,
         hatId: parsed.avatar?.hatId ?? def.avatar.hatId,
         skinColor: parsed.avatar?.skinColor ?? def.avatar.skinColor,
       },
       quests: {
-        progress: { ...def.quests.progress, ...(parsed.quests?.progress ?? {}) },
-        claimed: { ...def.quests.claimed, ...(parsed.quests?.claimed ?? {}) },
+        progress: { ...DEFAULT_QUEST_PROGRESS.progress, ...(parsed.quests?.progress ?? {}) },
+        claimed: { ...DEFAULT_QUEST_PROGRESS.claimed, ...(parsed.quests?.claimed ?? {}) },
       },
-      friends: Array.isArray(parsed.friends) ? parsed.friends : def.friends,
+      friends: Array.isArray(parsed.friends) ? parsed.friends : [],
       badges: Array.isArray(parsed.badges) ? parsed.badges : def.badges,
+      obbyStage: Math.max(1, Math.min(100, Number(parsed.obbyStage) || 1)),
+      obbyBestStage: Math.max(1, Math.min(100, Number(parsed.obbyBestStage) || 1)),
+      obbyCompletions: Math.max(0, Number(parsed.obbyCompletions) || 0),
+      obbyBestTimeMs: typeof parsed.obbyBestTimeMs === 'number' ? parsed.obbyBestTimeMs : null,
     }
   } catch {
     return createDefaultProfile()
   }
 }
 
-export function usePlayerStore() {
-  const [profile, setProfile] = useState<PlayerProfile>(() => loadProfile())
+interface DbProfileRow {
+  id: string
+  username: string
+  fresh_tag: string
+  fresh_gems: number
+  xp: number
+  avatar_config: Partial<R6AvatarConfig> | null
+  unlocked_items: string[] | null
+  badges: string[] | null
+  quests: Partial<QuestProgressState> | null
+  obby_stage: number | null
+  obby_best_stage: number | null
+  obby_completions: number | null
+  obby_best_time_ms: number | null
+  last_world?: string | null
+  last_room?: string | null
+  last_seen?: string | null
+}
 
+function isRecentlyOnline(lastSeen?: string | null): boolean {
+  if (!lastSeen) return false
+  return Date.now() - new Date(lastSeen).getTime() < 5 * 60 * 1000
+}
+
+export function usePlayerStore() {
+  const [profile, setProfile] = useState<PlayerProfile>(() => loadLocalProfile())
+  const [authUser, setAuthUser] = useState<AuthUserInfo | null>(null)
+  const [authLoading, setAuthLoading] = useState<boolean>(isSupabaseConfigured)
+  const [cloudStatus, setCloudStatus] = useState<'guest' | 'syncing' | 'synced' | 'offline'>(
+    isSupabaseConfigured ? 'guest' : 'offline',
+  )
+
+  const syncTimerRef = useRef<number | null>(null)
+  const hydratedFromCloudRef = useRef<boolean>(false)
+  const authUserRef = useRef<AuthUserInfo | null>(null)
+  authUserRef.current = authUser
+
+  // Save guest/cached profile locally
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(profile))
@@ -123,10 +221,290 @@ export function usePlayerStore() {
     }
   }, [profile])
 
-  const setUsername = useCallback((name: string) => {
+  const loadFriendsFromCloud = useCallback(async (userId: string): Promise<FriendEntry[]> => {
+    if (!supabase) return []
+    const { data: rows } = await supabase
+      .from('fb_friendships')
+      .select('id, friend_id, friend_username, status')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+
+    if (!rows || rows.length === 0) return []
+
+    const usernames = rows.map((r) => r.friend_username)
+    const { data: profilesData } = await supabase
+      .from('fb_profiles')
+      .select('id, username, fresh_tag, last_world, last_room, last_seen, obby_best_stage')
+      .in('username', usernames)
+
+    const byName = new Map<string, DbProfileRow>()
+    for (const p of (profilesData ?? []) as unknown as DbProfileRow[]) {
+      byName.set(p.username.toLowerCase(), p)
+    }
+
+    return rows.map((r) => {
+      const matched = byName.get(r.friend_username.toLowerCase())
+      const online = isRecentlyOnline(matched?.last_seen)
+      return {
+        id: r.id,
+        username: matched?.username ?? r.friend_username,
+        freshTag: matched?.fresh_tag,
+        status: online ? 'in-lobby' : 'offline',
+        roomCode: matched?.last_room ?? 'PUBLIC-1',
+        world: (matched?.last_world === 'obby' ? 'obby' : 'lobby') as WorldKind,
+        obbyBestStage: matched?.obby_best_stage ?? 1,
+      }
+    })
+  }, [])
+
+  const hydrateCloudProfile = useCallback(
+    async (userId: string, email: string | null) => {
+      if (!supabase) return
+      setCloudStatus('syncing')
+      try {
+        let { data } = await supabase
+          .from('fb_profiles')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle<DbProfileRow>()
+
+        // Wait briefly once if trigger just fired on brand new signup
+        if (!data) {
+          await new Promise((r) => setTimeout(r, 350))
+          const retry = await supabase
+            .from('fb_profiles')
+            .select('*')
+            .eq('id', userId)
+            .maybeSingle<DbProfileRow>()
+          data = retry.data
+        }
+
+        if (!data) {
+          // Ensure profile row exists as safety fallback
+          const rnd = Math.floor(1000 + Math.random() * 8999)
+          const fallbackName = (email?.split('@')[0] ?? `FreshPlayer${rnd}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 16) || `Fresh${rnd}`
+          const inserted = await supabase
+            .from('fb_profiles')
+            .upsert({
+              id: userId,
+              username: `${fallbackName}_${rnd}`,
+              fresh_tag: `#FB-${rnd}`,
+              fresh_gems: 0,
+              xp: 0,
+            })
+            .select('*')
+            .single<DbProfileRow>()
+          data = inserted.data
+        }
+
+        if (data) {
+          const unlocked = normalizeUnlocked(data.unlocked_items ?? undefined)
+          const friends = await loadFriendsFromCloud(userId)
+
+          hydratedFromCloudRef.current = true
+          setProfile({
+            playerId: data.id,
+            username: data.username,
+            freshTag: data.fresh_tag,
+            freshGems: GEMS_SYSTEM_IN_PROGRESS ? 0 : (data.fresh_gems ?? 0),
+            xp: data.xp ?? 0,
+            avatar: {
+              outfitId: migrateOutfitId(data.avatar_config?.outfitId),
+              faceId: (data.avatar_config?.faceId as FaceId) ?? 'fresh-smile',
+              hatId: (data.avatar_config?.hatId as HatId) ?? 'none',
+              skinColor: data.avatar_config?.skinColor ?? '#FDE0B6',
+            },
+            unlockedOutfits: unlocked.outfits,
+            unlockedHats: unlocked.hats,
+            unlockedFaces: unlocked.faces,
+            badges: Array.isArray(data.badges) && data.badges.length > 0 ? data.badges : ['pioneer'],
+            quests: {
+              progress: { ...DEFAULT_QUEST_PROGRESS.progress, ...(data.quests?.progress ?? {}) },
+              claimed: { ...DEFAULT_QUEST_PROGRESS.claimed, ...(data.quests?.claimed ?? {}) },
+            },
+            friends,
+            obbyStage: Math.max(1, Math.min(100, data.obby_stage ?? 1)),
+            obbyBestStage: Math.max(1, Math.min(100, data.obby_best_stage ?? 1)),
+            obbyCompletions: Math.max(0, data.obby_completions ?? 0),
+            obbyBestTimeMs: data.obby_best_time_ms ?? null,
+          })
+          setCloudStatus('synced')
+        }
+      } catch {
+        setCloudStatus('offline')
+      }
+    },
+    [loadFriendsFromCloud],
+  )
+
+  // Listen to Supabase Auth session
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) {
+      setAuthLoading(false)
+      setCloudStatus('offline')
+      return
+    }
+
+    let mounted = true
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return
+      if (session?.user) {
+        const info = { id: session.user.id, email: session.user.email ?? null }
+        setAuthUser(info)
+        void hydrateCloudProfile(info.id, info.email).finally(() => {
+          if (mounted) setAuthLoading(false)
+        })
+      } else {
+        setAuthUser(null)
+        setCloudStatus('guest')
+        setAuthLoading(false)
+      }
+    })
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return
+      if (session?.user) {
+        const info = { id: session.user.id, email: session.user.email ?? null }
+        setAuthUser(info)
+        void hydrateCloudProfile(info.id, info.email)
+      } else {
+        hydratedFromCloudRef.current = false
+        setAuthUser(null)
+        setCloudStatus('guest')
+      }
+    })
+
+    return () => {
+      mounted = false
+      sub.subscription.unsubscribe()
+    }
+  }, [hydrateCloudProfile])
+
+  // Debounced cloud sync whenever profile changes while signed in
+  useEffect(() => {
+    if (!authUser || !supabase || !hydratedFromCloudRef.current) return
+    if (syncTimerRef.current) window.clearTimeout(syncTimerRef.current)
+    setCloudStatus('syncing')
+    syncTimerRef.current = window.setTimeout(() => {
+      if (!supabase || !authUserRef.current) return
+      const unlockedItems = Array.from(
+        new Set([...profile.unlockedOutfits, ...profile.unlockedHats, ...profile.unlockedFaces]),
+      )
+      supabase
+        .from('fb_profiles')
+        .update({
+          xp: profile.xp,
+          avatar_config: profile.avatar,
+          unlocked_items: unlockedItems,
+          badges: profile.badges,
+          quests: profile.quests,
+          obby_stage: profile.obbyStage,
+          obby_best_stage: profile.obbyBestStage,
+          obby_completions: profile.obbyCompletions,
+          obby_best_time_ms: profile.obbyBestTimeMs,
+          last_seen: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', authUserRef.current.id)
+        .then(({ error }) => {
+          setCloudStatus(error ? 'offline' : 'synced')
+        })
+    }, 650)
+
+    return () => {
+      if (syncTimerRef.current) window.clearTimeout(syncTimerRef.current)
+    }
+  }, [
+    authUser,
+    profile.xp,
+    profile.avatar,
+    profile.unlockedOutfits,
+    profile.unlockedHats,
+    profile.unlockedFaces,
+    profile.badges,
+    profile.quests,
+    profile.obbyStage,
+    profile.obbyBestStage,
+    profile.obbyCompletions,
+    profile.obbyBestTimeMs,
+  ])
+
+  const signUp = useCallback(
+    async (email: string, password: string, username: string): Promise<{ ok: boolean; error?: string }> => {
+      if (!supabase) return { ok: false, error: 'Supabase not configured' }
+      const cleanName = username.trim().slice(0, 18)
+      if (cleanName.length < 2) return { ok: false, error: 'Nazwa gracza musi mieć min. 2 znaki.' }
+
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: {
+          data: { username: cleanName },
+        },
+      })
+      if (error) return { ok: false, error: error.message }
+      if (data.user) {
+        await hydrateCloudProfile(data.user.id, data.user.email ?? null)
+      }
+      return { ok: true }
+    },
+    [hydrateCloudProfile],
+  )
+
+  const signIn = useCallback(
+    async (email: string, password: string): Promise<{ ok: boolean; error?: string }> => {
+      if (!supabase) return { ok: false, error: 'Supabase not configured' }
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      })
+      if (error) return { ok: false, error: error.message }
+      if (data.user) {
+        await hydrateCloudProfile(data.user.id, data.user.email ?? null)
+      }
+      return { ok: true }
+    },
+    [hydrateCloudProfile],
+  )
+
+  const signOut = useCallback(async () => {
+    if (!supabase) return
+    await supabase.auth.signOut()
+    hydratedFromCloudRef.current = false
+    setAuthUser(null)
+    setCloudStatus('guest')
+    setProfile(createDefaultProfile())
+  }, [])
+
+  const updatePresenceLocation = useCallback((world: WorldKind, roomCode: string) => {
+    if (!supabase || !authUserRef.current) return
+    void supabase
+      .from('fb_profiles')
+      .update({
+        last_world: world,
+        last_room: roomCode,
+        last_seen: new Date().toISOString(),
+      })
+      .eq('id', authUserRef.current.id)
+      .then(() => {})
+  }, [])
+
+  const setUsername = useCallback(async (name: string): Promise<{ ok: boolean; error?: string }> => {
     const clean = name.trim().slice(0, 20)
-    if (!clean) return
+    if (clean.length < 2) return { ok: false, error: 'Min. 2 znaki' }
+
+    if (supabase && authUserRef.current) {
+      const { error } = await supabase
+        .from('fb_profiles')
+        .update({ username: clean, updated_at: new Date().toISOString() })
+        .eq('id', authUserRef.current.id)
+      if (error) {
+        return { ok: false, error: error.code === '23505' ? 'Ten nick jest już zajęty!' : error.message }
+      }
+    }
+
     setProfile((p) => ({ ...p, username: clean }))
+    return { ok: true }
   }, [])
 
   const updateAvatar = useCallback((patch: Partial<R6AvatarConfig>) => {
@@ -136,7 +514,7 @@ export function usePlayerStore() {
   const awardGemsAndXp = useCallback((gems: number, xp: number) => {
     setProfile((p) => ({
       ...p,
-      freshGems: p.freshGems + gems,
+      freshGems: GEMS_SYSTEM_IN_PROGRESS ? p.freshGems : p.freshGems + gems,
       xp: p.xp + xp,
     }))
   }, [])
@@ -153,7 +531,6 @@ export function usePlayerStore() {
       const next = Math.min(def.target, cur + delta)
       if (next === cur) return p
       const badges = [...p.badges]
-      if (questId === 'q_gems' && next >= 5 && !badges.includes('collector')) badges.push('collector')
       if (questId === 'q_chat' && next >= 1 && !badges.includes('social')) badges.push('social')
       if (questId === 'q_emote' && next >= 2 && !badges.includes('dancer')) badges.push('dancer')
       if (questId === 'q_tower' && next >= 1 && !badges.includes('explorer')) badges.push('explorer')
@@ -178,7 +555,7 @@ export function usePlayerStore() {
       claimedNow = true
       return {
         ...p,
-        freshGems: p.freshGems + def.rewardGems,
+        freshGems: GEMS_SYSTEM_IN_PROGRESS ? p.freshGems : p.freshGems + def.rewardGems,
         xp: p.xp + def.rewardXp,
         quests: {
           ...p.quests,
@@ -189,18 +566,69 @@ export function usePlayerStore() {
     return claimedNow
   }, [])
 
+  const recordObbyStage = useCallback((stage: number, completionElapsedMs?: number) => {
+    const clamped = Math.max(1, Math.min(100, Math.floor(stage)))
+    setProfile((p) => {
+      const gainedNewBest = clamped > p.obbyBestStage
+      const stageDelta = gainedNewBest ? clamped - p.obbyBestStage : 0
+      const isFinish = clamped === 100 && p.obbyStage < 100
+
+      const badges = [...p.badges]
+      if (clamped >= 10 && !badges.includes('obby_runner')) badges.push('obby_runner')
+      if (clamped >= 100 && !badges.includes('obby_master')) badges.push('obby_master')
+
+      const qDef = DAILY_QUESTS.find((q) => q.id === 'q_obby')
+      const curQ = p.quests.progress.q_obby ?? 0
+      const nextQ = qDef ? Math.min(qDef.target, curQ + (stageDelta > 0 ? stageDelta : clamped > p.obbyStage ? 1 : 0)) : curQ
+
+      let nextBestTime = p.obbyBestTimeMs
+      if (isFinish && typeof completionElapsedMs === 'number' && completionElapsedMs > 1000) {
+        if (nextBestTime === null || completionElapsedMs < nextBestTime) {
+          nextBestTime = Math.round(completionElapsedMs)
+        }
+      }
+
+      const bonusXp = (gainedNewBest ? stageDelta * 12 : 0) + (isFinish ? 200 : 0)
+
+      return {
+        ...p,
+        obbyStage: clamped,
+        obbyBestStage: Math.max(p.obbyBestStage, clamped),
+        obbyCompletions: isFinish ? p.obbyCompletions + 1 : p.obbyCompletions,
+        obbyBestTimeMs: nextBestTime,
+        xp: p.xp + bonusXp,
+        badges,
+        quests: {
+          ...p.quests,
+          progress: { ...p.quests.progress, q_obby: nextQ },
+        },
+      }
+    })
+  }, [])
+
+  const setObbyCurrentStage = useCallback((stage: number) => {
+    setProfile((p) => {
+      const clamped = Math.max(1, Math.min(p.obbyBestStage, Math.floor(stage)))
+      if (clamped === p.obbyStage) return p
+      return { ...p, obbyStage: clamped }
+    })
+  }, [])
+
   const buyAndEquip = useCallback(
     (category: 'outfit' | 'hat' | 'face', itemId: string, price: number): boolean => {
+      let ok = false
       setProfile((p) => {
         const listKey =
           category === 'outfit' ? 'unlockedOutfits' : category === 'hat' ? 'unlockedHats' : 'unlockedFaces'
         const currentList = p[listKey] as string[]
-        const alreadyOwned = currentList.includes(itemId)
-        if (!alreadyOwned && p.freshGems < price) return p
+        const alreadyOwned = currentList.includes(itemId) || price === 0
 
-        const nextBadges =
-          !alreadyOwned && price > 0 && !p.badges.includes('stylist') ? [...p.badges, 'stylist'] : p.badges
+        // While FreshGems economy is under construction, only owned/free items can be equipped!
+        if (!alreadyOwned && (GEMS_SYSTEM_IN_PROGRESS || p.freshGems < price)) {
+          return p
+        }
 
+        ok = true
         const nextAvatar: R6AvatarConfig = {
           ...p.avatar,
           ...(category === 'outfit' ? { outfitId: itemId as OutfitId } : {}),
@@ -211,19 +639,19 @@ export function usePlayerStore() {
         return {
           ...p,
           freshGems: alreadyOwned ? p.freshGems : p.freshGems - price,
-          badges: nextBadges,
           avatar: nextAvatar,
-          [listKey]: alreadyOwned ? currentList : [...currentList, itemId],
+          [listKey]: currentList.includes(itemId) ? currentList : [...currentList, itemId],
         }
       })
-      return true
+      return ok
     },
     [],
   )
 
   const buyBundle = useCallback(
     (items: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; price: number }>): boolean => {
-      if (items.length === 0) return false
+      if (items.length === 0 || GEMS_SYSTEM_IN_PROGRESS) return false
+      let ok = false
       setProfile((p) => {
         let totalCost = 0
         const toBuy = items.filter((item) => {
@@ -239,6 +667,7 @@ export function usePlayerStore() {
         })
         if (toBuy.length === 0 || p.freshGems < totalCost) return p
 
+        ok = true
         let unlockedOutfits = [...p.unlockedOutfits]
         let unlockedHats = [...p.unlockedHats]
         let unlockedFaces = [...p.unlockedFaces]
@@ -257,49 +686,154 @@ export function usePlayerStore() {
           }
         }
 
-        const nextBadges =
-          totalCost > 0 && !p.badges.includes('stylist') ? [...p.badges, 'stylist'] : p.badges
-
         return {
           ...p,
           freshGems: p.freshGems - totalCost,
-          badges: nextBadges,
           avatar: nextAvatar,
           unlockedOutfits,
           unlockedHats,
           unlockedFaces,
         }
       })
-      return true
+      return ok
     },
     [],
   )
 
-  const addFriend = useCallback((username: string) => {
-    const clean = username.trim().slice(0, 20)
-    if (!clean) return
-    setProfile((p) => {
-      if (p.friends.some((f) => f.username.toLowerCase() === clean.toLowerCase())) return p
-      return {
-        ...p,
-        friends: [
-          { id: `fr_${Date.now()}`, username: clean, status: 'online', roomCode: 'PUBLIC-1' },
-          ...p.friends,
-        ],
+  const addFriend = useCallback(
+    async (usernameOrTag: string): Promise<{ ok: boolean; error?: string }> => {
+      const clean = usernameOrTag.trim().slice(0, 20)
+      if (!clean) return { ok: false }
+
+      if (supabase && authUserRef.current) {
+        const isTag = clean.startsWith('#')
+        const { data: found } = isTag
+          ? await supabase
+              .from('fb_profiles')
+              .select('id, username, fresh_tag, last_world, last_room, last_seen, obby_best_stage')
+              .ilike('fresh_tag', clean)
+              .maybeSingle<DbProfileRow>()
+          : await supabase
+              .from('fb_profiles')
+              .select('id, username, fresh_tag, last_world, last_room, last_seen, obby_best_stage')
+              .ilike('username', clean)
+              .maybeSingle<DbProfileRow>()
+
+        const targetName = found?.username ?? clean
+        if (found?.id === authUserRef.current.id) {
+          return { ok: false, error: 'Nie możesz dodać samego siebie!' }
+        }
+
+        await supabase.from('fb_friendships').upsert(
+          {
+            user_id: authUserRef.current.id,
+            friend_id: found?.id ?? null,
+            friend_username: targetName,
+            status: 'accepted',
+          },
+          { onConflict: 'user_id,friend_username' },
+        )
+
+        const refreshed = await loadFriendsFromCloud(authUserRef.current.id)
+        setProfile((p) => ({ ...p, friends: refreshed }))
+        return { ok: true }
       }
-    })
+
+      setProfile((p) => {
+        if (p.friends.some((f) => f.username.toLowerCase() === clean.toLowerCase())) return p
+        return {
+          ...p,
+          friends: [
+            { id: `fr_${Date.now()}`, username: clean, status: 'online', roomCode: 'PUBLIC-1', world: 'lobby' },
+            ...p.friends,
+          ],
+        }
+      })
+      return { ok: true }
+    },
+    [loadFriendsFromCloud],
+  )
+
+  const refreshFriends = useCallback(async () => {
+    if (!authUserRef.current) return
+    const list = await loadFriendsFromCloud(authUserRef.current.id)
+    setProfile((p) => ({ ...p, friends: list }))
+  }, [loadFriendsFromCloud])
+
+  const searchPlayers = useCallback(async (query: string): Promise<CloudPlayerSummary[]> => {
+    if (!supabase) return []
+    const q = query.trim()
+    let req = supabase
+      .from('fb_profiles')
+      .select('id, username, fresh_tag, xp, obby_best_stage, obby_completions, obby_best_time_ms, last_world, last_room, last_seen')
+      .order('last_seen', { ascending: false })
+      .limit(12)
+
+    if (q) {
+      req = req.ilike('username', `%${q}%`)
+    }
+
+    const { data } = await req
+    return ((data ?? []) as unknown as DbProfileRow[]).map((r) => ({
+      id: r.id,
+      username: r.username,
+      freshTag: r.fresh_tag,
+      xp: r.xp ?? 0,
+      obbyBestStage: r.obby_best_stage ?? 1,
+      obbyCompletions: r.obby_completions ?? 0,
+      obbyBestTimeMs: r.obby_best_time_ms ?? null,
+      lastWorld: (r.last_world === 'obby' ? 'obby' : 'lobby') as WorldKind,
+      lastRoom: r.last_room ?? 'PUBLIC-1',
+      isOnline: isRecentlyOnline(r.last_seen),
+    }))
+  }, [])
+
+  const fetchObbyLeaderboard = useCallback(async (): Promise<CloudPlayerSummary[]> => {
+    if (!supabase) return []
+    const { data } = await supabase
+      .from('fb_profiles')
+      .select('id, username, fresh_tag, xp, obby_best_stage, obby_completions, obby_best_time_ms, last_world, last_room, last_seen')
+      .order('obby_best_stage', { ascending: false })
+      .order('obby_completions', { ascending: false })
+      .order('xp', { ascending: false })
+      .limit(8)
+
+    return ((data ?? []) as unknown as DbProfileRow[]).map((r) => ({
+      id: r.id,
+      username: r.username,
+      freshTag: r.fresh_tag,
+      xp: r.xp ?? 0,
+      obbyBestStage: r.obby_best_stage ?? 1,
+      obbyCompletions: r.obby_completions ?? 0,
+      obbyBestTimeMs: r.obby_best_time_ms ?? null,
+      lastWorld: (r.last_world === 'obby' ? 'obby' : 'lobby') as WorldKind,
+      lastRoom: r.last_room ?? 'PUBLIC-1',
+      isOnline: isRecentlyOnline(r.last_seen),
+    }))
   }, [])
 
   return {
     profile,
+    authUser,
+    authLoading,
+    cloudStatus,
+    signUp,
+    signIn,
+    signOut,
+    updatePresenceLocation,
     setUsername,
     updateAvatar,
     awardGemsAndXp,
     unlockBadge,
     incrementQuest,
     claimQuest,
+    recordObbyStage,
+    setObbyCurrentStage,
     buyAndEquip,
     buyBundle,
     addFriend,
+    refreshFriends,
+    searchPlayers,
+    fetchObbyLeaderboard,
   }
 }

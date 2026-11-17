@@ -1,13 +1,16 @@
 import React, { useEffect, useState } from 'react'
-import { Home, Box, UserCircle2, Users, Sun, Moon, Globe } from 'lucide-react'
+import { Home, Box, UserCircle2, Users, Sun, Moon, Globe, Flag, LogIn, Cloud } from 'lucide-react'
 import { ARCTIC_SKY, getThemeTokens, ThemeMode } from './data/brandTheme'
 import { Lang, LOCALES } from './data/locales'
-import { FreshBloxLogo, FreshBloxWordmark, FreshGemShard } from './components/brand/FreshBloxBrand'
+import { WorldKind } from './data/catalog'
+import { FreshBloxLogo, FreshBloxWordmark } from './components/brand/FreshBloxBrand'
 import { usePlayerStore } from './store/usePlayerStore'
 import { HomeBentoView } from './components/lobby/HomeBentoView'
 import { MainLobbyWorld } from './engine/MainLobbyWorld'
+import { TestObbyWorld } from './engine/TestObbyWorld'
 import { AvatarEditorView } from './components/avatar/AvatarEditorView'
 import { SocialProfileView } from './components/social/SocialProfileView'
+import { AuthModal } from './components/auth/AuthModal'
 import {
   enterGameFullscreenLandscape,
   exitGameFullscreen,
@@ -15,34 +18,53 @@ import {
   isTouchMobileDevice,
 } from './lib/mobileFullscreen'
 
-type AppView = 'home' | 'world' | 'avatar' | 'social'
+type AppView = 'home' | 'world' | 'obby' | 'avatar' | 'social'
 
-function getInitialRoomFromUrl(): { roomId: string; autoEnter: boolean } {
-  if (typeof window === 'undefined') return { roomId: 'PUBLIC-1', autoEnter: false }
+function getInitialLaunchFromUrl(): { view: AppView; roomId: string } {
+  if (typeof window === 'undefined') return { view: 'home', roomId: 'PUBLIC-1' }
   const params = new URLSearchParams(window.location.search)
+  const worldParam = params.get('world')?.toLowerCase()
   const room = params.get('room')?.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 12)
-  if (room) return { roomId: room, autoEnter: true }
-  return { roomId: 'PUBLIC-1', autoEnter: false }
+  if (worldParam === 'obby') {
+    return { view: 'obby', roomId: room || 'OBBY-1' }
+  }
+  if (room) {
+    return { view: 'world', roomId: room }
+  }
+  return { view: 'home', roomId: 'PUBLIC-1' }
 }
 
 export function App() {
-  const initialRoom = getInitialRoomFromUrl()
-  const [view, setView] = useState<AppView>(initialRoom.autoEnter ? 'world' : 'home')
-  const [activeRoomId, setActiveRoomId] = useState<string>(initialRoom.roomId)
+  const initialLaunch = getInitialLaunchFromUrl()
+  const [view, setView] = useState<AppView>(initialLaunch.view)
+  const [activeRoomId, setActiveRoomId] = useState<string>(initialLaunch.roomId)
   const [mode, setMode] = useState<ThemeMode>('dark')
   const [lang, setLang] = useState<Lang>('pl')
   const [isFullscreen, setIsFullscreen] = useState<boolean>(() => isDocumentFullscreen())
+  const [authModalOpen, setAuthModalOpen] = useState<boolean>(false)
+  const [authModalTab, setAuthModalTab] = useState<'login' | 'register'>('login')
 
   const {
     profile,
+    authUser,
+    cloudStatus,
+    signUp,
+    signIn,
+    signOut,
+    updatePresenceLocation,
     setUsername,
     updateAvatar,
     awardGemsAndXp,
     incrementQuest,
     claimQuest,
+    recordObbyStage,
+    setObbyCurrentStage,
     buyAndEquip,
     buyBundle,
     addFriend,
+    refreshFriends,
+    searchPlayers,
+    fetchObbyLeaderboard,
   } = usePlayerStore()
 
   useEffect(() => {
@@ -65,24 +87,45 @@ export function App() {
     }
   }, [])
 
+  // Presence heartbeat in Supabase while inside a 3D world
+  useEffect(() => {
+    if (view !== 'world' && view !== 'obby') return
+    const wk: WorldKind = view === 'obby' ? 'obby' : 'lobby'
+    updatePresenceLocation(wk, activeRoomId)
+    const id = window.setInterval(() => {
+      updatePresenceLocation(wk, activeRoomId)
+    }, 60_000)
+    return () => window.clearInterval(id)
+  }, [view, activeRoomId, updatePresenceLocation, authUser])
+
   const tokens = getThemeTokens(mode)
   const t = LOCALES[lang].nav
 
+  const isIn3DGame = view === 'world' || view === 'obby'
+
   const navigateView = (nextView: AppView, roomId?: string) => {
-    if (nextView === 'world') {
+    const nextIs3D = nextView === 'world' || nextView === 'obby'
+    if (nextIs3D) {
       if (roomId) setActiveRoomId(roomId)
-      // Automatically engage Fullscreen + Landscape on mobile/tablet inside the user's tap gesture!
+      else if (nextView === 'obby' && !activeRoomId.startsWith('OBBY')) setActiveRoomId('OBBY-1')
+      else if (nextView === 'world' && activeRoomId.startsWith('OBBY')) setActiveRoomId('PUBLIC-1')
+
       if (isTouchMobileDevice()) {
         enterGameFullscreenLandscape()
       }
-    } else if (view === 'world') {
+    } else if (isIn3DGame) {
       exitGameFullscreen()
     }
     setView(nextView)
   }
 
-  const handleEnterRoom = (roomId: string) => {
-    navigateView('world', roomId)
+  const handleEnterWorld = (world: WorldKind, roomId: string) => {
+    navigateView(world === 'obby' ? 'obby' : 'world', roomId)
+  }
+
+  const openAuth = (tab: 'login' | 'register' = 'login') => {
+    setAuthModalTab(tab)
+    setAuthModalOpen(true)
   }
 
   const navItems: Array<{
@@ -92,11 +135,10 @@ export function App() {
   }> = [
     { id: 'home', label: t.home, icon: Home },
     { id: 'world', label: t.world, icon: Box },
+    { id: 'obby', label: t.obby, icon: Flag },
     { id: 'avatar', label: t.avatar, icon: UserCircle2 },
     { id: 'social', label: t.social, icon: Users },
   ]
-
-  const hideTopChrome = view === 'world'
 
   return (
     <div
@@ -104,23 +146,21 @@ export function App() {
       style={{ background: tokens.pageBg, color: tokens.textPrimary }}
     >
       {/* === STICKY ARCTIC SKY HEADER (always hidden inside 3D gameplay for full immersion!) === */}
-      {!hideTopChrome && (
+      {!isIn3DGame && (
         <header
           className="sticky top-0 z-30 h-14 sm:h-16 w-full max-w-full border-b backdrop-blur-xl transition-colors"
           style={{ background: tokens.navBg, borderColor: tokens.cardBorder }}
         >
           <div className="mx-auto flex h-full w-full max-w-7xl items-center justify-between gap-1.5 sm:gap-3 px-2.5 sm:px-6">
-            {/* Official Brand Lockup: F-03 (0% Aura) + T-03 Glacier Flow Italic */}
             <button
               onClick={() => navigateView('home')}
               className="flex min-w-0 shrink items-center gap-1 sm:gap-2 text-left cursor-pointer"
             >
               <FreshBloxLogo size={28} className="shrink-0 sm:h-9 sm:w-9" />
-              <FreshBloxWordmark mode={mode} size="sm" className="w-[92px] h-auto sm:w-[116px] shrink-0" />
+              <FreshBloxWordmark mode={mode} size="sm" className="w-[88px] h-auto sm:w-[112px] shrink-0" />
             </button>
 
-            {/* Main Navigation */}
-            <nav className="hidden items-center gap-1 md:flex">
+            <nav className="hidden items-center gap-1 lg:flex">
               {navItems.map((item) => {
                 const Icon = item.icon
                 const active = view === item.id
@@ -128,7 +168,7 @@ export function App() {
                   <button
                     key={item.id}
                     onClick={() => navigateView(item.id)}
-                    className="inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-bold transition cursor-pointer"
+                    className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition cursor-pointer"
                     style={{
                       background: active ? tokens.heroGradient : 'transparent',
                       borderColor: active ? `${ARCTIC_SKY.skyMain}58` : 'transparent',
@@ -142,17 +182,31 @@ export function App() {
               })}
             </nav>
 
-            {/* Right Controls: FreshGems Wallet + Dark/Light + PL/EN */}
+            {/* Right Controls: Account Auth / Cloud Status + Dark/Light + PL/EN */}
             <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-              <button
-                onClick={() => navigateView('avatar')}
-                className="flex items-center gap-1 rounded-xl border px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-xs font-extrabold transition hover:scale-105 cursor-pointer"
-                style={{ borderColor: `${ARCTIC_SKY.skyMain}55`, background: tokens.badgeBg, color: tokens.textPrimary }}
-                title="FreshGems"
-              >
-                <FreshGemShard size={14} className="sm:h-4 sm:w-4 shrink-0" />
-                <span>{profile.freshGems.toLocaleString()}</span>
-              </button>
+              {authUser ? (
+                <button
+                  onClick={() => navigateView('social')}
+                  className="flex items-center gap-1.5 rounded-xl border px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-xs font-extrabold transition hover:scale-105 cursor-pointer"
+                  style={{
+                    borderColor: 'rgba(52, 211, 153, 0.45)',
+                    background: tokens.badgeBg,
+                    color: tokens.textPrimary,
+                  }}
+                >
+                  <Cloud className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <span className="max-w-[74px] sm:max-w-[110px] truncate">{profile.username}</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => openAuth('login')}
+                  className="flex items-center gap-1.5 rounded-xl px-2.5 sm:px-3.5 py-1.5 text-[11px] sm:text-xs font-extrabold text-white shadow transition hover:brightness-110 cursor-pointer"
+                  style={{ background: tokens.buttonGradient }}
+                >
+                  <LogIn className="h-3.5 w-3.5 shrink-0" />
+                  <span>{t.loginBtn}</span>
+                </button>
+              )}
 
               <div
                 className="flex items-center rounded-xl border p-0.5"
@@ -195,10 +249,10 @@ export function App() {
         </header>
       )}
 
-      {/* Mobile Bottom Quick Nav (when not in 3D world) */}
-      {view !== 'world' && (
+      {/* Mobile / Tablet Bottom Quick Nav (hidden inside 3D gameplay) */}
+      {!isIn3DGame && (
         <div
-          className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t py-2 backdrop-blur-xl md:hidden"
+          className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t py-2 backdrop-blur-xl lg:hidden"
           style={{ background: tokens.navBg, borderColor: tokens.cardBorder }}
         >
           {navItems.map((item) => {
@@ -208,11 +262,11 @@ export function App() {
               <button
                 key={item.id}
                 onClick={() => navigateView(item.id)}
-                className="flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-bold cursor-pointer"
+                className="flex flex-col items-center gap-0.5 px-1.5 py-1 text-[10px] font-bold cursor-pointer"
                 style={{ color: active ? ARCTIC_SKY.skyMain : tokens.textSecondary }}
               >
                 <Icon className="h-4 w-4" />
-                <span>{item.label}</span>
+                <span className="truncate max-w-[68px]">{item.label}</span>
               </button>
             )
           })}
@@ -220,15 +274,18 @@ export function App() {
       )}
 
       {/* === ACTIVE VIEW === */}
-      <main className={view !== 'world' ? 'pb-16 md:pb-8' : ''}>
+      <main className={!isIn3DGame ? 'pb-16 lg:pb-8' : ''}>
         {view === 'home' && (
           <HomeBentoView
             profile={profile}
+            authUser={authUser}
             mode={mode}
             lang={lang}
-            onEnterRoom={handleEnterRoom}
+            onEnterWorld={handleEnterWorld}
             onOpenAvatar={() => navigateView('avatar')}
+            onOpenAuth={openAuth}
             onClaimQuest={claimQuest}
+            onFetchLeaderboard={fetchObbyLeaderboard}
           />
         )}
 
@@ -237,6 +294,7 @@ export function App() {
             roomCode={activeRoomId}
             lang={lang}
             playerId={profile.playerId}
+            authUserId={authUser?.id ?? null}
             username={profile.username}
             freshGems={profile.freshGems}
             xp={profile.xp}
@@ -246,20 +304,47 @@ export function App() {
             unlockedFaces={profile.unlockedFaces}
             isFullscreen={isFullscreen}
             onBackHome={() => navigateView('home')}
+            onEnterObby={() => handleEnterWorld('obby', 'OBBY-1')}
             onBuyAndEquip={buyAndEquip}
             onBuyBundle={buyBundle}
             onSkinChange={(hex) => updateAvatar({ skinColor: hex })}
-            onCollectGem={() => {
-              awardGemsAndXp(10, 15)
-              incrementQuest('q_gems', 1)
-            }}
             onChatSent={() => incrementQuest('q_chat', 1)}
             onEmoteUsed={() => incrementQuest('q_emote', 1)}
             onJumpPadUsed={() => incrementQuest('q_jumppad', 1)}
             onReachTerrace={() => {
-              awardGemsAndXp(0, 25)
+              awardGemsAndXp(0, 50)
               incrementQuest('q_tower', 1)
             }}
+          />
+        )}
+
+        {view === 'obby' && (
+          <TestObbyWorld
+            roomCode={activeRoomId}
+            lang={lang}
+            playerId={profile.playerId}
+            authUserId={authUser?.id ?? null}
+            username={profile.username}
+            freshGems={profile.freshGems}
+            xp={profile.xp}
+            avatar={profile.avatar}
+            unlockedOutfits={profile.unlockedOutfits}
+            unlockedHats={profile.unlockedHats}
+            unlockedFaces={profile.unlockedFaces}
+            initialStage={profile.obbyStage}
+            bestStage={profile.obbyBestStage}
+            completions={profile.obbyCompletions}
+            isFullscreen={isFullscreen}
+            onBackHome={() => navigateView('home')}
+            onSwitchToLobby={() => handleEnterWorld('lobby', 'PUBLIC-1')}
+            onBuyAndEquip={buyAndEquip}
+            onBuyBundle={buyBundle}
+            onSkinChange={(hex) => updateAvatar({ skinColor: hex })}
+            onStageReached={recordObbyStage}
+            onSetCurrentStage={setObbyCurrentStage}
+            onChatSent={() => incrementQuest('q_chat', 1)}
+            onEmoteUsed={() => incrementQuest('q_emote', 1)}
+            onJumpPadUsed={() => incrementQuest('q_jumppad', 1)}
           />
         )}
 
@@ -271,21 +356,38 @@ export function App() {
             onBuyAndEquip={buyAndEquip}
             onBuyBundle={buyBundle}
             onSkinChange={(hex) => updateAvatar({ skinColor: hex })}
-            onEnterLobby={() => navigateView('world')}
+            onEnterLobby={() => handleEnterWorld('lobby', 'PUBLIC-1')}
           />
         )}
 
         {view === 'social' && (
           <SocialProfileView
             profile={profile}
+            authUser={authUser}
+            cloudStatus={cloudStatus}
             mode={mode}
             lang={lang}
             onChangeUsername={setUsername}
             onAddFriend={addFriend}
-            onJoinRoom={handleEnterRoom}
+            onRefreshFriends={refreshFriends}
+            onSearchPlayers={searchPlayers}
+            onJoinWorld={handleEnterWorld}
+            onOpenAuth={openAuth}
+            onSignOut={signOut}
           />
         )}
       </main>
+
+      {/* === SUPABASE AUTH MODAL (Sign In / Sign Up) === */}
+      <AuthModal
+        open={authModalOpen}
+        initialTab={authModalTab}
+        mode={mode}
+        lang={lang}
+        onClose={() => setAuthModalOpen(false)}
+        onSignIn={signIn}
+        onSignUp={signUp}
+      />
     </div>
   )
 }

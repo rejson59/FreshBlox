@@ -1,3 +1,5 @@
+export const GEMS_SYSTEM_IN_PROGRESS = true
+
 export type OutfitId =
   | 'fresh-creator'
   | 'classic-remaster'
@@ -9,6 +11,8 @@ export type OutfitId =
 export type FaceId = 'fresh-smile' | 'wink-pro' | 'arctic-visor' | 'cool-shades' | 'star-eyes'
 
 export type HatId = 'none' | 'fresh-cap' | 'headphones' | 'crystal-halo' | 'frost-horns' | 'arctic-crown'
+
+export type WorldKind = 'lobby' | 'obby'
 
 export interface R6AvatarConfig {
   outfitId: OutfitId
@@ -135,7 +139,7 @@ export const HAT_CATALOG: CatalogItem<HatId>[] = [
     namePl: 'Korona FreshGems',
     nameEn: 'FreshGems Crown',
     descPl: 'Prestiżowa korona z osadzonym kryształem FreshGem.',
-    descEn: 'Prestigious metallic-ice crown topped with a glowing FreshGem.',
+    descEn: 'Prestigious metallic-ice crown topped with a crystal FreshGem.',
     price: 350,
     accent: '#FBBF24',
   },
@@ -199,7 +203,7 @@ export const SKIN_SWATCHES = [
 ]
 
 export interface QuestDef {
-  id: 'q_gems' | 'q_chat' | 'q_emote' | 'q_tower' | 'q_jumppad'
+  id: 'q_obby' | 'q_chat' | 'q_emote' | 'q_tower' | 'q_jumppad'
   titlePl: string
   titleEn: string
   target: number
@@ -209,19 +213,19 @@ export interface QuestDef {
 
 export const DAILY_QUESTS: QuestDef[] = [
   {
-    id: 'q_gems',
-    titlePl: 'Zbierz 5 kryształów FreshGems w Lobby',
-    titleEn: 'Collect 5 FreshGems in Main Lobby',
+    id: 'q_obby',
+    titlePl: 'Zdobądź 5 poziomów w Test Obby 100',
+    titleEn: 'Clear 5 stages in Test Obby 100',
     target: 5,
-    rewardGems: 75,
-    rewardXp: 120,
+    rewardGems: 0,
+    rewardXp: 150,
   },
   {
     id: 'q_chat',
     titlePl: 'Przywitaj się na czacie w Lobby Głównym',
     titleEn: 'Say hello in Main Lobby chat',
     target: 1,
-    rewardGems: 40,
+    rewardGems: 0,
     rewardXp: 60,
   },
   {
@@ -229,7 +233,7 @@ export const DAILY_QUESTS: QuestDef[] = [
     titlePl: 'Użyj 2 emotek R6 (klawisze 1–6)',
     titleEn: 'Use 2 R6 emotes (keys 1–6)',
     target: 2,
-    rewardGems: 45,
+    rewardGems: 0,
     rewardXp: 75,
   },
   {
@@ -237,15 +241,15 @@ export const DAILY_QUESTS: QuestDef[] = [
     titlePl: 'Wyskocz 3 razy na błękitnym Jump-Padzie',
     titleEn: 'Bounce 3 times on a Sky Jump-Pad',
     target: 3,
-    rewardGems: 50,
+    rewardGems: 0,
     rewardXp: 85,
   },
   {
     id: 'q_tower',
-    titlePl: 'Wejdź na Sky Taras Widokowy',
-    titleEn: 'Reach the Sky Observation Terrace',
+    titlePl: 'Wejdź na Sky Taras Widokowy w Lobby',
+    titleEn: 'Reach the Sky Observation Terrace in Lobby',
     target: 1,
-    rewardGems: 100,
+    rewardGems: 0,
     rewardXp: 180,
   },
 ]
@@ -272,17 +276,25 @@ export const BADGE_CATALOG: BadgeDef[] = [
     id: 'social',
     namePl: 'Dusza Towarzystwa',
     nameEn: 'Social Spark',
-    descPl: 'Wysłano pierwszą wiadomość w Lobby Głównym.',
-    descEn: 'Sent your first chat message in Main Lobby.',
+    descPl: 'Wysłano pierwszą wiadomość na czacie na żywo.',
+    descEn: 'Sent your first live chat message.',
     icon: '💬',
   },
   {
-    id: 'collector',
-    namePl: 'Łowca Kryształów',
-    nameEn: 'Crystal Hunter',
-    descPl: 'Zebrano co najmniej 5 FreshGems w Lobby 3D.',
-    descEn: 'Collected at least 5 FreshGems in Main Lobby.',
-    icon: '💎',
+    id: 'obby_runner',
+    namePl: 'Skoczek Obby',
+    nameEn: 'Obby Jumper',
+    descPl: 'Osiągnięto co najmniej Stage 10 w Test Obby 100.',
+    descEn: 'Reached at least Stage 10 in Test Obby 100.',
+    icon: '🏃',
+  },
+  {
+    id: 'obby_master',
+    namePl: 'Mistrz 100 Leveli',
+    nameEn: '100-Stage Master',
+    descPl: 'Ukończono wszystkie 100 poziomów Test Obby!',
+    descEn: 'Completed all 100 stages of Test Obby!',
+    icon: '🏆',
   },
   {
     id: 'dancer',
@@ -299,14 +311,6 @@ export const BADGE_CATALOG: BadgeDef[] = [
     descPl: 'Dotarto na szczyt Sky Tarasu Widokowego.',
     descEn: 'Climbed all the way to the Sky Observation Terrace.',
     icon: '🏔️',
-  },
-  {
-    id: 'stylist',
-    namePl: 'Ikona Stylu R6',
-    nameEn: 'R6 Style Icon',
-    descPl: 'Odblokowano nowy kosmetyk za FreshGems.',
-    descEn: 'Unlocked a new cosmetic item using FreshGems.',
-    icon: '✨',
   },
 ]
 
@@ -335,6 +339,7 @@ export function getRankForXp(xp: number): SeasonRank {
 export interface LobbyRoomCard {
   id: string
   code: string
+  world: WorldKind
   titlePl: string
   titleEn: string
   tagPl: string
@@ -351,6 +356,7 @@ export const LOBBY_ROOMS: LobbyRoomCard[] = [
   {
     id: 'PUBLIC-1',
     code: 'PUBLIC-1',
+    world: 'lobby',
     titlePl: 'Lobby Główne #1 (Publiczne)',
     titleEn: 'Main Lobby #1 (Public)',
     tagPl: 'Spotkania • 3D Hangout',
@@ -363,8 +369,24 @@ export const LOBBY_ROOMS: LobbyRoomCard[] = [
     gradient: 'linear-gradient(135deg, #0284C7 0%, #38BDF8 54%, #E0F2FE 100%)',
   },
   {
+    id: 'OBBY-100',
+    code: 'OBBY-1',
+    world: 'obby',
+    titlePl: 'Test Obby — 100 Leveli',
+    titleEn: 'Test Obby — 100 Stages',
+    tagPl: 'Parkour • 100 Stage’ów',
+    tagEn: 'Parkour • 100 Stages',
+    players: 14,
+    maxPlayers: 40,
+    rating: 'NEW',
+    pingMs: 12,
+    status: 'live',
+    gradient: 'linear-gradient(135deg, #0369A1 0%, #0EA5E9 52%, #FDE047 100%)',
+  },
+  {
     id: 'CHILL-PL',
     code: 'CHILL-PL',
+    world: 'lobby',
     titlePl: 'Strefa Chill (Polska)',
     titleEn: 'Chill Zone (Poland)',
     tagPl: 'Czat & Emotki R6',
@@ -374,29 +396,16 @@ export const LOBBY_ROOMS: LobbyRoomCard[] = [
     rating: '98%',
     pingMs: 11,
     status: 'live',
-    gradient: 'linear-gradient(135deg, #0369A1 0%, #0EA5E9 55%, #BAE6FD 100%)',
-  },
-  {
-    id: 'SOON-OBBY',
-    code: 'OBBY',
-    titlePl: 'SkyTower Mega Obby',
-    titleEn: 'SkyTower Mega Obby',
-    tagPl: 'Parkour • Portal',
-    tagEn: 'Parkour • Portal',
-    players: 0,
-    maxPlayers: 40,
-    rating: '—',
-    pingMs: 16,
-    status: 'soon',
-    gradient: 'linear-gradient(135deg, #0C4A6E 0%, #0284C7 60%, #7DD3FC 100%)',
+    gradient: 'linear-gradient(135deg, #0284C7 0%, #0EA5E9 55%, #BAE6FD 100%)',
   },
   {
     id: 'SOON-ARENA',
     code: 'ARENA',
-    titlePl: 'Crystal Spleef Arena',
-    titleEn: 'Crystal Spleef Arena',
-    tagPl: 'Mini-Gra • Portal',
-    tagEn: 'Mini-Game • Portal',
+    world: 'lobby',
+    titlePl: 'Crystal Arena (Mini-Gry)',
+    titleEn: 'Crystal Arena (Mini-Games)',
+    tagPl: 'Rywalizacja • Portal',
+    tagEn: 'Competitive • Portal',
     players: 0,
     maxPlayers: 20,
     rating: '—',

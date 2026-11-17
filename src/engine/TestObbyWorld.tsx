@@ -1,0 +1,2052 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import * as THREE from 'three'
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Compass,
+  Flag,
+  Gamepad2,
+  Home,
+  LogOut,
+  Maximize2,
+  MessageSquare,
+  Moon,
+  RotateCcw,
+  Send,
+  Shirt,
+  Smartphone,
+  Sparkles,
+  Sun,
+  Trophy,
+  Users,
+  Volume2,
+  VolumeX,
+  Wifi,
+  X,
+} from 'lucide-react'
+import {
+  FaceId,
+  getRankForXp,
+  HatId,
+  OutfitId,
+  R6AvatarConfig,
+} from '../data/catalog'
+import { Lang, LOCALES } from '../data/locales'
+import {
+  LobbyChatMessage,
+  LobbyMultiplayerClient,
+  PlayerPose,
+  RemotePlayerState,
+} from '../lib/multiplayer'
+import { isSupabaseConfigured } from '../lib/supabase'
+import { sfx } from '../lib/sfx'
+import { createR6Rig, getSharedFreshStudTexture, R6RigHandle } from './r6Builder'
+import { generateTestObbyCourse, OBBY_ZONES, ObbyBlockDef } from './obbyCourse'
+import { MobileTouchControls } from '../components/hud/MobileTouchControls'
+import { InGameWardrobeDrawer } from '../components/hud/InGameWardrobeDrawer'
+import { FreshBloxLogo } from '../components/brand/FreshBloxBrand'
+import { enterGameFullscreenLandscape, isTouchMobileDevice } from '../lib/mobileFullscreen'
+
+type GraphicsQuality = 'low' | 'medium' | 'high'
+type WorldTimeOfDay = 'day' | 'night'
+
+interface RuntimeBlock {
+  def: ObbyBlockDef
+  mesh: THREE.Mesh
+  curX: number
+  curY: number
+  curZ: number
+  prevX: number
+  prevY: number
+  prevZ: number
+  // For fading tiles
+  fadeState: 'solid' | 'shaking' | 'gone'
+  fadeTimer: number
+  // For spinners
+  spinAngle: number
+  // For checkpoints
+  flagMesh?: THREE.Mesh
+}
+
+interface RemoteObbyEntity {
+  id: string
+  username: string
+  rank: string
+  stage: number
+  avatarKey: string
+  rig: R6RigHandle
+  targetPos: THREE.Vector3
+  currentPos: THREE.Vector3
+  targetRotY: number
+  pose: PlayerPose
+  lastSeen: number
+}
+
+interface TestObbyWorldProps {
+  roomCode: string
+  lang: Lang
+  playerId: string
+  authUserId: string | null
+  username: string
+  freshGems: number
+  xp: number
+  avatar: R6AvatarConfig
+  unlockedOutfits: OutfitId[]
+  unlockedHats: HatId[]
+  unlockedFaces: FaceId[]
+  initialStage: number
+  bestStage: number
+  completions: number
+  isFullscreen: boolean
+  onBackHome: () => void
+  onSwitchToLobby: () => void
+  onBuyAndEquip: (category: 'outfit' | 'hat' | 'face', itemId: string, price: number) => boolean
+  onBuyBundle: (items: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; price: number }>) => boolean
+  onSkinChange: (hex: string) => void
+  onStageReached: (stage: number, elapsedMs?: number) => void
+  onSetCurrentStage: (stage: number) => void
+  onChatSent: () => void
+  onEmoteUsed: () => void
+  onJumpPadUsed: () => void
+}
+
+function makeStageSignTexture(stageNum: number, isFinish: boolean): THREE.CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 256
+  c.height = 128
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = isFinish ? '#FEF3C7' : '#0F172A'
+  ctx.fillRect(0, 0, 256, 128)
+  ctx.strokeStyle = isFinish ? '#F59E0B' : '#38BDF8'
+  ctx.lineWidth = 8
+  ctx.strokeRect(6, 6, 244, 116)
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = isFinish ? '#B45309' : '#7DD3FC'
+  ctx.font = '700 24px Inter, sans-serif'
+  ctx.fillText(isFinish ? 'FINISH' : 'STAGE', 128, 36)
+  ctx.fillStyle = isFinish ? '#92400E' : '#FFFFFF'
+  ctx.font = '900 54px Outfit, sans-serif'
+  ctx.fillText(String(stageNum), 128, 86)
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
+}
+
+function formatTimeMs(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000))
+  const m = Math.floor(totalSec / 60)
+  const s = totalSec % 60
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
+  roomCode,
+  lang,
+  playerId,
+  authUserId,
+  username,
+  freshGems,
+  xp,
+  avatar,
+  unlockedOutfits,
+  unlockedHats,
+  unlockedFaces,
+  initialStage,
+  bestStage,
+  completions,
+  isFullscreen,
+  onBackHome,
+  onSwitchToLobby,
+  onBuyAndEquip,
+  onBuyBundle,
+  onSkinChange,
+  onStageReached,
+  onSetCurrentStage,
+  onChatSent,
+  onEmoteUsed,
+  onJumpPadUsed,
+}) => {
+  const mountRef = useRef<HTMLDivElement>(null)
+  const t = LOCALES[lang].world
+  const rank = getRankForXp(xp)
+
+  const course = useMemo(() => generateTestObbyCourse(), [])
+
+  const [currentStage, setCurrentStage] = useState<number>(() => Math.max(1, Math.min(100, initialStage)))
+  const [maxUnlockedStage, setMaxUnlockedStage] = useState<number>(() => Math.max(1, Math.min(100, bestStage)))
+  const [finishedBanner, setFinishedBanner] = useState<{ elapsedMs: number } | null>(null)
+  const [elapsedMs, setElapsedMs] = useState<number>(0)
+  const runStartTimeRef = useRef<number>(Date.now())
+
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true)
+  const [touchMode, setTouchMode] = useState<boolean>(() => isTouchMobileDevice())
+  const [touchSprint, setTouchSprint] = useState<boolean>(false)
+  const [activeEmoteUi, setActiveEmoteUi] = useState<PlayerPose | null>(null)
+  const [isPortraitMobile, setIsPortraitMobile] = useState<boolean>(false)
+  const [quality, setQuality] = useState<GraphicsQuality>(() => (isTouchMobileDevice() ? 'low' : 'medium'))
+  const [worldTime, setWorldTime] = useState<WorldTimeOfDay>('day')
+  const [hubOpen, setHubOpen] = useState<boolean>(false)
+  const [wardrobeOpen, setWardrobeOpen] = useState<boolean>(false)
+  const [previewAvatar, setPreviewAvatar] = useState<R6AvatarConfig>(() => ({ ...avatar }))
+  const [chatOpen, setChatOpen] = useState<boolean>(() => !isTouchMobileDevice())
+  const [unreadCount, setUnreadCount] = useState<number>(0)
+  const [chatInput, setChatInput] = useState('')
+  const [chatMessages, setChatMessages] = useState<LobbyChatMessage[]>(() => [
+    {
+      id: 'welcome-obby',
+      senderId: 'system',
+      username: 'FreshBlox',
+      text: LOCALES[lang].world.welcomeObbyChat,
+      timestamp: Date.now(),
+      system: true,
+    },
+  ])
+  const [onlineCount, setOnlineCount] = useState(1)
+  const [roster, setRoster] = useState<Array<{ id: string; username: string; rank: string; stage: number; isSelf?: boolean }>>([])
+  const [toast, setToast] = useState<string | null>(null)
+  const [copiedInvite, setCopiedInvite] = useState(false)
+
+  // Keep synced with props when account loads from cloud
+  useEffect(() => {
+    setMaxUnlockedStage((prev) => Math.max(prev, bestStage))
+  }, [bestStage])
+
+  useEffect(() => {
+    setPreviewAvatar((prev) => ({ ...prev, skinColor: avatar.skinColor }))
+  }, [avatar.skinColor])
+
+  const displayedAvatar = wardrobeOpen ? previewAvatar : avatar
+
+  // Refs shared with RAF loop
+  const qualityRef = useRef<GraphicsQuality>(quality)
+  qualityRef.current = quality
+  const worldTimeRef = useRef<WorldTimeOfDay>(worldTime)
+  worldTimeRef.current = worldTime
+  const wardrobeOpenRef = useRef<boolean>(wardrobeOpen)
+  wardrobeOpenRef.current = wardrobeOpen
+  const chatOpenRef = useRef<boolean>(chatOpen)
+  chatOpenRef.current = chatOpen
+  const usernameRef = useRef(username)
+  usernameRef.current = username
+  const rankRef = useRef(rank.name)
+  rankRef.current = rank.name
+  const avatarRef = useRef(avatar)
+  avatarRef.current = avatar
+  const displayedAvatarRef = useRef(displayedAvatar)
+  displayedAvatarRef.current = displayedAvatar
+  const authUserIdRef = useRef(authUserId)
+  authUserIdRef.current = authUserId
+
+  const currentStageRef = useRef<number>(currentStage)
+  currentStageRef.current = currentStage
+  const maxUnlockedRef = useRef<number>(maxUnlockedStage)
+  maxUnlockedRef.current = maxUnlockedStage
+
+  const callbacksRef = useRef({
+    onStageReached,
+    onSetCurrentStage,
+    onChatSent,
+    onEmoteUsed,
+    onJumpPadUsed,
+  })
+  callbacksRef.current = {
+    onStageReached,
+    onSetCurrentStage,
+    onChatSent,
+    onEmoteUsed,
+    onJumpPadUsed,
+  }
+
+  // Input & camera refs
+  const keysRef = useRef<Set<string>>(new Set())
+  const joyRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  const touchSprintRef = useRef<boolean>(false)
+  const jumpRequestRef = useRef<boolean>(false)
+  const activeEmoteRef = useRef<{ pose: PlayerPose; until: number } | null>(null)
+  const respawnToStageRef = useRef<((stage: number, resetTimer?: boolean) => void) | null>(null)
+  const focusWardrobeCamRef = useRef<(() => void) | null>(null)
+
+  const mpRef = useRef<LobbyMultiplayerClient | null>(null)
+  const localRigRef = useRef<R6RigHandle | null>(null)
+  const chatEndRef = useRef<HTMLDivElement>(null)
+  const chatInputRef = useRef<HTMLInputElement>(null)
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
+  const sceneRef = useRef<THREE.Scene | null>(null)
+  const applyTimeOfDayRef = useRef<((tod: WorldTimeOfDay) => void) | null>(null)
+
+  const showToast = useCallback((msg: string) => {
+    setToast(msg)
+    window.setTimeout(() => {
+      setToast((prev) => (prev === msg ? null : prev))
+    }, 2400)
+  }, [])
+
+  // Session run timer
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (!finishedBanner) {
+        setElapsedMs(Date.now() - runStartTimeRef.current)
+      }
+    }, 500)
+    return () => window.clearInterval(id)
+  }, [finishedBanner])
+
+  // Portrait mobile detection
+  useEffect(() => {
+    const check = () => {
+      const mobile = isTouchMobileDevice()
+      setIsPortraitMobile(mobile && window.innerHeight > window.innerWidth)
+    }
+    check()
+    window.addEventListener('resize', check)
+    window.addEventListener('orientationchange', check)
+    return () => {
+      window.removeEventListener('resize', check)
+      window.removeEventListener('orientationchange', check)
+    }
+  }, [])
+
+  // Auto-scroll chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages, chatOpen])
+
+  // Apply quality changes live
+  useEffect(() => {
+    const renderer = rendererRef.current
+    if (!renderer) return
+    const dpr = window.devicePixelRatio || 1
+    if (quality === 'low') {
+      renderer.setPixelRatio(Math.min(dpr, 1.0))
+      renderer.shadowMap.enabled = false
+    } else if (quality === 'medium') {
+      renderer.setPixelRatio(Math.min(dpr, 1.25))
+      renderer.shadowMap.enabled = true
+    } else {
+      renderer.setPixelRatio(Math.min(dpr, 1.75))
+      renderer.shadowMap.enabled = true
+    }
+  }, [quality])
+
+  useEffect(() => {
+    applyTimeOfDayRef.current?.(worldTime)
+  }, [worldTime])
+
+  // Live 0ms hot-swap of local R6 rig inside Test Obby
+  useEffect(() => {
+    const scene = sceneRef.current
+    const oldRig = localRigRef.current
+    if (!scene || !oldRig) return
+
+    const pos = oldRig.root.position.clone()
+    const rotY = oldRig.root.rotation.y
+    const newRig = createR6Rig({
+      avatar: displayedAvatar,
+      username,
+      rank: rank.name,
+      showNameplate: true,
+      castShadow: qualityRef.current !== 'low',
+    })
+    newRig.root.position.copy(pos)
+    newRig.root.rotation.y = rotY
+    scene.remove(oldRig.root)
+    oldRig.dispose()
+    scene.add(newRig.root)
+    localRigRef.current = newRig
+  }, [
+    displayedAvatar.outfitId,
+    displayedAvatar.hatId,
+    displayedAvatar.faceId,
+    displayedAvatar.skinColor,
+    username,
+    rank.name,
+  ])
+
+  const openLiveWardrobe = useCallback(() => {
+    setPreviewAvatar({ ...avatarRef.current })
+    setHubOpen(false)
+    if (touchMode) setChatOpen(false)
+    setWardrobeOpen(true)
+    focusWardrobeCamRef.current?.()
+    sfx.playClick()
+  }, [touchMode])
+
+  const closeLiveWardrobe = useCallback(() => {
+    setWardrobeOpen(false)
+    setPreviewAvatar({ ...avatarRef.current })
+    sfx.playClick()
+  }, [])
+
+  // Keyboard bindings
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (wardrobeOpenRef.current) {
+          closeLiveWardrobe()
+          return
+        }
+        setHubOpen((open) => !open)
+        sfx.playClick()
+        return
+      }
+      if (document.activeElement === chatInputRef.current) return
+      const code = e.code
+      if (code === 'Space') {
+        e.preventDefault()
+        jumpRequestRef.current = true
+      }
+      if (code === 'KeyR') {
+        respawnToStageRef.current?.(currentStageRef.current)
+        return
+      }
+      keysRef.current.add(code)
+
+      if (code === 'Digit1') triggerEmote('wave')
+      if (code === 'Digit2') triggerEmote('dance')
+      if (code === 'Digit3') triggerEmote('cheer')
+      if (code === 'Digit4') triggerEmote('sit')
+      if (code === 'Digit5') triggerEmote('spin')
+      if (code === 'Digit6') triggerEmote('backflip')
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      keysRef.current.delete(e.code)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
+  }, [closeLiveWardrobe])
+
+  const triggerEmote = useCallback((pose: PlayerPose) => {
+    const dur =
+      pose === 'dance' || pose === 'sit' ? 4200 : pose === 'spin' || pose === 'backflip' ? 1400 : 2100
+    activeEmoteRef.current = { pose, until: performance.now() + dur }
+    setActiveEmoteUi(pose)
+    window.setTimeout(() => {
+      setActiveEmoteUi((cur) => (cur === pose ? null : cur))
+    }, dur)
+    if (pose === 'backflip' || pose === 'spin') {
+      sfx.playJump()
+    } else {
+      sfx.playClick()
+    }
+    callbacksRef.current.onEmoteUsed()
+  }, [])
+
+  const handleSendChat = useCallback(
+    (e?: React.FormEvent) => {
+      e?.preventDefault()
+      const clean = chatInput.trim().slice(0, 140)
+      if (!clean) return
+      const msg: LobbyChatMessage = {
+        id: `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        senderId: playerId,
+        username: usernameRef.current,
+        text: clean,
+        timestamp: Date.now(),
+      }
+      setChatMessages((prev) => [...prev.slice(-45), msg])
+      setChatInput('')
+      localRigRef.current?.setSpeech(clean)
+      window.setTimeout(() => localRigRef.current?.setSpeech(null), 5000)
+      mpRef.current?.broadcastChat(msg, authUserIdRef.current)
+      sfx.playChatPop()
+      callbacksRef.current.onChatSent()
+    },
+    [chatInput, playerId],
+  )
+
+  const handleCopyInvite = useCallback(() => {
+    const url = `${window.location.origin}${window.location.pathname}?world=obby&room=${encodeURIComponent(roomCode)}`
+    navigator.clipboard?.writeText(url).catch(() => {})
+    setCopiedInvite(true)
+    sfx.playClick()
+    setTimeout(() => setCopiedInvite(false), 2000)
+  }, [roomCode])
+
+  const toggleSound = useCallback(() => {
+    const next = !soundEnabled
+    sfx.setEnabled(next)
+    setSoundEnabled(next)
+    if (next) sfx.playClick()
+  }, [soundEnabled])
+
+  const jumpToStage = useCallback(
+    (target: number) => {
+      const clamped = Math.max(1, Math.min(maxUnlockedRef.current, target))
+      setCurrentStage(clamped)
+      currentStageRef.current = clamped
+      callbacksRef.current.onSetCurrentStage(clamped)
+      respawnToStageRef.current?.(clamped)
+      sfx.playClick()
+    },
+    [],
+  )
+
+  const handleRestartFromOne = useCallback(() => {
+    setFinishedBanner(null)
+    runStartTimeRef.current = Date.now()
+    setElapsedMs(0)
+    setCurrentStage(1)
+    currentStageRef.current = 1
+    callbacksRef.current.onSetCurrentStage(1)
+    respawnToStageRef.current?.(1, true)
+    sfx.playClick()
+  }, [])
+
+  // === MAIN THREE.JS 100-STAGE OBBY ENGINE ===
+  useEffect(() => {
+    const container = mountRef.current
+    if (!container) return
+
+    const geometriesToDispose: THREE.BufferGeometry[] = []
+    const materialsToDispose: THREE.Material[] = []
+    const texturesToDispose: THREE.Texture[] = []
+
+    const trackGeo = <T extends THREE.BufferGeometry>(g: T): T => {
+      geometriesToDispose.push(g)
+      return g
+    }
+    const trackMat = <T extends THREE.Material>(m: T): T => {
+      materialsToDispose.push(m)
+      return m
+    }
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: !isTouchMobileDevice(),
+      powerPreference: 'high-performance',
+    })
+    const initDpr = window.devicePixelRatio || 1
+    renderer.setPixelRatio(
+      qualityRef.current === 'low'
+        ? Math.min(initDpr, 1.0)
+        : qualityRef.current === 'medium'
+          ? Math.min(initDpr, 1.25)
+          : Math.min(initDpr, 1.75),
+    )
+    renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight)
+    renderer.shadowMap.enabled = qualityRef.current !== 'low'
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.08
+    container.innerHTML = ''
+    container.appendChild(renderer.domElement)
+    rendererRef.current = renderer
+
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color('#74C5FF')
+    scene.fog = new THREE.Fog('#B8E3FF', 75, 220)
+    sceneRef.current = scene
+
+    const camera = new THREE.PerspectiveCamera(
+      62,
+      (container.clientWidth || window.innerWidth) / (container.clientHeight || window.innerHeight),
+      0.2,
+      340,
+    )
+
+    // Lighting — clean natural Day / Night (Zero Neon!)
+    const hemi = new THREE.HemisphereLight('#F0F9FF', '#5894C4', 1.15)
+    scene.add(hemi)
+
+    const sun = new THREE.DirectionalLight('#FFFDF7', 1.48)
+    sun.position.set(45, 95, 40)
+    sun.castShadow = true
+    sun.shadow.mapSize.set(1024, 1024)
+    sun.shadow.camera.near = 10
+    sun.shadow.camera.far = 220
+    const dCam = 48
+    sun.shadow.camera.left = -dCam
+    sun.shadow.camera.right = dCam
+    sun.shadow.camera.top = dCam
+    sun.shadow.camera.bottom = -dCam
+    sun.shadow.bias = -0.0008
+    scene.add(sun)
+    scene.add(sun.target)
+
+    const fill = new THREE.DirectionalLight('#BAE6FD', 0.45)
+    fill.position.set(-36, 40, -30)
+    scene.add(fill)
+
+    // Sky elements (Day sun + Night moon & stars — follow player like a true skybox up to Stage 100!)
+    const daySkyGroup = new THREE.Group()
+    const sunDisc = new THREE.Mesh(
+      trackGeo(new THREE.SphereGeometry(9, 20, 16)),
+      trackMat(new THREE.MeshBasicMaterial({ color: '#FFFBEB', fog: false })),
+    )
+    sunDisc.position.set(70, 95, -155)
+    daySkyGroup.add(sunDisc)
+    scene.add(daySkyGroup)
+
+    const nightSkyGroup = new THREE.Group()
+    nightSkyGroup.visible = false
+    const moonMesh = new THREE.Mesh(
+      trackGeo(new THREE.SphereGeometry(7, 20, 16)),
+      trackMat(new THREE.MeshBasicMaterial({ color: '#F1F5F9', fog: false })),
+    )
+    moonMesh.position.set(-65, 90, -155)
+    nightSkyGroup.add(moonMesh)
+
+    const starPos = new Float32Array(260 * 3)
+    for (let i = 0; i < 260; i++) {
+      starPos[i * 3] = (Math.random() - 0.5) * 320
+      starPos[i * 3 + 1] = 20 + Math.random() * 140
+      starPos[i * 3 + 2] = (Math.random() - 0.5) * 320
+    }
+    const starGeo = trackGeo(new THREE.BufferGeometry())
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3))
+    nightSkyGroup.add(
+      new THREE.Points(
+        starGeo,
+        trackMat(new THREE.PointsMaterial({ color: '#E2E8F0', size: 1.0, sizeAttenuation: true, fog: false })),
+      ),
+    )
+    scene.add(nightSkyGroup)
+
+    const applyTimeOfDay = (tod: WorldTimeOfDay) => {
+      if (tod === 'day') {
+        scene.background = new THREE.Color('#74C5FF')
+        scene.fog = new THREE.Fog('#B8E3FF', 75, 220)
+        hemi.color.set('#F0F9FF')
+        hemi.groundColor.set('#5894C4')
+        hemi.intensity = 1.15
+        sun.color.set('#FFFDF7')
+        sun.intensity = 1.48
+        fill.color.set('#BAE6FD')
+        fill.intensity = 0.45
+        daySkyGroup.visible = true
+        nightSkyGroup.visible = false
+      } else {
+        scene.background = new THREE.Color('#0B1528')
+        scene.fog = new THREE.Fog('#0E1B33', 70, 210)
+        hemi.color.set('#93B8E0')
+        hemi.groundColor.set('#14233C')
+        hemi.intensity = 0.78
+        sun.color.set('#DBEAFE')
+        sun.intensity = 1.08
+        fill.color.set('#FFE6C4')
+        fill.intensity = 0.52
+        daySkyGroup.visible = false
+        nightSkyGroup.visible = true
+      }
+    }
+    applyTimeOfDayRef.current = applyTimeOfDay
+    applyTimeOfDay(worldTimeRef.current)
+
+    // Shared textures & material cache for ultra-fast 100-stage rendering!
+    const studTex = getSharedFreshStudTexture()
+    const matCache = new Map<string, THREE.MeshStandardMaterial>()
+    const getStudMat = (hex: string, roughness = 0.34, metalness = 0.08): THREE.MeshStandardMaterial => {
+      const key = `${hex}_${roughness}_${metalness}`
+      const existing = matCache.get(key)
+      if (existing) return existing
+      const m = trackMat(
+        new THREE.MeshStandardMaterial({
+          color: hex,
+          map: studTex,
+          roughness,
+          metalness,
+        }),
+      )
+      matCache.set(key, m)
+      return m
+    }
+
+    const hazardMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: '#EF4444',
+        roughness: 0.25,
+        metalness: 0.08,
+      }),
+    )
+    const jumpPadMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: '#0EA5E9',
+        roughness: 0.22,
+        metalness: 0.14,
+      }),
+    )
+    const poleMat = trackMat(new THREE.MeshStandardMaterial({ color: '#E2E8F0', roughness: 0.3, metalness: 0.35 }))
+    const flagInactiveMat = trackMat(new THREE.MeshStandardMaterial({ color: '#38BDF8', roughness: 0.3 }))
+    const flagActiveMat = trackMat(new THREE.MeshStandardMaterial({ color: '#22C55E', roughness: 0.28 }))
+    const goldMat = trackMat(new THREE.MeshStandardMaterial({ color: '#FBBF24', roughness: 0.24, metalness: 0.45 }))
+
+    // Shared geometries
+    const unitBoxGeo = trackGeo(new THREE.BoxGeometry(1, 1, 1))
+    const poleGeo = trackGeo(new THREE.CylinderGeometry(0.11, 0.13, 3.3, 10))
+    const flagGeo = trackGeo(new THREE.BoxGeometry(1.15, 0.72, 0.1))
+    const signBoardGeo = trackGeo(new THREE.BoxGeometry(1.75, 0.9, 0.14))
+    const spinnerHubGeo = trackGeo(new THREE.CylinderGeometry(0.42, 0.52, 0.75, 12))
+
+    // Build 10 zone groups for instant culling (always 60 FPS across all 100 levels!)
+    const zoneGroups: THREE.Group[] = Array.from({ length: 10 }, () => {
+      const g = new THREE.Group()
+      scene.add(g)
+      return g
+    })
+
+    const runtimeBlocks: RuntimeBlock[] = []
+    const checkpointFlagMap = new Map<number, THREE.Mesh>()
+
+    for (const b of course.blocks) {
+      const zg = zoneGroups[b.zone]
+      let mat: THREE.MeshStandardMaterial
+      if (b.kind === 'hazard' || b.kind === 'spinner') {
+        mat = hazardMat
+      } else if (b.kind === 'jumppad') {
+        mat = jumpPadMat
+      } else if (b.kind === 'fade') {
+        // Unique material per fading tile so opacity can animate independently!
+        mat = trackMat(
+          new THREE.MeshStandardMaterial({
+            color: b.color,
+            map: studTex,
+            roughness: 0.28,
+            metalness: 0.06,
+            transparent: true,
+            opacity: 1,
+          }),
+        )
+      } else {
+        mat = getStudMat(b.color)
+      }
+
+      const mesh = new THREE.Mesh(unitBoxGeo, mat)
+      mesh.scale.set(b.w, b.h, b.d)
+      mesh.position.set(b.x, b.y, b.z)
+      mesh.receiveShadow = b.kind !== 'hazard' && b.kind !== 'spinner'
+      mesh.castShadow = b.kind === 'moving' || b.kind === 'spinner'
+      zg.add(mesh)
+
+      const rb: RuntimeBlock = {
+        def: b,
+        mesh,
+        curX: b.x,
+        curY: b.y,
+        curZ: b.z,
+        prevX: b.x,
+        prevY: b.y,
+        prevZ: b.z,
+        fadeState: 'solid',
+        fadeTimer: 0,
+        spinAngle: b.spinnerPhase ?? 0,
+      }
+
+      if (b.kind === 'spinner') {
+        const hub = new THREE.Mesh(spinnerHubGeo, poleMat)
+        hub.position.set(b.x, b.y - 0.05, b.z)
+        zg.add(hub)
+      }
+
+      if (b.kind === 'jumppad') {
+        // Yellow clean arrow trim ring on top of jump pad
+        const trim = new THREE.Mesh(unitBoxGeo, goldMat)
+        trim.scale.set(b.w * 0.72, 0.08, b.d * 0.72)
+        trim.position.set(b.x, b.y + b.h / 2 + 0.04, b.z)
+        zg.add(trim)
+      }
+
+      if (b.kind === 'checkpoint' && b.checkpointStage) {
+        const stg = b.checkpointStage
+        const topY = b.y + b.h / 2
+        const cornerX = b.x + b.w / 2 - 0.9
+        const cornerZ = b.z - b.d / 2 + 0.9
+
+        // Checkpoint pole & color-changing flag
+        const pole = new THREE.Mesh(poleGeo, poleMat)
+        pole.position.set(cornerX, topY + 1.65, cornerZ)
+        zg.add(pole)
+
+        const flag = new THREE.Mesh(
+          flagGeo,
+          stg <= maxUnlockedRef.current ? flagActiveMat : flagInactiveMat,
+        )
+        flag.position.set(cornerX - 0.62, topY + 2.85, cornerZ)
+        zg.add(flag)
+        rb.flagMesh = flag
+        checkpointFlagMap.set(stg, flag)
+
+        // Stage number sign on left corner of platform
+        const signTex = makeStageSignTexture(stg, stg === 100)
+        texturesToDispose.push(signTex)
+        const signMat = trackMat(new THREE.MeshBasicMaterial({ map: signTex }))
+        const signSideMat = trackMat(new THREE.MeshStandardMaterial({ color: '#1E293B', roughness: 0.4 }))
+        const signPost = new THREE.Mesh(poleGeo, poleMat)
+        signPost.scale.set(0.85, 0.62, 0.85)
+        signPost.position.set(b.x - b.w / 2 + 1.1, topY + 1.0, cornerZ)
+        zg.add(signPost)
+
+        const signBoard = new THREE.Mesh(signBoardGeo, [
+          signSideMat,
+          signSideMat,
+          signSideMat,
+          signSideMat,
+          signMat,
+          signMat,
+        ])
+        signBoard.position.set(b.x - b.w / 2 + 1.1, topY + 2.15, cornerZ)
+        zg.add(signBoard)
+      }
+
+      runtimeBlocks.push(rb)
+    }
+
+    // Celebratory Stage 100 Golden Trophy + Floating Paper Confetti (Zero Neon!)
+    const finishCp = course.checkpoints[99]
+    const trophyGroup = new THREE.Group()
+    if (finishCp) {
+      const base = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.95, 1.15, 0.45, 16)), goldMat)
+      base.position.y = 0.22
+      const stem = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.28, 0.36, 1.1, 14)), goldMat)
+      stem.position.y = 0.95
+      const cup = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(1.15, 0.55, 1.45, 18)), goldMat)
+      cup.position.y = 2.1
+      const crown = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(0.9, 0.9, 0.9, 3, 0.12)), getStudMat('#38BDF8', 0.2, 0.25))
+      crown.position.y = 3.25
+      trophyGroup.add(base, stem, cup, crown)
+      trophyGroup.position.set(finishCp.x, finishCp.y + 1.45, finishCp.z - 3.6)
+      zoneGroups[9].add(trophyGroup)
+    }
+
+    // Confetti pieces floating around Stage 100 island
+    const confettiColors = ['#38BDF8', '#FACC15', '#34D399', '#F472B6', '#FFFFFF']
+    const confettiMeshes: Array<{ mesh: THREE.Mesh; baseY: number; phase: number; speed: number }> = []
+    if (finishCp) {
+      const confGeo = trackGeo(new THREE.BoxGeometry(0.38, 0.1, 0.38))
+      for (let i = 0; i < 36; i++) {
+        const cm = new THREE.Mesh(
+          confGeo,
+          getStudMat(confettiColors[i % confettiColors.length], 0.35, 0.05),
+        )
+        const ang = (i / 36) * Math.PI * 2
+        const rad = 3.5 + (i % 5) * 1.4
+        const by = finishCp.y + 2.5 + (i % 6) * 0.9
+        cm.position.set(finishCp.x + Math.cos(ang) * rad, by, finishCp.z + Math.sin(ang) * rad)
+        zoneGroups[9].add(cm)
+        confettiMeshes.push({ mesh: cm, baseY: by, phase: i * 0.6, speed: 1.4 + (i % 4) * 0.35 })
+      }
+    }
+
+    // Fluffy scenic FreshBlox clouds distributed along the 100-stage ascent
+    const cloudMat = trackMat(new THREE.MeshStandardMaterial({ color: '#FFFFFF', roughness: 0.85, metalness: 0 }))
+    const cloudGeo = trackGeo(new RoundedBoxGeometry(1, 1, 1, 2, 0.22))
+    for (let i = 0; i < 10; i++) {
+      const cpSample = course.checkpoints[Math.min(99, i * 10 + 4)]
+      if (!cpSample) continue
+      for (let side = -1; side <= 1; side += 2) {
+        const cg = new THREE.Group()
+        const c1 = new THREE.Mesh(cloudGeo, cloudMat)
+        c1.scale.set(9, 2.4, 5.5)
+        const c2 = new THREE.Mesh(cloudGeo, cloudMat)
+        c2.scale.set(6, 2.8, 4.5)
+        c2.position.set(2.2, 1.0, 0.4)
+        cg.add(c1, c2)
+        cg.position.set(cpSample.x + side * (22 + (i % 3) * 6), cpSample.y + 4 + (i % 3) * 2.5, cpSample.z - 10)
+        zoneGroups[i].add(cg)
+      }
+    }
+
+    // Helper: update which zones are visible based on current stage
+    const updateZoneVisibility = (stage: number) => {
+      const activeZone = Math.min(9, Math.floor((stage - 1) / 10))
+      for (let z = 0; z < 10; z++) {
+        zoneGroups[z].visible = z >= activeZone - 1 && z <= activeZone + 2
+      }
+    }
+    updateZoneVisibility(currentStageRef.current)
+
+    // === LOCAL R6 PLAYER ===
+    const startCp = course.checkpoints[Math.max(0, Math.min(99, currentStageRef.current - 1))]
+    const localRig = createR6Rig({
+      avatar: displayedAvatarRef.current,
+      username: usernameRef.current,
+      rank: rankRef.current,
+      showNameplate: true,
+      castShadow: qualityRef.current !== 'low',
+    })
+    localRig.root.position.set(startCp.x, startCp.spawnY, startCp.z)
+    scene.add(localRig.root)
+    localRigRef.current = localRig
+
+    const player = {
+      x: startCp.x,
+      y: startCp.spawnY,
+      z: startCp.z,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      rotY: Math.PI, // face -Z along the course!
+      grounded: true,
+      coyoteTimer: 0.12,
+      jumpBufferTimer: 0,
+      pose: 'idle' as PlayerPose,
+      wasGrounded: true,
+      standingBlock: null as RuntimeBlock | null,
+    }
+
+    // Third-person orbit camera (facing -Z initially!)
+    const camState = {
+      yaw: 0,
+      pitch: 0.34,
+      dist: 11.2,
+      dragging: false,
+      lastX: 0,
+      lastY: 0,
+      lookTarget: new THREE.Vector3(startCp.x, startCp.spawnY + 2.0, startCp.z),
+      wardrobeOffset: 0,
+    }
+
+    focusWardrobeCamRef.current = () => {
+      camState.yaw = player.rotY
+      camState.pitch = 0.14
+    }
+
+    const respawnToStage = (stage: number, resetTimer = false) => {
+      const cp = course.checkpoints[Math.max(0, Math.min(99, stage - 1))]
+      if (!cp) return
+      player.x = cp.x
+      player.y = cp.spawnY + 0.3
+      player.z = cp.z
+      player.vx = 0
+      player.vy = 0
+      player.vz = 0
+      player.rotY = Math.PI
+      player.grounded = false
+      player.standingBlock = null
+      camState.yaw = 0
+      camState.pitch = 0.34
+      updateZoneVisibility(stage)
+      if (resetTimer) {
+        runStartTimeRef.current = Date.now()
+      }
+    }
+    respawnToStageRef.current = respawnToStage
+
+    // Mouse / Touch camera controls
+    const dom = renderer.domElement
+    const activeTouchPointers = new Map<number, { x: number; y: number }>()
+    let lastPinchDist = 0
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') {
+        activeTouchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+        if (activeTouchPointers.size === 1) {
+          camState.dragging = true
+          camState.lastX = e.clientX
+          camState.lastY = e.clientY
+        } else if (activeTouchPointers.size === 2) {
+          const pts = Array.from(activeTouchPointers.values())
+          lastPinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
+        }
+        return
+      }
+      if (e.button === 0 || e.button === 2) {
+        camState.dragging = true
+        camState.lastX = e.clientX
+        camState.lastY = e.clientY
+      }
+    }
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') {
+        if (!activeTouchPointers.has(e.pointerId)) return
+        activeTouchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+        if (activeTouchPointers.size === 2) {
+          const pts = Array.from(activeTouchPointers.values())
+          const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
+          if (lastPinchDist > 0) {
+            camState.dist = Math.max(5.5, Math.min(20, camState.dist - (dist - lastPinchDist) * 0.04))
+          }
+          lastPinchDist = dist
+          return
+        }
+      }
+      if (!camState.dragging) return
+      const dx = e.clientX - camState.lastX
+      const dy = e.clientY - camState.lastY
+      camState.lastX = e.clientX
+      camState.lastY = e.clientY
+      const sens = e.pointerType === 'touch' ? 0.0082 : 0.0065
+      camState.yaw -= dx * sens
+      camState.pitch = Math.max(0.05, Math.min(1.18, camState.pitch + dy * sens))
+    }
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') {
+        activeTouchPointers.delete(e.pointerId)
+        if (activeTouchPointers.size < 2) lastPinchDist = 0
+        if (activeTouchPointers.size === 0) camState.dragging = false
+        return
+      }
+      camState.dragging = false
+    }
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      camState.dist = Math.max(5.5, Math.min(20, camState.dist + e.deltaY * 0.01))
+    }
+
+    const onContextMenu = (e: MouseEvent) => e.preventDefault()
+
+    dom.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+    window.addEventListener('pointercancel', onPointerUp)
+    dom.addEventListener('wheel', onWheel, { passive: false })
+    dom.addEventListener('contextmenu', onContextMenu)
+
+    // === MULTIPLAYER SYNC (Supabase Realtime + BroadcastChannel) ===
+    const remotes = new Map<string, RemoteObbyEntity>()
+    const avatarKeyOf = (a: R6AvatarConfig) => `${a.outfitId}|${a.hatId}|${a.faceId}|${a.skinColor}`
+
+    const rebuildRoster = () => {
+      const list = [
+        {
+          id: playerId,
+          username: usernameRef.current,
+          rank: rankRef.current,
+          stage: currentStageRef.current,
+          isSelf: true,
+        },
+        ...Array.from(remotes.values()).map((r) => ({
+          id: r.id,
+          username: r.username,
+          rank: r.rank,
+          stage: r.stage,
+        })),
+      ].sort((a, b) => b.stage - a.stage)
+      setRoster(list)
+      setOnlineCount(1 + remotes.size)
+    }
+    rebuildRoster()
+
+    const mp = new LobbyMultiplayerClient({
+      roomId: roomCode,
+      world: 'obby',
+      selfId: playerId,
+      onState: (state: RemotePlayerState) => {
+        const nextKey = avatarKeyOf(state.avatar)
+        let ent = remotes.get(state.id)
+        if (!ent) {
+          const rig = createR6Rig({
+            avatar: state.avatar,
+            username: state.username,
+            rank: state.rank,
+            showNameplate: true,
+            castShadow: qualityRef.current !== 'low',
+          })
+          rig.root.position.set(state.x, state.y, state.z)
+          scene.add(rig.root)
+          ent = {
+            id: state.id,
+            username: state.username,
+            rank: state.rank,
+            stage: state.stage ?? 1,
+            avatarKey: nextKey,
+            rig,
+            targetPos: new THREE.Vector3(state.x, state.y, state.z),
+            currentPos: new THREE.Vector3(state.x, state.y, state.z),
+            targetRotY: state.rotY,
+            pose: state.pose,
+            lastSeen: Date.now(),
+          }
+          remotes.set(state.id, ent)
+          rebuildRoster()
+        } else {
+          if (ent.avatarKey !== nextKey || ent.username !== state.username) {
+            const pos = ent.rig.root.position.clone()
+            const rotY = ent.rig.root.rotation.y
+            scene.remove(ent.rig.root)
+            ent.rig.dispose()
+            const freshRig = createR6Rig({
+              avatar: state.avatar,
+              username: state.username,
+              rank: state.rank,
+              showNameplate: true,
+              castShadow: qualityRef.current !== 'low',
+            })
+            freshRig.root.position.copy(pos)
+            freshRig.root.rotation.y = rotY
+            scene.add(freshRig.root)
+            ent.rig = freshRig
+            ent.avatarKey = nextKey
+            ent.username = state.username
+          }
+          const stageChanged = (state.stage ?? 1) !== ent.stage
+          ent.stage = state.stage ?? 1
+          ent.targetPos.set(state.x, state.y, state.z)
+          ent.targetRotY = state.rotY
+          ent.pose = state.pose
+          ent.lastSeen = Date.now()
+          if (stageChanged) rebuildRoster()
+        }
+      },
+      onLeave: (id: string) => {
+        const ent = remotes.get(id)
+        if (ent) {
+          scene.remove(ent.rig.root)
+          ent.rig.dispose()
+          remotes.delete(id)
+          rebuildRoster()
+        }
+      },
+      onChat: (msg: LobbyChatMessage) => {
+        setChatMessages((prev) => [...prev.slice(-45), msg])
+        if (!chatOpenRef.current) setUnreadCount((c) => Math.min(99, c + 1))
+        const ent = remotes.get(msg.senderId)
+        if (ent) {
+          ent.rig.setSpeech(msg.text)
+          window.setTimeout(() => ent.rig.setSpeech(null), 5000)
+        }
+        sfx.playChatPop()
+      },
+      onHistory: (history) => {
+        setChatMessages((prev) => {
+          const existing = new Set(prev.map((m) => m.id))
+          const merged = [...prev, ...history.filter((h) => !existing.has(h.id))]
+          return merged.slice(-50)
+        })
+      },
+    })
+    mp.connect()
+    mpRef.current = mp
+
+    // === MAIN SIMULATION & RENDER LOOP ===
+    const WALK_SPEED = 11.4
+    const SPRINT_SPEED = 16.4
+    const JUMP_VEL = 13.8
+    const GRAVITY = -34
+    const STEP_HEIGHT = 0.56
+    const PLAYER_R = 0.68
+    const PLAYER_H = 3.2
+
+    let lastFrame = performance.now()
+    let simTime = 0
+    let lastBroadcast = 0
+    let rafId = 0
+
+    const onResize = () => {
+      if (!container) return
+      const w = container.clientWidth || window.innerWidth
+      const h = container.clientHeight || window.innerHeight
+      camera.aspect = w / h
+      camera.updateProjectionMatrix()
+      renderer.setSize(w, h)
+    }
+    window.addEventListener('resize', onResize)
+
+    const tick = (now: number) => {
+      rafId = requestAnimationFrame(tick)
+      const dt = Math.min(0.05, (now - lastFrame) / 1000)
+      lastFrame = now
+      simTime += dt
+
+      const activeStg = currentStageRef.current
+      const activeZone = Math.min(9, Math.floor((activeStg - 1) / 10))
+
+      // 1. Update dynamic blocks (moving platforms, fading tiles, rotating spinners) in nearby zones
+      for (const rb of runtimeBlocks) {
+        if (rb.def.zone < activeZone - 1 || rb.def.zone > activeZone + 2) continue
+
+        rb.prevX = rb.curX
+        rb.prevY = rb.curY
+        rb.prevZ = rb.curZ
+
+        if (rb.def.kind === 'moving') {
+          const amp = rb.def.moveAmp ?? 2.5
+          const spd = rb.def.moveSpeed ?? 1.5
+          const ph = rb.def.movePhase ?? 0
+          const offset = Math.sin(simTime * spd + ph) * amp
+          rb.curX = rb.def.x + (rb.def.moveAxis === 'x' ? offset : 0)
+          rb.curY = rb.def.y + (rb.def.moveAxis === 'y' ? offset : 0)
+          rb.curZ = rb.def.z + (rb.def.moveAxis === 'z' ? offset : 0)
+          rb.mesh.position.set(rb.curX, rb.curY, rb.curZ)
+        } else if (rb.def.kind === 'spinner') {
+          rb.spinAngle = (rb.def.spinnerPhase ?? 0) + simTime * (rb.def.spinnerSpeed ?? 1.4)
+          rb.mesh.rotation.y = rb.spinAngle
+        } else if (rb.def.kind === 'fade') {
+          if (rb.fadeState === 'shaking') {
+            rb.fadeTimer += dt
+            const frac = Math.min(1, rb.fadeTimer / 0.68)
+            rb.mesh.position.y = rb.def.y + Math.sin(rb.fadeTimer * 44) * 0.06
+            ;(rb.mesh.material as THREE.MeshStandardMaterial).opacity = 1 - frac * 0.65
+            if (rb.fadeTimer >= 0.68) {
+              rb.fadeState = 'gone'
+              rb.fadeTimer = 0
+              rb.mesh.visible = false
+            }
+          } else if (rb.fadeState === 'gone') {
+            rb.fadeTimer += dt
+            if (rb.fadeTimer >= 2.2) {
+              rb.fadeState = 'solid'
+              rb.fadeTimer = 0
+              rb.mesh.visible = true
+              rb.mesh.position.y = rb.def.y
+              ;(rb.mesh.material as THREE.MeshStandardMaterial).opacity = 1
+            }
+          }
+        }
+      }
+
+      // Animate Stage 100 trophy & confetti
+      if (zoneGroups[9].visible) {
+        trophyGroup.rotation.y = simTime * 1.1
+        for (const c of confettiMeshes) {
+          c.mesh.position.y = c.baseY + Math.sin(simTime * c.speed + c.phase) * 0.65
+          c.mesh.rotation.x = simTime * 1.6 + c.phase
+          c.mesh.rotation.y = simTime * 1.2 + c.phase
+        }
+      }
+
+      // 2. Carry player with moving platform if currently standing on one
+      if (player.grounded && player.standingBlock && player.standingBlock.def.kind === 'moving') {
+        player.x += player.standingBlock.curX - player.standingBlock.prevX
+        player.y += player.standingBlock.curY - player.standingBlock.prevY
+        player.z += player.standingBlock.curZ - player.standingBlock.prevZ
+      }
+
+      // 3. Movement input
+      const keys = keysRef.current
+      let inputFwd = 0
+      let inputRight = 0
+      if (!wardrobeOpenRef.current) {
+        if (keys.has('KeyW') || keys.has('ArrowUp')) inputFwd += 1
+        if (keys.has('KeyS') || keys.has('ArrowDown')) inputFwd -= 1
+        if (keys.has('KeyD') || keys.has('ArrowRight')) inputRight += 1
+        if (keys.has('KeyA') || keys.has('ArrowLeft')) inputRight -= 1
+        inputRight += joyRef.current.x
+        inputFwd -= joyRef.current.y
+      }
+      const mag = Math.hypot(inputFwd, inputRight)
+      if (mag > 1) {
+        inputFwd /= mag
+        inputRight /= mag
+      }
+
+      const sprinting = keys.has('ShiftLeft') || keys.has('ShiftRight') || touchSprintRef.current
+      const speed = sprinting ? SPRINT_SPEED : WALK_SPEED
+
+      const camFwdX = -Math.sin(camState.yaw)
+      const camFwdZ = -Math.cos(camState.yaw)
+      const camRightX = Math.cos(camState.yaw)
+      const camRightZ = -Math.sin(camState.yaw)
+
+      const moveX = camFwdX * inputFwd + camRightX * inputRight
+      const moveZ = camFwdZ * inputFwd + camRightZ * inputRight
+
+      if (mag > 0.08) {
+        activeEmoteRef.current = null
+        player.vx = moveX * speed
+        player.vz = moveZ * speed
+        const desiredRot = Math.atan2(moveX, moveZ)
+        let diff = desiredRot - player.rotY
+        while (diff > Math.PI) diff -= Math.PI * 2
+        while (diff < -Math.PI) diff += Math.PI * 2
+        player.rotY += diff * Math.min(1, dt * 14)
+      } else {
+        player.vx *= Math.max(0, 1 - dt * 15)
+        player.vz *= Math.max(0, 1 - dt * 15)
+      }
+
+      // Coyote Time + Jump Buffer for crisp, joyous Obby platforming!
+      if (player.grounded) {
+        player.coyoteTimer = 0.12
+      } else {
+        player.coyoteTimer = Math.max(0, player.coyoteTimer - dt)
+      }
+
+      if (jumpRequestRef.current) {
+        player.jumpBufferTimer = 0.13
+        jumpRequestRef.current = false
+      } else {
+        player.jumpBufferTimer = Math.max(0, player.jumpBufferTimer - dt)
+      }
+
+      if (player.jumpBufferTimer > 0 && player.coyoteTimer > 0 && !wardrobeOpenRef.current) {
+        player.vy = JUMP_VEL
+        player.grounded = false
+        player.standingBlock = null
+        player.coyoteTimer = 0
+        player.jumpBufferTimer = 0
+        activeEmoteRef.current = null
+        sfx.playJump()
+      }
+
+      player.vy += GRAVITY * dt
+
+      const prevY = player.y
+      const nextX = player.x + player.vx * dt
+      const nextZ = player.z + player.vz * dt
+      let nextY = player.y + player.vy * dt
+
+      // 4. Resolve collisions against nearby blocks
+      let groundedNow = false
+      let landedBlock: RuntimeBlock | null = null
+      let hitHazard = false
+      let hitJumpPadVel = 0
+
+      for (const rb of runtimeBlocks) {
+        // Fast stage/spatial culling
+        if (Math.abs(rb.curZ - nextZ) > rb.def.d * 0.5 + 8) continue
+        if (rb.def.kind === 'fade' && rb.fadeState === 'gone') continue
+
+        if (rb.def.kind === 'spinner') {
+          // Oriented 2D bar collision in spinner local space
+          const dx = nextX - rb.curX
+          const dz = nextZ - rb.curZ
+          const cos = Math.cos(-rb.spinAngle)
+          const sin = Math.sin(-rb.spinAngle)
+          const lx = dx * cos - dz * sin
+          const lz = dx * sin + dz * cos
+          const halfLen = rb.def.w / 2 + PLAYER_R * 0.6
+          const halfThick = rb.def.d / 2 + PLAYER_R * 0.6
+          const barMinY = rb.curY - rb.def.h / 2
+          const barMaxY = rb.curY + rb.def.h / 2
+          if (
+            Math.abs(lx) <= halfLen &&
+            Math.abs(lz) <= halfThick &&
+            nextY < barMaxY - 0.06 &&
+            nextY + PLAYER_H > barMinY + 0.1
+          ) {
+            hitHazard = true
+            break
+          }
+          continue
+        }
+
+        const halfW = rb.def.w / 2
+        const halfD = rb.def.d / 2
+        const minX = rb.curX - halfW - PLAYER_R
+        const maxX = rb.curX + halfW + PLAYER_R
+        const minZ = rb.curZ - halfD - PLAYER_R
+        const maxZ = rb.curZ + halfD + PLAYER_R
+        const topY = rb.curY + rb.def.h / 2
+        const botY = rb.curY - rb.def.h / 2
+
+        const insideXZ = nextX >= minX && nextX <= maxX && nextZ >= minZ && nextZ <= maxZ
+        if (!insideXZ) continue
+
+        if (rb.def.kind === 'hazard') {
+          if (nextY < topY - 0.05 && nextY + PLAYER_H > botY + 0.08) {
+            hitHazard = true
+            break
+          }
+          continue
+        }
+
+        if (rb.def.kind === 'jumppad') {
+          if (nextY <= topY + 0.45 && nextY >= botY - 0.4) {
+            hitJumpPadVel = rb.def.jumpVel ?? 21.8
+          }
+          continue
+        }
+
+        // Solid / Checkpoint / Moving / Fade landing check
+        if (player.vy <= 0 && prevY >= topY - STEP_HEIGHT && nextY <= topY + 0.14) {
+          if (!groundedNow || topY > nextY) {
+            nextY = topY
+            groundedNow = true
+            landedBlock = rb
+          }
+        }
+      }
+
+      if (hitHazard) {
+        sfx.playClick()
+        respawnToStage(currentStageRef.current)
+      } else {
+        player.x = nextX
+        player.z = nextZ
+        player.y = nextY
+
+        if (hitJumpPadVel > 0) {
+          player.vy = hitJumpPadVel
+          player.grounded = false
+          player.standingBlock = null
+          sfx.playJumpPad()
+          callbacksRef.current.onJumpPadUsed()
+        } else if (groundedNow && landedBlock) {
+          player.vy = 0
+          player.grounded = true
+          player.standingBlock = landedBlock
+
+          // Trigger fade tile shake on step
+          if (landedBlock.def.kind === 'fade' && landedBlock.fadeState === 'solid') {
+            landedBlock.fadeState = 'shaking'
+            landedBlock.fadeTimer = 0
+          }
+
+          // Check if player reached a NEW checkpoint!
+          if (landedBlock.def.kind === 'checkpoint' && landedBlock.def.checkpointStage) {
+            const stg = landedBlock.def.checkpointStage
+            if (stg > currentStageRef.current) {
+              currentStageRef.current = stg
+              setCurrentStage(stg)
+              if (stg > maxUnlockedRef.current) {
+                maxUnlockedRef.current = stg
+                setMaxUnlockedStage(stg)
+              }
+              updateZoneVisibility(stg)
+              const flagMesh = checkpointFlagMap.get(stg)
+              if (flagMesh) flagMesh.material = flagActiveMat
+
+              const nowElapsed = Date.now() - runStartTimeRef.current
+              if (stg === 100) {
+                sfx.playQuestClaim()
+                setFinishedBanner({ elapsedMs: nowElapsed })
+                callbacksRef.current.onStageReached(100, nowElapsed)
+                showToast(`🏆 ${t.obbyFinishedTitle}`)
+              } else {
+                sfx.playGemCollect()
+                callbacksRef.current.onStageReached(stg)
+                showToast(`Stage ${stg} / 100 ✓`)
+              }
+              rebuildRoster()
+            }
+          }
+        } else {
+          player.grounded = false
+          player.standingBlock = null
+        }
+
+        // Void fall respawn check
+        const cpRef = course.checkpoints[Math.max(0, Math.min(99, currentStageRef.current - 1))]
+        const floorCutoff = (cpRef?.y ?? 0) - 14
+        if (player.y < floorCutoff) {
+          sfx.playClick()
+          respawnToStage(currentStageRef.current)
+        }
+      }
+
+      // Determine R6 pose
+      const hSpeed = Math.hypot(player.vx, player.vz)
+      const activeEmote = activeEmoteRef.current
+      if (activeEmote && now < activeEmote.until) {
+        player.pose = activeEmote.pose
+      } else {
+        activeEmoteRef.current = null
+        if (!player.grounded) {
+          player.pose = player.vy > 0.5 ? 'jump' : 'fall'
+        } else if (hSpeed > 12.2) {
+          player.pose = 'run'
+        } else if (hSpeed > 0.7) {
+          player.pose = 'walk'
+        } else {
+          player.pose = 'idle'
+        }
+      }
+
+      player.wasGrounded = player.grounded
+
+      // Update local R6 rig
+      if (localRigRef.current) {
+        localRigRef.current.root.position.set(player.x, player.y, player.z)
+        localRigRef.current.root.rotation.y = player.rotY
+        localRigRef.current.update(dt, simTime, player.pose)
+      }
+
+      // Move sun shadow frustum & skybox with player so lighting & sky stay crisp all the way to Stage 100!
+      sun.position.set(player.x + 36, player.y + 68, player.z + 28)
+      sun.target.position.set(player.x, player.y, player.z - 8)
+      sun.target.updateMatrixWorld()
+      daySkyGroup.position.set(player.x, player.y, player.z)
+      nightSkyGroup.position.set(player.x, player.y, player.z)
+
+      // Smooth third-person camera + dressing-room framing when Live Wardrobe is open
+      const inWardrobe = wardrobeOpenRef.current
+      camState.wardrobeOffset += ((inWardrobe ? 1.15 : 0) - camState.wardrobeOffset) * Math.min(1, dt * 9)
+      const effectiveDist = inWardrobe ? 5.85 : camState.dist
+      const targetLookX = player.x + Math.cos(camState.yaw) * camState.wardrobeOffset
+      const targetLookZ = player.z - Math.sin(camState.yaw) * camState.wardrobeOffset
+      const desiredLook = new THREE.Vector3(targetLookX, player.y + (inWardrobe ? 1.85 : 2.1), targetLookZ)
+      camState.lookTarget.lerp(desiredLook, Math.min(1, dt * 13))
+
+      const camX = camState.lookTarget.x + Math.sin(camState.yaw) * Math.cos(camState.pitch) * effectiveDist
+      const camY = camState.lookTarget.y + Math.sin(camState.pitch) * effectiveDist
+      const camZ = camState.lookTarget.z + Math.cos(camState.yaw) * Math.cos(camState.pitch) * effectiveDist
+      camera.position.set(camX, camY, camZ)
+      camera.lookAt(camState.lookTarget)
+
+      // 5. Update remote players
+      for (const [id, ent] of remotes.entries()) {
+        if (now - ent.lastSeen > 12000) {
+          scene.remove(ent.rig.root)
+          ent.rig.dispose()
+          remotes.delete(id)
+          rebuildRoster()
+          continue
+        }
+        ent.currentPos.lerp(ent.targetPos, Math.min(1, dt * 12))
+        ent.rig.root.position.copy(ent.currentPos)
+        let dRot = ent.targetRotY - ent.rig.root.rotation.y
+        while (dRot > Math.PI) dRot -= Math.PI * 2
+        while (dRot < -Math.PI) dRot += Math.PI * 2
+        ent.rig.root.rotation.y += dRot * Math.min(1, dt * 12)
+        ent.rig.update(dt, simTime + 0.8, ent.pose)
+      }
+
+      // 6. Broadcast own state over Supabase Realtime + BroadcastChannel (~12 Hz)
+      if (now - lastBroadcast > 85) {
+        lastBroadcast = now
+        mp.broadcastState({
+          id: playerId,
+          username: usernameRef.current,
+          rank: rankRef.current,
+          x: player.x,
+          y: player.y,
+          z: player.z,
+          rotY: player.rotY,
+          pose: player.pose,
+          avatar: avatarRef.current,
+          stage: currentStageRef.current,
+          lastSeen: Date.now(),
+        })
+      }
+
+      renderer.render(scene, camera)
+    }
+
+    rafId = requestAnimationFrame(tick)
+
+    return () => {
+      cancelAnimationFrame(rafId)
+      window.removeEventListener('resize', onResize)
+      dom.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('pointercancel', onPointerUp)
+      dom.removeEventListener('wheel', onWheel)
+      dom.removeEventListener('contextmenu', onContextMenu)
+      mp.disconnect()
+      mpRef.current = null
+      localRigRef.current?.dispose()
+      localRigRef.current = null
+      for (const ent of remotes.values()) ent.rig.dispose()
+      remotes.clear()
+      for (const g of geometriesToDispose) g.dispose()
+      for (const m of materialsToDispose) m.dispose()
+      for (const tex of texturesToDispose) tex.dispose()
+      renderer.dispose()
+      rendererRef.current = null
+      sceneRef.current = null
+    }
+  }, [course, playerId, roomCode, showToast, t.obbyFinishedTitle])
+
+  const currentZone = OBBY_ZONES[Math.min(9, Math.floor((currentStage - 1) / 10))]
+  const progressPct = Math.round((currentStage / 100) * 100)
+
+  return (
+    <div className="relative h-dvh w-full overflow-hidden bg-sky-950 select-none">
+      {/* 3D WebGL Canvas */}
+      <div ref={mountRef} className="h-full w-full touch-none" />
+
+      {/* === TOP HUD BAR === */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 p-2.5 sm:p-3.5"
+        style={{ paddingTop: 'max(0.6rem, env(safe-area-inset-top))' }}
+      >
+        {/* Left: FreshBlox Quick Hub + Chat toggle */}
+        <div className="pointer-events-auto flex items-center gap-1.5">
+          <div className="flex items-center gap-1 rounded-2xl border border-white/15 bg-slate-950/65 p-1 backdrop-blur-xl shadow-lg">
+            <button
+              type="button"
+              onClick={() => {
+                setHubOpen((open) => {
+                  const next = !open
+                  if (next) {
+                    setWardrobeOpen(false)
+                    if (touchMode) setChatOpen(false)
+                  }
+                  return next
+                })
+                sfx.playClick()
+              }}
+              title="FreshBlox Hub (Esc)"
+              className={`flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+                hubOpen ? 'bg-sky-500/30 ring-1 ring-sky-300/60' : 'hover:bg-white/10'
+              }`}
+            >
+              <FreshBloxLogo size={23} />
+            </button>
+
+            <div className="mx-0.5 h-4 w-[1px] bg-white/15" />
+
+            <button
+              type="button"
+              onClick={() => {
+                setChatOpen((open) => {
+                  const next = !open
+                  if (next) {
+                    setUnreadCount(0)
+                    setHubOpen(false)
+                    if (touchMode) setWardrobeOpen(false)
+                  }
+                  return next
+                })
+                sfx.playClick()
+              }}
+              className={`relative flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold transition active:scale-95 cursor-pointer ${
+                chatOpen ? 'bg-sky-500/28 text-white ring-1 ring-sky-300/50' : 'text-sky-100 hover:bg-white/10'
+              }`}
+            >
+              <MessageSquare className="h-4 w-4 text-sky-300" />
+              <span className="hidden sm:inline">{t.chatTitle}</span>
+              {unreadCount > 0 && !chatOpen && (
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Center: Stage 1–100 Progress Pill + Unlocked Stage Jumpers + Respawn */}
+        <div className="pointer-events-auto flex flex-col items-center gap-1">
+          <div className="flex items-center gap-1.5 sm:gap-2 rounded-2xl border border-white/15 bg-slate-950/72 px-2.5 py-1.5 sm:px-3.5 text-white backdrop-blur-xl shadow-lg">
+            <button
+              type="button"
+              disabled={currentStage <= 1}
+              onClick={() => jumpToStage(currentStage - 1)}
+              className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 cursor-pointer"
+              title="Poprzedni Stage"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+
+            <div className="flex flex-col items-center px-1 min-w-[110px] sm:min-w-[155px]">
+              <div className="flex items-center gap-1.5 text-xs sm:text-sm font-black tracking-tight">
+                <Flag className="h-3.5 w-3.5 text-sky-400" />
+                <span>
+                  Stage <span className="text-sky-300">{currentStage}</span> / 100
+                </span>
+              </div>
+              <div className="mt-0.5 flex w-full items-center gap-1.5">
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/15">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-sky-400 to-emerald-400 transition-all duration-300"
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+                <span className="font-mono text-[9px] font-bold text-sky-200">{formatTimeMs(elapsedMs)}</span>
+              </div>
+              <div className="hidden sm:block text-[9px] font-bold uppercase tracking-wider text-sky-200/80">
+                {lang === 'pl' ? currentZone.namePl : currentZone.nameEn}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              disabled={currentStage >= maxUnlockedStage}
+              onClick={() => jumpToStage(currentStage + 1)}
+              className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 cursor-pointer"
+              title="Następny odblokowany Stage"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+
+            <div className="h-5 w-[1px] bg-white/15" />
+
+            <button
+              type="button"
+              onClick={() => {
+                respawnToStageRef.current?.(currentStage)
+                sfx.playClick()
+              }}
+              title="Respawn (R)"
+              className="flex items-center gap-1 rounded-xl bg-sky-500/25 px-2 py-1 text-[11px] font-extrabold text-sky-100 hover:bg-sky-500/40 active:scale-95 transition cursor-pointer"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{t.obbyRespawnBtn}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Right: Live Wardrobe button */}
+        <div className="pointer-events-auto flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => (wardrobeOpen ? closeLiveWardrobe() : openLiveWardrobe())}
+            className={`flex h-9 items-center gap-1.5 rounded-2xl border px-3 text-xs font-extrabold backdrop-blur-xl shadow-lg transition active:scale-95 cursor-pointer ${
+              wardrobeOpen
+                ? 'border-sky-300/70 bg-sky-500 text-white'
+                : 'border-white/15 bg-slate-950/65 text-white hover:bg-slate-900/80'
+            }`}
+          >
+            <Shirt className="h-4 w-4 text-sky-300" />
+            <span className="hidden sm:inline">{t.quickAvatar}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* === LIVE IN-GAME WARDROBE DRAWER === */}
+      {wardrobeOpen && (
+        <InGameWardrobeDrawer
+          lang={lang}
+          freshGems={freshGems}
+          ownedAvatar={avatar}
+          previewAvatar={previewAvatar}
+          unlockedOutfits={unlockedOutfits}
+          unlockedHats={unlockedHats}
+          unlockedFaces={unlockedFaces}
+          onPreviewChange={setPreviewAvatar}
+          onBuyAndEquip={onBuyAndEquip}
+          onBuyBundle={onBuyBundle}
+          onSkinChange={onSkinChange}
+          onTestEmote={triggerEmote}
+          onClose={closeLiveWardrobe}
+        />
+      )}
+
+      {/* === FRESHBLOX QUICK HUB DRAWER (Esc / Logo F) === */}
+      {hubOpen && (
+        <div
+          className="fixed inset-0 z-40 flex items-start justify-start bg-slate-950/45 backdrop-blur-sm p-2.5 sm:p-4"
+          onClick={() => setHubOpen(false)}
+        >
+          <div
+            className="flex max-h-[calc(100dvh-20px)] w-full max-w-sm flex-col overflow-hidden rounded-3xl border border-white/15 bg-slate-950/92 text-white shadow-2xl backdrop-blur-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3.5">
+              <div className="flex items-center gap-2.5">
+                <FreshBloxLogo size={28} />
+                <div>
+                  <div className="font-display text-sm font-black tracking-tight">{t.obbyLabel}</div>
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-sky-200/80">
+                    <span className="font-mono">#{roomCode}</span>
+                    <span>•</span>
+                    <span className="text-emerald-300">{onlineCount} online</span>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHubOpen(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-4 overflow-y-auto p-4">
+              {/* Quick Actions */}
+              <div className="space-y-2">
+                <div className="text-[10px] font-extrabold uppercase tracking-wider text-sky-200/70">
+                  {t.hubActions}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={openLiveWardrobe}
+                    className="flex items-center gap-2 rounded-2xl border border-sky-400/30 bg-sky-500/15 px-3 py-2.5 text-xs font-extrabold text-sky-100 hover:bg-sky-500/25 cursor-pointer"
+                  >
+                    <Shirt className="h-4 w-4 text-sky-300" />
+                    <span>{t.liveWardrobeTitle}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCopyInvite}
+                    className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/8 px-3 py-2.5 text-xs font-extrabold text-white hover:bg-white/15 cursor-pointer"
+                  >
+                    {copiedInvite ? <Check className="h-4 w-4 text-emerald-400" /> : <Users className="h-4 w-4 text-sky-300" />}
+                    <span>{copiedInvite ? t.inviteCopied : t.inviteBtn}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHubOpen(false)
+                      onSwitchToLobby()
+                    }}
+                    className="col-span-2 flex items-center justify-center gap-2 rounded-2xl border border-sky-400/35 bg-gradient-to-r from-sky-500 to-blue-600 px-3 py-2.5 text-xs font-extrabold text-white shadow cursor-pointer hover:brightness-110"
+                  >
+                    <Compass className="h-4 w-4" />
+                    <span>{t.switchToLobby}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Players in Obby Room */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-sky-200/70">
+                  <span>{t.playersInRoom}</span>
+                  <span>{roster.length}</span>
+                </div>
+                <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1">
+                  {roster.map((p) => (
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate font-extrabold text-white">
+                          {p.username}{' '}
+                          {p.isSelf && <span className="text-[10px] text-sky-300">({t.youTag})</span>}
+                        </div>
+                        <div className="text-[10px] text-sky-200/75">{p.rank}</div>
+                      </div>
+                      <span className="rounded-lg bg-sky-500/20 px-2 py-0.5 font-mono text-[11px] font-extrabold text-sky-200">
+                        Stage {p.stage}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* World & Settings */}
+              <div className="space-y-2">
+                <div className="text-[10px] font-extrabold uppercase tracking-wider text-sky-200/70">
+                  {t.hubSettings}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWorldTime((wt) => (wt === 'day' ? 'night' : 'day'))
+                      sfx.playClick()
+                    }}
+                    className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/8 py-2 text-xs font-bold hover:bg-white/15 cursor-pointer"
+                  >
+                    {worldTime === 'day' ? <Sun className="h-4 w-4 text-amber-300" /> : <Moon className="h-4 w-4 text-sky-200" />}
+                    <span>{worldTime === 'day' ? t.worldDay : t.worldNight}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={toggleSound}
+                    className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/8 py-2 text-xs font-bold hover:bg-white/15 cursor-pointer"
+                  >
+                    {soundEnabled ? <Volume2 className="h-4 w-4 text-emerald-300" /> : <VolumeX className="h-4 w-4 text-slate-400" />}
+                    <span>{soundEnabled ? t.soundOn : t.soundOff}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTouchMode((m) => !m)
+                      sfx.playClick()
+                    }}
+                    className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/8 py-2 text-xs font-bold hover:bg-white/15 cursor-pointer"
+                  >
+                    <Smartphone className="h-4 w-4 text-sky-300" />
+                    <span>{touchMode ? t.touchOn : t.touchOff}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuality((q) => (q === 'low' ? 'medium' : q === 'medium' ? 'high' : 'low'))
+                      sfx.playClick()
+                    }}
+                    className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/8 py-2 text-xs font-bold hover:bg-white/15 cursor-pointer"
+                  >
+                    <Gamepad2 className="h-4 w-4 text-sky-300" />
+                    <span>{t.quality[quality]}</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-sky-200/80">
+                  <span className="flex items-center gap-1.5 font-semibold">
+                    <Wifi className="h-3.5 w-3.5 text-emerald-400" />
+                    {isSupabaseConfigured ? t.multiplayerHintSupabase : t.multiplayerHintLocal}
+                  </span>
+                  <span className="font-mono font-bold text-white">Best: {maxUnlockedStage}/100</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 border-t border-white/10 p-3">
+              <button
+                type="button"
+                onClick={() => setHubOpen(false)}
+                className="flex-1 rounded-xl bg-white/10 py-2.5 text-xs font-extrabold text-white hover:bg-white/18 cursor-pointer"
+              >
+                {t.resumeGame}
+              </button>
+              <button
+                type="button"
+                onClick={onBackHome}
+                className="flex items-center justify-center gap-1.5 rounded-xl bg-rose-500/20 px-4 py-2.5 text-xs font-extrabold text-rose-200 hover:bg-rose-500/30 cursor-pointer"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span>{t.leaveGame}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === LIVE CHAT OVERLAY === */}
+      {chatOpen && (
+        <div
+          className="pointer-events-auto absolute left-2.5 sm:left-3.5 z-20 flex w-[min(300px,calc(100vw-20px))] flex-col overflow-hidden rounded-2xl border border-white/15 bg-slate-950/65 text-white shadow-xl backdrop-blur-xl"
+          style={{ top: 'max(4.4rem, calc(env(safe-area-inset-top) + 3.8rem))' }}
+        >
+          <div className="max-h-36 sm:max-h-44 space-y-1.5 overflow-y-auto px-3 py-2 text-xs">
+            {chatMessages.map((m) => (
+              <div key={m.id} className="leading-snug break-words">
+                {m.system ? (
+                  <span className="font-semibold text-sky-300">{m.text}</span>
+                ) : (
+                  <>
+                    <span className="font-extrabold text-sky-300">{m.username}: </span>
+                    <span className="text-white/95">{m.text}</span>
+                  </>
+                )}
+              </div>
+            ))}
+            <div ref={chatEndRef} />
+          </div>
+          <form onSubmit={handleSendChat} className="flex items-center gap-1.5 border-t border-white/10 p-1.5">
+            <input
+              ref={chatInputRef}
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder={t.chatPlaceholder}
+              maxLength={140}
+              className="min-w-0 flex-1 rounded-xl bg-white/10 px-2.5 py-1.5 text-xs text-white placeholder-sky-200/60 outline-none focus:ring-1 focus:ring-sky-400"
+            />
+            <button
+              type="submit"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-sky-500 text-white hover:bg-sky-400 cursor-pointer"
+            >
+              <Send className="h-3.5 w-3.5" />
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* === STAGE 100 VICTORY BANNER === */}
+      {finishedBanner && (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl border border-amber-300/50 bg-slate-950/92 p-6 text-center text-white shadow-2xl">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-400/20 text-amber-300">
+              <Trophy className="h-9 w-9" />
+            </div>
+            <h2 className="mt-3 font-display text-2xl font-black text-amber-300">{t.obbyFinishedTitle}</h2>
+            <p className="mt-1 text-xs text-sky-100/85">{t.obbyFinishedSub}</p>
+            <div className="mt-4 grid grid-cols-2 gap-2.5">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                <div className="text-[10px] font-bold uppercase text-sky-200/70">Czas biegu</div>
+                <div className="mt-0.5 font-mono text-lg font-black text-white">
+                  {formatTimeMs(finishedBanner.elapsedMs)}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                <div className="text-[10px] font-bold uppercase text-sky-200/70">Ukończenia</div>
+                <div className="mt-0.5 font-mono text-lg font-black text-emerald-300">
+                  {Math.max(1, completions)}
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleRestartFromOne}
+                className="flex-1 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 py-3 text-xs font-extrabold text-white shadow-lg hover:brightness-110 cursor-pointer"
+              >
+                {t.obbyRestartBtn}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFinishedBanner(null)}
+                className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-xs font-extrabold text-white hover:bg-white/15 cursor-pointer"
+              >
+                OK
+              </button>
+              <button
+                type="button"
+                onClick={onSwitchToLobby}
+                className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 py-2.5 text-xs font-bold text-sky-200 hover:bg-white/10 cursor-pointer"
+              >
+                <Home className="h-3.5 w-3.5" />
+                <span>{t.switchToLobby}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === CHECKPOINT TOAST === */}
+      {toast && (
+        <div className="pointer-events-none absolute top-20 left-1/2 z-30 -translate-x-1/2">
+          <div className="flex items-center gap-2 rounded-2xl border border-sky-300/45 bg-slate-950/85 px-4 py-2 text-xs sm:text-sm font-black text-white shadow-xl backdrop-blur-xl">
+            <Sparkles className="h-4 w-4 text-sky-300" />
+            <span>{toast}</span>
+          </div>
+        </div>
+      )}
+
+      {/* === PORTRAIT MOBILE SUGGESTION === */}
+      {isPortraitMobile && !isFullscreen && (
+        <div className="pointer-events-auto absolute bottom-20 left-1/2 z-20 -translate-x-1/2">
+          <button
+            type="button"
+            onClick={() => enterGameFullscreenLandscape()}
+            className="flex items-center gap-2 rounded-2xl border border-sky-300/40 bg-slate-950/80 px-3.5 py-2 text-xs font-extrabold text-white shadow-lg backdrop-blur-xl"
+          >
+            <Maximize2 className="h-3.5 w-3.5 text-sky-300" />
+            <span>{t.rotateBannerBtn}</span>
+          </button>
+        </div>
+      )}
+
+      {/* === DESKTOP BOTTOM EMOTE & CONTROLS BAR === */}
+      {!touchMode && !wardrobeOpen && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex flex-col items-center gap-1.5 px-4">
+          <div className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/15 bg-slate-950/65 p-1 backdrop-blur-xl shadow-lg">
+            {(['wave', 'dance', 'cheer', 'sit', 'spin', 'backflip'] as const).map((pose, idx) => (
+              <button
+                key={pose}
+                type="button"
+                onClick={() => triggerEmote(pose)}
+                className="rounded-xl px-2.5 py-1 text-[11px] font-bold text-sky-100 hover:bg-white/15 active:scale-95 transition cursor-pointer"
+              >
+                <span className="mr-1 font-mono text-[10px] text-sky-400">{idx + 1}</span>
+                {t.emotes[pose]}
+              </button>
+            ))}
+          </div>
+          <div className="rounded-full bg-slate-950/55 px-3 py-0.5 text-[10px] font-semibold text-sky-100/80 backdrop-blur">
+            {t.obbyControlsList}
+          </div>
+        </div>
+      )}
+
+      {/* === MOBILE TOUCH CONTROLS === */}
+      {touchMode && !wardrobeOpen && (
+        <MobileTouchControls
+          onMoveVector={(x, y) => {
+            joyRef.current.x = x
+            joyRef.current.y = y
+          }}
+          onJump={() => {
+            jumpRequestRef.current = true
+          }}
+          sprintActive={touchSprint}
+          onToggleSprint={() => {
+            setTouchSprint((prev) => {
+              const next = !prev
+              touchSprintRef.current = next
+              return next
+            })
+          }}
+          activeEmote={activeEmoteUi}
+          onEmote={triggerEmote}
+          labels={{
+            jumpBtn: t.jumpBtn,
+            sprintBtn: t.sprintBtn,
+            emotesLabel: t.emotesLabel,
+            emotes: t.emotes,
+          }}
+        />
+      )}
+    </div>
+  )
+}

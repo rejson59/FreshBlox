@@ -1,22 +1,30 @@
 -- FreshBlox Database Schema (Supabase PostgreSQL + RLS + Realtime)
--- Run this SQL in your Supabase project's SQL Editor once a project slot is free!
+-- Live on Supabase project FreshBlox (eu-central-1)
 
 CREATE TABLE IF NOT EXISTS public.fb_profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   username TEXT NOT NULL UNIQUE,
   fresh_tag TEXT NOT NULL,
-  fresh_gems INTEGER NOT NULL DEFAULT 250,
+  fresh_gems INTEGER NOT NULL DEFAULT 0,
   xp INTEGER NOT NULL DEFAULT 0,
   avatar_config JSONB NOT NULL DEFAULT '{"outfitId":"fresh-creator","faceId":"fresh-smile","hatId":"none","skinColor":"#FDE0B6"}'::jsonb,
   unlocked_items TEXT[] NOT NULL DEFAULT ARRAY['fresh-creator','classic-remaster','fresh-smile','wink-pro','none'],
   badges TEXT[] NOT NULL DEFAULT ARRAY['pioneer'],
   quests JSONB NOT NULL DEFAULT '{}'::jsonb,
+  obby_stage INTEGER NOT NULL DEFAULT 1,
+  obby_best_stage INTEGER NOT NULL DEFAULT 1,
+  obby_completions INTEGER NOT NULL DEFAULT 0,
+  obby_best_time_ms INTEGER,
+  last_world TEXT NOT NULL DEFAULT 'lobby',
+  last_room TEXT NOT NULL DEFAULT 'PUBLIC-1',
+  last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS public.fb_friendships (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.fb_profiles(id) ON DELETE CASCADE,
+  friend_id UUID REFERENCES public.fb_profiles(id) ON DELETE CASCADE,
   friend_username TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'accepted',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -32,18 +40,71 @@ CREATE TABLE IF NOT EXISTS public.fb_lobby_messages (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_fb_lobby_messages_room_created
+  ON public.fb_lobby_messages (room_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_fb_profiles_obby_best
+  ON public.fb_profiles (obby_best_stage DESC, obby_completions DESC, xp DESC);
+
 ALTER TABLE public.fb_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fb_friendships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fb_lobby_messages ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Profiles are viewable by everyone" ON public.fb_profiles;
 CREATE POLICY "Profiles are viewable by everyone" ON public.fb_profiles FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.fb_profiles;
 CREATE POLICY "Users can insert own profile" ON public.fb_profiles FOR INSERT WITH CHECK (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Users can update own profile" ON public.fb_profiles;
 CREATE POLICY "Users can update own profile" ON public.fb_profiles FOR UPDATE USING (auth.uid() = id);
 
-CREATE POLICY "Users view own friendships" ON public.fb_friendships FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users manage own friendships" ON public.fb_friendships FOR ALL USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users view own friendships" ON public.fb_friendships;
+CREATE POLICY "Users view own friendships" ON public.fb_friendships FOR SELECT USING (auth.uid() = user_id OR auth.uid() = friend_id);
 
+DROP POLICY IF EXISTS "Users manage own friendships" ON public.fb_friendships;
+CREATE POLICY "Users manage own friendships" ON public.fb_friendships FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Lobby messages readable by all" ON public.fb_lobby_messages;
 CREATE POLICY "Lobby messages readable by all" ON public.fb_lobby_messages FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Authenticated users post lobby messages" ON public.fb_lobby_messages;
 CREATE POLICY "Authenticated users post lobby messages" ON public.fb_lobby_messages FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE OR REPLACE FUNCTION public.handle_new_fb_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  base_name TEXT;
+  final_name TEXT;
+  rnd_code TEXT;
+BEGIN
+  rnd_code := lpad((floor(random() * 9000) + 1000)::int::text, 4, '0');
+  base_name := COALESCE(NULLIF(trim(NEW.raw_user_meta_data ->> 'username'), ''), 'FreshPlayer' || substr(rnd_code, 1, 2));
+  base_name := left(regexp_replace(base_name, '[^a-zA-Z0-9_ąćęłńóśźżĄĆĘŁŃÓŚŹŻ-]', '', 'g'), 18);
+  IF char_length(base_name) < 2 THEN
+    base_name := 'FreshPlayer' || substr(rnd_code, 1, 2);
+  END IF;
+
+  final_name := base_name;
+  IF EXISTS (SELECT 1 FROM public.fb_profiles WHERE lower(username) = lower(final_name)) THEN
+    final_name := left(base_name, 13) || '_' || rnd_code;
+  END IF;
+
+  INSERT INTO public.fb_profiles (id, username, fresh_tag, fresh_gems, xp)
+  VALUES (NEW.id, final_name, '#FB-' || rnd_code, 0, 0)
+  ON CONFLICT (id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created_fb ON auth.users;
+CREATE TRIGGER on_auth_user_created_fb
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_fb_user();
 
 ALTER PUBLICATION supabase_realtime ADD TABLE public.fb_lobby_messages;

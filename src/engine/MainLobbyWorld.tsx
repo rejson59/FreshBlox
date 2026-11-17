@@ -5,6 +5,7 @@ import {
   Armchair,
   Bot,
   Check,
+  Flag,
   Gauge,
   LogOut,
   Maximize2,
@@ -16,6 +17,7 @@ import {
   RotateCw,
   Send,
   Share2,
+  Shirt,
   Smartphone,
   Sparkles,
   Sun,
@@ -35,7 +37,7 @@ import {
 } from '../lib/mobileFullscreen'
 import { sfx } from '../lib/sfx'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { FreshBloxLogo, FreshGemShard } from '../components/brand/FreshBloxBrand'
+import { FreshBloxLogo } from '../components/brand/FreshBloxBrand'
 import { MobileTouchControls } from '../components/hud/MobileTouchControls'
 import { InGameWardrobeDrawer } from '../components/hud/InGameWardrobeDrawer'
 import { createR6Rig, getSharedFreshStudTexture, R6RigHandle } from './r6Builder'
@@ -70,15 +72,6 @@ interface BenchSpot {
   faceAngle: number
 }
 
-interface GemPickup {
-  id: number
-  mesh: THREE.Mesh
-  baseY: number
-  x: number
-  z: number
-  collectedUntil: number
-}
-
 interface JumpPad {
   x: number
   z: number
@@ -106,6 +99,7 @@ interface MainLobbyWorldProps {
   roomCode: string
   lang: Lang
   playerId: string
+  authUserId: string | null
   username: string
   freshGems: number
   xp: number
@@ -114,12 +108,12 @@ interface MainLobbyWorldProps {
   unlockedHats: HatId[]
   unlockedFaces: FaceId[]
   isFullscreen: boolean
-  onCollectGem: () => void
   onChatSent: () => void
   onEmoteUsed: () => void
   onJumpPadUsed: () => void
   onReachTerrace: () => void
   onBackHome: () => void
+  onEnterObby: () => void
   onBuyAndEquip: (category: 'outfit' | 'hat' | 'face', itemId: string, price: number) => boolean
   onBuyBundle: (items: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; price: number }>) => boolean
   onSkinChange: (hex: string) => void
@@ -145,6 +139,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   roomCode,
   lang,
   playerId,
+  authUserId,
   username,
   freshGems,
   xp,
@@ -153,12 +148,12 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   unlockedHats,
   unlockedFaces,
   isFullscreen,
-  onCollectGem,
   onChatSent,
   onEmoteUsed,
   onJumpPadUsed,
   onReachTerrace,
   onBackHome,
+  onEnterObby,
   onBuyAndEquip,
   onBuyBundle,
   onSkinChange,
@@ -180,10 +175,9 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   const [roster, setRoster] = useState<LobbyRosterEntry[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
 
-  // Interactive bench & portal state
+  // Interactive bench state
   const [nearBench, setNearBench] = useState<BenchSpot | null>(null)
   const [seatedBench, setSeatedBench] = useState<BenchSpot | null>(null)
-  const [nearPortalName, setNearPortalName] = useState<string | null>(null)
 
   // Portrait mobile rotate hint
   const [isPortraitMobile, setIsPortraitMobile] = useState<boolean>(() =>
@@ -256,19 +250,24 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   const cloudsGroupRef = useRef<THREE.Group | null>(null)
   const nightSkyGroupRef = useRef<THREE.Group | null>(null)
 
+  const authUserIdRef = useRef(authUserId)
+  authUserIdRef.current = authUserId
+  const nearPortalRef = useRef<{ name: string; action?: 'obby' } | null>(null)
+  const [nearPortalInfo, setNearPortalInfo] = useState<{ name: string; action?: 'obby' } | null>(null)
+
   const callbacksRef = useRef({
-    onCollectGem,
     onChatSent,
     onEmoteUsed,
     onJumpPadUsed,
     onReachTerrace,
+    onEnterObby,
   })
   callbacksRef.current = {
-    onCollectGem,
     onChatSent,
     onEmoteUsed,
     onJumpPadUsed,
     onReachTerrace,
+    onEnterObby,
   }
 
   // Track mobile orientation cleanly
@@ -439,7 +438,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       setMessages((prev) => [...prev.slice(-34), msg])
       setChatInput('')
       sfx.playChatPop()
-      mpRef.current?.broadcastChat(msg)
+      mpRef.current?.broadcastChat(msg, authUserIdRef.current)
       callbacksRef.current.onChatSent()
 
       localRigRef.current?.setSpeech(clean)
@@ -718,10 +717,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     danceFloor.position.set(0, 0.92, 24)
     scene.add(danceFloor)
 
-    // Future Game Mode Portals (North side)
-    const portalZones: Array<{ name: string; x: number; z: number; soon: boolean }> = [
-      { name: 'SkyTower Obby', x: -11, z: -26, soon: true },
-      { name: 'Crystal Arena', x: 11, z: -26, soon: true },
+    // Game Mode Portals (North side) — Test Obby 100 is LIVE!
+    const portalZones: Array<{ name: string; x: number; z: number; action?: 'obby' }> = [
+      { name: 'Test Obby 100', x: -11, z: -26, action: 'obby' },
+      { name: 'Crystal Arena', x: 11, z: -26 },
     ]
 
     const createPortalArch = (x: number, z: number, label: string, sub: string, color: string) => {
@@ -771,7 +770,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       scene.add(sign)
     }
 
-    createPortalArch(-11, -26, 'SkyTower Obby', lang === 'pl' ? 'WKRÓTCE' : 'COMING SOON', '#38BDF8')
+    createPortalArch(-11, -26, 'TEST OBBY 100', lang === 'pl' ? '100 LEVELI • GRAJ' : '100 STAGES • PLAY', '#F59E0B')
     createPortalArch(0, -28, 'LOBBY GŁÓWNE', roomCode, '#0EA5E9')
     createPortalArch(11, -26, 'Crystal Arena', lang === 'pl' ? 'WKRÓTCE' : 'COMING SOON', '#22D3EE')
 
@@ -865,35 +864,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     addJumpPad(-11.5, 0, 12.5, 16.5)
     addJumpPad(12.5, 0, 14.5, 19.5)
 
-    // Collectible floating FreshGems shards
-    const gemGeo = trackGeo(new THREE.OctahedronGeometry(0.54, 0))
-    const gemMat = trackMat(
-      new THREE.MeshStandardMaterial({
-        color: '#38BDF8',
-        emissive: '#0284C7',
-        emissiveIntensity: 0.65,
-        roughness: 0.12,
-        metalness: 0.22,
-      }),
-    )
-    const gemSpots = [
-      { x: 9, y: 1.5, z: 0 },
-      { x: -9, y: 1.5, z: 0 },
-      { x: 0, y: 1.5, z: 12 },
-      { x: 0, y: 1.5, z: -14 },
-      { x: -16, y: 1.5, z: 0 },
-      { x: 16, y: 2.5, z: -7 },
-      { x: 24, y: 5.4, z: 1.5 },
-      { x: 25.5, y: 8.6, z: 13.5 },
-      { x: 0, y: 2.1, z: 24 },
-      { x: -10, y: 1.5, z: -20 },
-    ]
-    const gems: GemPickup[] = gemSpots.map((g, idx) => {
-      const mesh = new THREE.Mesh(gemGeo, gemMat)
-      mesh.position.set(g.x, g.y, g.z)
-      scene.add(mesh)
-      return { id: idx, mesh, baseY: g.y, x: g.x, z: g.z, collectedUntil: 0 }
-    })
+    // FreshGems pickups removed from Main Lobby while the Gems economy is under construction
 
     // Soft floating Arctic Sky clouds (Day)
     const cloudsGroup = new THREE.Group()
@@ -1131,7 +1102,14 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
     const mp = new LobbyMultiplayerClient({
       roomId: roomCode,
+      world: 'lobby',
       selfId: playerId,
+      onHistory: (history) => {
+        setMessages((prev) => {
+          const seen = new Set(prev.map((m) => m.id))
+          return [...prev, ...history.filter((h) => !seen.has(h.id))].slice(-40)
+        })
+      },
       onState: (state) => {
         const existing = remotePlayers.get(state.id)
         if (!existing) {
@@ -1222,7 +1200,14 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         return
       }
       keys.add(code)
-      if (code === 'KeyE') toggleSitActionRef.current()
+      if (code === 'KeyE') {
+        if (nearPortalRef.current?.action === 'obby') {
+          sfx.playJump()
+          callbacksRef.current.onEnterObby()
+        } else {
+          toggleSitActionRef.current()
+        }
+      }
       if (code === 'Digit1') triggerEmote('wave')
       if (code === 'Digit2') triggerEmote('dance')
       if (code === 'Digit3') triggerEmote('cheer')
@@ -1526,15 +1511,18 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           setNearBench(closestBench)
         }
 
-        let foundPortal: string | null = null
+        let foundPortal: { name: string; action?: 'obby' } | null = null
         for (const pz of portalZones) {
           const dSq = (player.x - pz.x) ** 2 + (player.z - pz.z) ** 2
-          if (dSq < 4.0 * 4.0) {
-            foundPortal = pz.name
+          if (dSq < 4.4 * 4.4) {
+            foundPortal = { name: pz.name, action: pz.action }
             break
           }
         }
-        setNearPortalName((prev) => (prev === foundPortal ? prev : foundPortal))
+        if (foundPortal?.name !== nearPortalRef.current?.name) {
+          nearPortalRef.current = foundPortal
+          setNearPortalInfo(foundPortal)
+        }
       }
 
       // Reactive South Dance Stage glow when player steps on it!
@@ -1547,27 +1535,6 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         sfx.playQuestClaim()
         callbacksRef.current.onReachTerrace()
         showToast(t.terraceUnlocked)
-      }
-
-      // Collectible FreshGems
-      for (const g of gems) {
-        if (g.collectedUntil > now) {
-          g.mesh.visible = false
-          continue
-        }
-        g.mesh.visible = true
-        g.mesh.rotation.y = elapsed * 2.1 + g.id
-        g.mesh.position.y = g.baseY + Math.sin(elapsed * 2.8 + g.id) * 0.25
-        const dx = player.x - g.x
-        const dz = player.z - g.z
-        const dy = player.y + 1.5 - g.mesh.position.y
-        if (dx * dx + dz * dz < 2.25 && Math.abs(dy) < 2.2) {
-          g.collectedUntil = now + 18000
-          g.mesh.visible = false
-          sfx.playGemCollect()
-          callbacksRef.current.onCollectGem()
-          showToast(t.gemCollected)
-        }
       }
 
       // Animate monument crystals & clouds
@@ -1761,7 +1728,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       cloudsGroupRef.current = null
       nightSkyGroupRef.current = null
     }
-  }, [roomCode, playerId, lang, showToast, t.gemCollected, t.terraceUnlocked, triggerEmote])
+  }, [roomCode, playerId, lang, showToast, t.terraceUnlocked, triggerEmote])
 
   const emotesList: Array<{ key: string; pose: PlayerPose; label: string }> = [
     { key: '1', pose: 'wave', label: t.emotes.wave },
@@ -1862,8 +1829,19 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           </button>
         </div>
 
-        {/* Right minimalist cluster: FreshGems + Live In-Game Wardrobe toggle */}
+        {/* Right minimalist cluster: Live In-Game Wardrobe toggle + Test Obby quick jump */}
         <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              sfx.playClick()
+              onEnterObby()
+            }}
+            className="hidden sm:flex h-10 items-center gap-1.5 rounded-2xl border border-amber-300/45 bg-slate-950/75 px-3 text-xs font-extrabold text-amber-200 shadow-lg backdrop-blur-xl hover:bg-slate-900/90 active:scale-95 transition cursor-pointer"
+          >
+            <Flag className="h-3.5 w-3.5 text-amber-300" />
+            <span>Test Obby 100</span>
+          </button>
           <button
             type="button"
             onClick={() => (wardrobeOpen ? closeLiveWardrobe() : openLiveWardrobe())}
@@ -1873,11 +1851,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
                 : 'border-white/15 bg-slate-950/75 text-sky-50 hover:bg-slate-900/90'
             }`}
           >
-            <FreshGemShard size={15} />
-            <span>{freshGems}</span>
-            <span className="mx-0.5 h-3.5 w-[1px] bg-white/15 hidden sm:inline-block" />
-            <Sparkles className="h-3.5 w-3.5 text-sky-400" />
-            <span className="hidden sm:inline text-sky-100 font-bold">{t.quickAvatar}</span>
+            <Shirt className="h-4 w-4 text-sky-300" />
+            <span className="text-sky-100 font-bold">{t.quickAvatar}</span>
           </button>
         </div>
       </div>
@@ -1929,8 +1904,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
                   <div className="flex items-center gap-2 text-[11px] text-sky-200/75">
                     <span>{getRankForXp(xp).name}</span>
                     <span>•</span>
-                    <span className="inline-flex items-center gap-0.5 font-bold text-sky-300">
-                      <FreshGemShard size={12} /> {freshGems}
+                    <span className="font-semibold text-amber-200/90">
+                      {LOCALES[lang].nav.gemsWipPill}
                     </span>
                   </div>
                 </div>
@@ -1998,6 +1973,18 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
                   >
                     <LogOut className="h-4 w-4 shrink-0 text-rose-300" />
                     <span className="truncate">{t.leaveGame}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHubOpen(false)
+                      onEnterObby()
+                    }}
+                    className="col-span-2 flex items-center justify-center gap-2 rounded-2xl border border-amber-300/40 bg-gradient-to-r from-sky-500 to-blue-600 px-3 py-2.5 text-xs font-extrabold text-white shadow-md hover:brightness-110 active:scale-[0.98] transition cursor-pointer"
+                  >
+                    <Flag className="h-4 w-4 shrink-0 text-amber-200" />
+                    <span>{t.switchToObby}</span>
                   </button>
                 </div>
               </div>
@@ -2236,14 +2223,14 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       {toast && (
         <div className="pointer-events-none absolute top-14 left-1/2 -translate-x-1/2 z-30 animate-[rewardPop_0.35s_ease-out]">
           <div className="flex items-center gap-2 rounded-full bg-slate-950/88 border border-sky-400/40 px-4 py-1.5 text-xs sm:text-sm font-extrabold text-sky-100 shadow-xl backdrop-blur-md">
-            <FreshGemShard size={16} />
+            <Sparkles className="h-4 w-4 text-sky-300" />
             {toast}
           </div>
         </div>
       )}
 
-      {/* INTERACTIVE BENCH SIT / STAND PROMPT OR PORTAL HINT */}
-      {(seatedBench || nearBench || nearPortalName) && (
+      {/* INTERACTIVE BENCH SIT / STAND PROMPT OR PORTAL ACTION */}
+      {(seatedBench || nearBench || nearPortalInfo) && (
         <div className="pointer-events-auto absolute bottom-5 sm:bottom-6 left-1/2 -translate-x-1/2 z-20">
           {seatedBench || nearBench ? (
             <button
@@ -2258,11 +2245,27 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
                 E
               </span>
             </button>
-          ) : nearPortalName ? (
+          ) : nearPortalInfo?.action === 'obby' ? (
+            <button
+              type="button"
+              onClick={() => {
+                sfx.playJump()
+                onEnterObby()
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="flex items-center gap-2 rounded-full border border-amber-300/70 bg-gradient-to-r from-sky-500 to-blue-600 px-5 py-2.5 text-xs sm:text-sm font-extrabold text-white shadow-xl backdrop-blur-xl transition hover:brightness-110 active:scale-95 cursor-pointer"
+            >
+              <Flag className="h-4 w-4 text-amber-200" />
+              <span>{t.portalObbyPrompt}</span>
+              <span className="hidden sm:inline rounded-md bg-white/15 border border-white/25 px-1.5 py-0.5 font-mono text-[10px] text-white">
+                E
+              </span>
+            </button>
+          ) : nearPortalInfo ? (
             <div className="flex items-center gap-2 rounded-full border border-white/20 bg-slate-950/80 px-4 py-2 text-xs font-bold text-sky-100 backdrop-blur-xl shadow-lg">
               <Sparkles className="h-3.5 w-3.5 text-sky-400" />
               <span>
-                {nearPortalName} — {t.portalSoonHint}
+                {nearPortalInfo.name} — {t.portalSoonHint}
               </span>
             </div>
           ) : null}

@@ -1,64 +1,158 @@
-import React, { useState } from 'react'
-import { Check, Cloud, Play, ShieldCheck, UserPlus, Users, Award, Sparkles } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import {
+  Award,
+  Check,
+  Cloud,
+  Flag,
+  LogIn,
+  LogOut,
+  Play,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  UserPlus,
+  Users,
+} from 'lucide-react'
 import { ARCTIC_SKY, getThemeTokens, ThemeMode } from '../../data/brandTheme'
 import { Lang, LOCALES } from '../../data/locales'
-import { BADGE_CATALOG, getRankForXp } from '../../data/catalog'
-import { PlayerProfile } from '../../store/usePlayerStore'
+import { BADGE_CATALOG, getRankForXp, WorldKind } from '../../data/catalog'
+import { AuthUserInfo, CloudPlayerSummary, PlayerProfile } from '../../store/usePlayerStore'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { FreshGemShard } from '../brand/FreshBloxBrand'
 import { sfx } from '../../lib/sfx'
 
 interface SocialProfileViewProps {
   profile: PlayerProfile
+  authUser: AuthUserInfo | null
+  cloudStatus: 'guest' | 'syncing' | 'synced' | 'offline'
   mode: ThemeMode
   lang: Lang
-  onChangeUsername: (name: string) => void
-  onAddFriend: (name: string) => void
-  onJoinRoom: (roomId: string) => void
+  onChangeUsername: (name: string) => Promise<{ ok: boolean; error?: string }>
+  onAddFriend: (name: string) => Promise<{ ok: boolean; error?: string }>
+  onRefreshFriends: () => Promise<void>
+  onSearchPlayers: (query: string) => Promise<CloudPlayerSummary[]>
+  onJoinWorld: (world: WorldKind, roomId: string) => void
+  onOpenAuth: (tab?: 'login' | 'register') => void
+  onSignOut: () => Promise<void>
 }
 
 export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
   profile,
+  authUser,
+  cloudStatus,
   mode,
   lang,
   onChangeUsername,
   onAddFriend,
-  onJoinRoom,
+  onRefreshFriends,
+  onSearchPlayers,
+  onJoinWorld,
+  onOpenAuth,
+  onSignOut,
 }) => {
   const [nickInput, setNickInput] = useState(profile.username)
   const [nickSaved, setNickSaved] = useState(false)
+  const [nickError, setNickError] = useState<string | null>(null)
   const [friendInput, setFriendInput] = useState('')
+  const [friendMsg, setFriendMsg] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [cloudPlayers, setCloudPlayers] = useState<CloudPlayerSummary[]>([])
+
+  useEffect(() => {
+    setNickInput(profile.username)
+  }, [profile.username])
+
+  useEffect(() => {
+    let active = true
+    const timer = window.setTimeout(() => {
+      onSearchPlayers(searchQuery).then((res) => {
+        if (active) setCloudPlayers(res)
+      })
+    }, 220)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [searchQuery, onSearchPlayers])
 
   const t = LOCALES[lang].social
+  const ta = LOCALES[lang].auth
   const tokens = getThemeTokens(mode)
   const rank = getRankForXp(profile.xp)
 
-  const handleSaveNick = (e: React.FormEvent) => {
+  const handleSaveNick = async (e: React.FormEvent) => {
     e.preventDefault()
+    setNickError(null)
     if (!nickInput.trim()) return
-    onChangeUsername(nickInput)
+    const res = await onChangeUsername(nickInput)
+    if (!res.ok) {
+      setNickError(res.error ?? 'Error')
+      return
+    }
     sfx.playChatPop()
     setNickSaved(true)
     setTimeout(() => setNickSaved(false), 1800)
   }
 
-  const handleAddFriend = (e: React.FormEvent) => {
+  const handleAddFriend = async (e: React.FormEvent) => {
     e.preventDefault()
+    setFriendMsg(null)
     if (!friendInput.trim()) return
-    onAddFriend(friendInput)
+    const res = await onAddFriend(friendInput)
+    if (!res.ok && res.error) {
+      setFriendMsg(res.error)
+      return
+    }
     setFriendInput('')
     sfx.playChatPop()
   }
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-5 sm:space-y-6 px-3 py-5 sm:px-6 sm:py-8 overflow-x-clip">
-      <div>
-        <h1 className="font-display text-2xl font-extrabold sm:text-3xl" style={{ color: tokens.textPrimary }}>
-          {t.title}
-        </h1>
-        <p className="mt-1 text-xs sm:text-sm" style={{ color: tokens.textSecondary }}>
-          {t.subtitle}
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl font-extrabold sm:text-3xl" style={{ color: tokens.textPrimary }}>
+            {t.title}
+          </h1>
+          <p className="mt-1 text-xs sm:text-sm" style={{ color: tokens.textSecondary }}>
+            {t.subtitle}
+          </p>
+        </div>
+
+        {authUser ? (
+          <button
+            type="button"
+            onClick={() => {
+              sfx.playClick()
+              void onSignOut()
+            }}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-rose-400/35 bg-rose-500/15 px-3.5 py-2 text-xs font-extrabold text-rose-300 hover:bg-rose-500/25 cursor-pointer"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            <span>{ta.logout}</span>
+          </button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onOpenAuth('login')}
+              className="inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-extrabold cursor-pointer"
+              style={{ borderColor: tokens.cardBorder, background: tokens.cardBg, color: tokens.textPrimary }}
+            >
+              <LogIn className="h-3.5 w-3.5" style={{ color: ARCTIC_SKY.skyMain }} />
+              <span>{ta.tabLogin}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenAuth('register')}
+              className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold text-white shadow cursor-pointer"
+              style={{ background: tokens.buttonGradient }}
+            >
+              <UserPlus className="h-3.5 w-3.5" />
+              <span>{ta.tabRegister}</span>
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-4 sm:gap-5 lg:grid-cols-12">
@@ -82,11 +176,11 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-2xl border p-3" style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg }}>
               <div className="text-[10px] font-bold uppercase" style={{ color: tokens.textSecondary }}>
-                FreshGems
+                Test Obby
               </div>
-              <div className="mt-1 flex items-center gap-1.5 text-lg font-extrabold" style={{ color: tokens.textPrimary }}>
-                <FreshGemShard size={18} />
-                {profile.freshGems}
+              <div className="mt-1 flex items-center gap-1 text-base font-extrabold" style={{ color: tokens.textPrimary }}>
+                <Flag className="h-4 w-4 text-amber-400" />
+                <span>{profile.obbyBestStage}/100</span>
               </div>
             </div>
             <div className="rounded-2xl border p-3" style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg }}>
@@ -107,7 +201,7 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
             </div>
           </div>
 
-          <form onSubmit={handleSaveNick} className="space-y-2 pt-2">
+          <form onSubmit={handleSaveNick} className="space-y-2 pt-1">
             <label className="block text-xs font-bold" style={{ color: tokens.textSecondary }}>
               {t.nicknameLabel}
             </label>
@@ -129,7 +223,43 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
                 {nickSaved ? t.saved : t.saveNick}
               </button>
             </div>
+            {nickError && <div className="text-xs font-semibold text-rose-400">{nickError}</div>}
           </form>
+
+          {/* Cloud account pill inside profile */}
+          <div
+            className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-3.5 py-2.5 text-xs"
+            style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg }}
+          >
+            {authUser ? (
+              <>
+                <div className="min-w-0">
+                  <div className="font-bold text-emerald-400 flex items-center gap-1.5">
+                    <Cloud className="h-3.5 w-3.5" />
+                    <span>{cloudStatus === 'syncing' ? ta.cloudSyncing : ta.cloudSynced}</span>
+                  </div>
+                  <div className="truncate text-[11px]" style={{ color: tokens.textSecondary }}>
+                    {authUser.email}
+                  </div>
+                </div>
+                <ShieldCheck className="h-5 w-5 text-emerald-400 shrink-0" />
+              </>
+            ) : (
+              <>
+                <span className="flex-1 text-[11px] leading-snug" style={{ color: tokens.textSecondary }}>
+                  {ta.guestBanner}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onOpenAuth('register')}
+                  className="shrink-0 rounded-xl px-3 py-1.5 text-[11px] font-extrabold text-white cursor-pointer"
+                  style={{ background: tokens.buttonGradient }}
+                >
+                  {ta.tabRegister}
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Friends Card */}
@@ -143,9 +273,22 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
                 <Users className="h-5 w-5" style={{ color: ARCTIC_SKY.skyMain }} />
                 {t.friendsCard}
               </h2>
-              <span className="rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ background: tokens.badgeBg, color: tokens.badgeText }}>
-                {profile.friends.length}
-              </span>
+              <div className="flex items-center gap-2">
+                {authUser && (
+                  <button
+                    type="button"
+                    onClick={() => void onRefreshFriends()}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border hover:opacity-80 cursor-pointer"
+                    style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg, color: tokens.textPrimary }}
+                    title="Odśwież"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                <span className="rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ background: tokens.badgeBg, color: tokens.badgeText }}>
+                  {profile.friends.length}
+                </span>
+              </div>
             </div>
 
             <form onSubmit={handleAddFriend} className="flex gap-2">
@@ -167,49 +310,151 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
                 {t.addFriendBtn}
               </button>
             </form>
+            {friendMsg && <div className="text-xs font-semibold text-rose-400">{friendMsg}</div>}
 
-            <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
-              {profile.friends.map((f) => (
-                <div
-                  key={f.id}
-                  className="flex items-center justify-between rounded-2xl border px-3.5 py-2.5"
-                  style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg }}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                    <div>
-                      <div className="text-xs font-extrabold" style={{ color: tokens.textPrimary }}>
-                        {f.username}
-                      </div>
-                      <div className="font-mono-code text-[10px]" style={{ color: tokens.textSecondary }}>
-                        Lobby #{f.roomCode ?? 'PUBLIC-1'}
+            <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
+              {profile.friends.length === 0 ? (
+                <div className="rounded-2xl border p-4 text-center text-xs" style={{ borderColor: tokens.cardBorder, color: tokens.textSecondary }}>
+                  {lang === 'pl'
+                    ? 'Brak znajomych na liście — wyszukaj gracza poniżej albo wpisz jego nick!'
+                    : 'No friends yet — search for a player below or add by username!'}
+                </div>
+              ) : (
+                profile.friends.map((f) => (
+                  <div
+                    key={f.id}
+                    className="flex items-center justify-between rounded-2xl border px-3.5 py-2.5"
+                    style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg }}
+                  >
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span
+                        className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                          f.status === 'offline' ? 'bg-slate-400' : 'bg-emerald-400'
+                        }`}
+                      />
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-extrabold" style={{ color: tokens.textPrimary }}>
+                          {f.username} {f.freshTag && <span className="font-mono text-[10px] opacity-65">{f.freshTag}</span>}
+                        </div>
+                        <div className="font-mono-code text-[10px]" style={{ color: tokens.textSecondary }}>
+                          {f.world === 'obby' ? 'Test Obby 100' : 'Lobby'} #{f.roomCode ?? 'PUBLIC-1'}
+                        </div>
                       </div>
                     </div>
+                    <button
+                      onClick={() => onJoinWorld(f.world ?? 'lobby', f.roomCode ?? 'PUBLIC-1')}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-xl px-3 py-1.5 text-[11px] font-extrabold text-white cursor-pointer"
+                      style={{ background: tokens.buttonGradient }}
+                    >
+                      <Play className="h-3 w-3 fill-current" />
+                      {LOCALES[lang].home.join}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => onJoinRoom(f.roomCode ?? 'PUBLIC-1')}
-                    className="inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-[11px] font-extrabold text-white cursor-pointer"
-                    style={{ background: tokens.buttonGradient }}
-                  >
-                    <Play className="h-3 w-3 fill-current" />
-                    {LOCALES[lang].home.join}
-                  </button>
-                </div>
-              ))}
+                ))
+              )}
             </div>
+          </div>
+        </div>
+
+        {/* Cloud Player Directory */}
+        <div
+          className="min-w-0 space-y-4 rounded-3xl border p-4 sm:p-6 backdrop-blur-md lg:col-span-6"
+          style={{ background: tokens.cardBg, borderColor: tokens.cardBorder }}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 font-display text-lg font-extrabold" style={{ color: tokens.textPrimary }}>
+              <Search className="h-5 w-5" style={{ color: ARCTIC_SKY.skyMain }} />
+              {t.searchPlayersHeading}
+            </h2>
+            <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold text-emerald-400 bg-emerald-500/12">
+              <Cloud className="h-3 w-3" />
+              {isSupabaseConfigured ? 'Live' : 'Local'}
+            </span>
+          </div>
+
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t.searchPlaceholder}
+            className="w-full rounded-xl border px-3.5 py-2 text-xs font-semibold outline-none"
+            style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg, color: tokens.textPrimary }}
+          />
+
+          <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+            {cloudPlayers.length === 0 ? (
+              <div className="rounded-2xl border p-4 text-center text-xs" style={{ borderColor: tokens.cardBorder, color: tokens.textSecondary }}>
+                {t.noPlayersFound}
+              </div>
+            ) : (
+              cloudPlayers.map((p) => {
+                const isSelf = p.id === authUser?.id
+                return (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between gap-2 rounded-2xl border px-3.5 py-2.5"
+                    style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg }}
+                  >
+                    <div className="min-w-0 flex items-center gap-2.5">
+                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${p.isOnline ? 'bg-emerald-400' : 'bg-slate-400'}`} />
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-extrabold" style={{ color: tokens.textPrimary }}>
+                          {p.username}{' '}
+                          <span className="font-mono text-[10px] opacity-65">{p.freshTag}</span>
+                        </div>
+                        <div className="text-[10px]" style={{ color: tokens.textSecondary }}>
+                          Obby {p.obbyBestStage}/100 • {p.xp} XP
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {!isSelf && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void onAddFriend(p.username)
+                            sfx.playChatPop()
+                          }}
+                          className="rounded-lg border px-2.5 py-1 text-[10px] font-extrabold cursor-pointer"
+                          style={{ borderColor: tokens.cardBorder, background: tokens.cardBg, color: tokens.textPrimary }}
+                        >
+                          + {t.addFriendBtn}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => onJoinWorld(p.lastWorld, p.lastRoom)}
+                        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-extrabold text-white cursor-pointer"
+                        style={{ background: tokens.buttonGradient }}
+                      >
+                        <Play className="h-2.5 w-2.5 fill-current" />
+                        {LOCALES[lang].home.join}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })
+            )}
           </div>
         </div>
 
         {/* Badges Card */}
         <div
-          className="min-w-0 space-y-4 rounded-3xl border p-4 sm:p-6 backdrop-blur-md lg:col-span-7"
+          className="min-w-0 space-y-4 rounded-3xl border p-4 sm:p-6 backdrop-blur-md lg:col-span-6"
           style={{ background: tokens.cardBg, borderColor: tokens.cardBorder }}
         >
-          <h2 className="flex items-center gap-2 font-display text-lg font-extrabold" style={{ color: tokens.textPrimary }}>
-            <Award className="h-5 w-5" style={{ color: ARCTIC_SKY.skyMain }} />
-            {t.badgesCard}
-          </h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="flex items-center justify-between">
+            <h2 className="flex items-center gap-2 font-display text-lg font-extrabold" style={{ color: tokens.textPrimary }}>
+              <Award className="h-5 w-5" style={{ color: ARCTIC_SKY.skyMain }} />
+              {t.badgesCard}
+            </h2>
+            <span className="inline-flex items-center gap-1 text-xs font-bold" style={{ color: tokens.badgeText }}>
+              <Sparkles className="h-3.5 w-3.5" />
+              {profile.badges.length}/{BADGE_CATALOG.length}
+            </span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
             {BADGE_CATALOG.map((b) => {
               const unlocked = profile.badges.includes(b.id)
               return (
@@ -239,42 +484,6 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
                 </div>
               )
             })}
-          </div>
-        </div>
-
-        {/* Supabase Cloud Status Card */}
-        <div
-          className="min-w-0 space-y-3 rounded-3xl border p-4 sm:p-6 backdrop-blur-md lg:col-span-5"
-          style={{ background: tokens.cardBg, borderColor: `${ARCTIC_SKY.skyMain}44` }}
-        >
-          <div className="flex items-center justify-between">
-            <h2 className="flex items-center gap-2 font-display text-lg font-extrabold" style={{ color: tokens.textPrimary }}>
-              <Cloud className="h-5 w-5" style={{ color: ARCTIC_SKY.skyMain }} />
-              {t.supabaseCard}
-            </h2>
-            <ShieldCheck className="h-5 w-5 text-emerald-400" />
-          </div>
-
-          <div
-            className="inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-bold"
-            style={{ background: tokens.badgeBg, color: tokens.badgeText }}
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            {isSupabaseConfigured ? t.supabaseConnected : t.supabaseReady}
-          </div>
-
-          <p className="text-xs leading-relaxed" style={{ color: tokens.textSecondary }}>
-            {t.supabaseLimitNote}
-          </p>
-
-          <div
-            className="rounded-xl border p-3 font-mono-code text-[11px]"
-            style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg, color: tokens.textPrimary }}
-          >
-            <div>vercel: https://freshblox.vercel.app ✓</div>
-            <div>schema: supabase/schema.sql ✓</div>
-            <div>realtime: Presence + Broadcast ✓</div>
-            <div>fallback: Multi-Tab BroadcastChannel ✓</div>
           </div>
         </div>
       </div>

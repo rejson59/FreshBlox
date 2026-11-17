@@ -22,6 +22,7 @@ import { ARCTIC_SKY, getThemeTokens, ThemeMode } from '../../data/brandTheme'
 import { Lang, LOCALES } from '../../data/locales'
 import {
   FACE_CATALOG,
+  GEMS_SYSTEM_IN_PROGRESS,
   HAT_CATALOG,
   OUTFIT_CATALOG,
   OutfitId,
@@ -482,7 +483,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
         const isEquipped = isOwned && equippedOwnedId === item.id
         const isTryingOn = !isOwned && previewedId === item.id
         const isSelected = previewedId === item.id
-        const canAfford = profile.freshGems >= item.price
+        const canAfford = !GEMS_SYSTEM_IN_PROGRESS && profile.freshGems >= item.price
         const outfitSw = category === 'outfit' ? OUTFIT_SWATCHES[item.id as OutfitId] : null
 
         return (
@@ -596,12 +597,16 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
                   className={`inline-flex items-center gap-1 rounded-xl px-3 py-1 text-[11px] font-extrabold transition cursor-pointer ${
                     canAfford
                       ? 'text-white shadow-md hover:brightness-110 active:scale-95'
-                      : 'opacity-55 cursor-not-allowed bg-rose-500/20 text-rose-300'
+                      : 'opacity-80 cursor-not-allowed bg-amber-500/18 text-amber-300'
                   }`}
                   style={canAfford ? { background: tokens.buttonGradient } : undefined}
                 >
                   {!canAfford && <Lock className="h-3 w-3" />}
-                  {canAfford ? `${t.buy} • ${item.price}` : t.notEnough}
+                  {GEMS_SYSTEM_IN_PROGRESS
+                    ? LOCALES[lang].gemsNotice.shopLocked
+                    : canAfford
+                      ? `${t.buy} • ${item.price}`
+                      : t.notEnough}
                 </button>
               </div>
             )}
@@ -742,24 +747,30 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
                 ))}
               </div>
 
-              <button
-                type="button"
-                disabled={profile.freshGems < totalTryOnPrice}
-                onClick={handleBuyTryOnBundle}
-                className={`flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition cursor-pointer ${
-                  profile.freshGems >= totalTryOnPrice
-                    ? 'text-white shadow-lg hover:brightness-110 active:scale-[0.98]'
-                    : 'bg-rose-500/20 text-rose-300 cursor-not-allowed'
-                }`}
-                style={profile.freshGems >= totalTryOnPrice ? { background: tokens.buttonGradient } : undefined}
-              >
-                <ShoppingBag className="h-3.5 w-3.5" />
-                <span>
-                  {profile.freshGems >= totalTryOnPrice
-                    ? `${t.buySelected} (${totalTryOnPrice} Gems)`
-                    : `${t.notEnough} (${totalTryOnPrice} Gems)`}
-                </span>
-              </button>
+              {GEMS_SYSTEM_IN_PROGRESS ? (
+                <div className="rounded-xl border border-amber-400/35 bg-slate-950/50 px-3 py-2 text-xs font-semibold text-amber-200 leading-snug">
+                  {LOCALES[lang].gemsNotice.desc}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={profile.freshGems < totalTryOnPrice}
+                  onClick={handleBuyTryOnBundle}
+                  className={`flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition cursor-pointer ${
+                    profile.freshGems >= totalTryOnPrice
+                      ? 'text-white shadow-lg hover:brightness-110 active:scale-[0.98]'
+                      : 'bg-rose-500/20 text-rose-300 cursor-not-allowed'
+                  }`}
+                  style={profile.freshGems >= totalTryOnPrice ? { background: tokens.buttonGradient } : undefined}
+                >
+                  <ShoppingBag className="h-3.5 w-3.5" />
+                  <span>
+                    {profile.freshGems >= totalTryOnPrice
+                      ? `${t.buySelected} (${totalTryOnPrice} Gems)`
+                      : `${t.notEnough} (${totalTryOnPrice} Gems)`}
+                  </span>
+                </button>
+              )}
             </div>
           )}
 
@@ -819,11 +830,17 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
             </div>
 
             <div
-              className="flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-sm font-extrabold"
-              style={{ borderColor: `${ARCTIC_SKY.skyMain}55`, background: tokens.badgeBg, color: tokens.textPrimary }}
+              className="flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-extrabold"
+              style={{
+                borderColor: GEMS_SYSTEM_IN_PROGRESS ? 'rgba(245,158,11,0.45)' : `${ARCTIC_SKY.skyMain}55`,
+                background: GEMS_SYSTEM_IN_PROGRESS ? 'rgba(245,158,11,0.12)' : tokens.badgeBg,
+                color: GEMS_SYSTEM_IN_PROGRESS ? '#FBBF24' : tokens.textPrimary,
+              }}
             >
-              <FreshGemShard size={19} />
-              <span>{profile.freshGems.toLocaleString()}</span>
+              <FreshGemShard size={17} />
+              <span>
+                {GEMS_SYSTEM_IN_PROGRESS ? LOCALES[lang].nav.gemsWipPill : profile.freshGems.toLocaleString()}
+              </span>
             </div>
           </div>
 

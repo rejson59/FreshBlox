@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   Play,
   Users,
@@ -13,36 +13,58 @@ import {
   Clock,
   CheckCircle2,
   Plus,
+  Flag,
+  Info,
+  LogIn,
+  Cloud,
 } from 'lucide-react'
 import { ARCTIC_SKY, getThemeTokens, ThemeMode } from '../../data/brandTheme'
 import { Lang, LOCALES } from '../../data/locales'
-import { DAILY_QUESTS, getRankForXp, LOBBY_ROOMS, QuestDef } from '../../data/catalog'
-import { PlayerProfile } from '../../store/usePlayerStore'
-import { FreshGemShard } from '../brand/FreshBloxBrand'
+import { DAILY_QUESTS, getRankForXp, LOBBY_ROOMS, QuestDef, WorldKind } from '../../data/catalog'
+import { AuthUserInfo, CloudPlayerSummary, PlayerProfile } from '../../store/usePlayerStore'
 import { sfx } from '../../lib/sfx'
 
 interface HomeBentoViewProps {
   profile: PlayerProfile
+  authUser: AuthUserInfo | null
   mode: ThemeMode
   lang: Lang
-  onEnterRoom: (roomId: string) => void
+  onEnterWorld: (world: WorldKind, roomId: string) => void
   onOpenAvatar: () => void
+  onOpenAuth: (tab?: 'login' | 'register') => void
   onClaimQuest: (questId: QuestDef['id']) => boolean
+  onFetchLeaderboard: () => Promise<CloudPlayerSummary[]>
 }
 
 export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
   profile,
+  authUser,
   mode,
   lang,
-  onEnterRoom,
+  onEnterWorld,
   onOpenAvatar,
+  onOpenAuth,
   onClaimQuest,
+  onFetchLeaderboard,
 }) => {
   const [joinCode, setJoinCode] = useState('')
   const [createdRoom, setCreatedRoom] = useState<string | null>(null)
   const [copiedInvite, setCopiedInvite] = useState(false)
+  const [leaderboard, setLeaderboard] = useState<CloudPlayerSummary[]>([])
+
+  useEffect(() => {
+    let active = true
+    onFetchLeaderboard().then((rows) => {
+      if (active) setLeaderboard(rows)
+    })
+    return () => {
+      active = false
+    }
+  }, [onFetchLeaderboard, profile.obbyBestStage])
 
   const t = LOCALES[lang].home
+  const tg = LOCALES[lang].gemsNotice
+  const ta = LOCALES[lang].auth
   const tokens = getThemeTokens(mode)
   const rank = getRankForXp(profile.xp)
   const xpSpan = Math.max(1, rank.nextXp - rank.minXp)
@@ -65,14 +87,50 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
     e.preventDefault()
     const clean = joinCode.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 12)
     if (!clean) return
-    onEnterRoom(clean)
+    onEnterWorld('lobby', clean)
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6 sm:space-y-8 px-3 py-5 sm:px-6 sm:py-8 overflow-x-clip">
+    <div className="mx-auto w-full max-w-7xl space-y-5 sm:space-y-7 px-3 py-5 sm:px-6 sm:py-7 overflow-x-clip">
+      {/* === STATUS NOTICE: FreshGems in progress + Cloud Accounts LIVE === */}
+      <div
+        className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 backdrop-blur-md"
+        style={{
+          background: mode === 'dark' ? 'rgba(14, 28, 52, 0.82)' : 'rgba(224, 242, 254, 0.9)',
+          borderColor: 'rgba(245, 158, 11, 0.45)',
+        }}
+      >
+        <div className="flex min-w-0 flex-1 items-start gap-2.5">
+          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-amber-400/20 text-amber-400">
+            <Info className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 text-xs leading-relaxed">
+            <span className="font-extrabold text-amber-400">{tg.title}: </span>
+            <span style={{ color: tokens.textPrimary }}>{tg.desc}</span>
+          </div>
+        </div>
+
+        {!authUser ? (
+          <button
+            type="button"
+            onClick={() => onOpenAuth('register')}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-extrabold text-white shadow transition hover:brightness-110 cursor-pointer"
+            style={{ background: tokens.buttonGradient }}
+          >
+            <LogIn className="h-3.5 w-3.5" />
+            <span>{LOCALES[lang].nav.loginBtn}</span>
+          </button>
+        ) : (
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-emerald-400/35 bg-emerald-500/12 px-3 py-1.5 text-[11px] font-bold text-emerald-400">
+            <Cloud className="h-3.5 w-3.5" />
+            <span>{ta.cloudSynced}</span>
+          </span>
+        )}
+      </div>
+
       {/* === CREATOR BENTO (UI-02) TOP GRID === */}
       <section className="grid gap-4 sm:gap-5 lg:grid-cols-12">
-        {/* Main Hero Bento Tile: Lobby Główne 3D */}
+        {/* Main Hero Bento Tile */}
         <div
           className="relative min-w-0 flex flex-col justify-between overflow-hidden rounded-3xl border p-4 sm:p-8 lg:col-span-7"
           style={{
@@ -81,13 +139,11 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
             boxShadow: `0 20px 55px ${mode === 'dark' ? 'rgba(2, 14, 34, 0.55)' : 'rgba(14, 165, 233, 0.16)'}`,
           }}
         >
-          {/* Decorative glossy 3D block shapes */}
           <div
             className="pointer-events-none absolute -top-20 -right-20 h-56 w-56 rounded-full blur-3xl opacity-45"
             style={{ background: ARCTIC_SKY.auraGlow }}
           />
           <div className="pointer-events-none absolute right-8 bottom-8 hidden h-24 w-24 rotate-12 rounded-3xl border-2 border-white/25 bg-sky-400/15 backdrop-blur-sm sm:block" />
-          <div className="pointer-events-none absolute right-24 bottom-20 hidden h-12 w-12 -rotate-12 rounded-2xl border border-white/30 bg-white/15 sm:block" />
 
           <div className="relative space-y-3 min-w-0">
             <span
@@ -107,11 +163,11 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
             </p>
           </div>
 
-          {/* Primary Actions + Private Friend Room Creator */}
+          {/* Primary Actions */}
           <div className="relative mt-5 sm:mt-6 space-y-3 sm:space-y-4 min-w-0">
-            <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
               <button
-                onClick={() => onEnterRoom('PUBLIC-1')}
+                onClick={() => onEnterWorld('lobby', 'PUBLIC-1')}
                 className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-2xl px-5 py-3 sm:px-6 sm:py-3.5 text-sm font-extrabold text-white shadow-xl transition hover:scale-[1.02] hover:brightness-110 cursor-pointer"
                 style={{
                   background: tokens.buttonGradient,
@@ -123,8 +179,19 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
               </button>
 
               <button
+                onClick={() => onEnterWorld('obby', 'OBBY-1')}
+                className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-2xl border border-amber-300/60 bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-3 sm:py-3.5 text-sm font-extrabold text-white shadow-lg transition hover:scale-[1.02] hover:brightness-110 cursor-pointer"
+              >
+                <Flag className="h-4 w-4 shrink-0" />
+                <span>{t.enterObby}</span>
+                <span className="rounded-lg bg-slate-950/35 px-1.5 py-0.5 font-mono text-[10px]">
+                  {profile.obbyStage}/100
+                </span>
+              </button>
+
+              <button
                 onClick={onOpenAvatar}
-                className="inline-flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-2xl border px-3.5 py-3 sm:px-4 sm:py-3.5 text-xs sm:text-sm font-bold transition hover:scale-[1.02] cursor-pointer backdrop-blur-md"
+                className="inline-flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-2xl border px-3.5 py-3 text-xs sm:text-sm font-bold transition hover:scale-[1.02] cursor-pointer backdrop-blur-md"
                 style={{ borderColor: tokens.cardBorder, background: tokens.cardBg, color: tokens.textPrimary }}
               >
                 <UserCircle2 className="h-4 w-4 shrink-0" style={{ color: ARCTIC_SKY.skyMain }} />
@@ -133,7 +200,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
 
               <button
                 onClick={handleCreatePrivateRoom}
-                className="inline-flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-2xl border px-3.5 py-3 sm:px-4 sm:py-3.5 text-xs font-bold transition hover:scale-[1.02] cursor-pointer backdrop-blur-md"
+                className="inline-flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-2xl border px-3.5 py-3 text-xs font-bold transition hover:scale-[1.02] cursor-pointer backdrop-blur-md"
                 style={{ borderColor: `${ARCTIC_SKY.skyMain}50`, background: tokens.mutedBg, color: tokens.badgeText }}
               >
                 <Plus className="h-4 w-4 shrink-0" />
@@ -141,7 +208,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
               </button>
             </div>
 
-            {/* Created Private Room Invite Banner OR Join By Code */}
+            {/* Private Room Invite / Join by Code */}
             <div className="flex flex-wrap items-center gap-2.5 min-w-0">
               {createdRoom ? (
                 <div
@@ -161,7 +228,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                     {copiedInvite ? t.inviteCopied : t.copyInvite}
                   </button>
                   <button
-                    onClick={() => onEnterRoom(createdRoom)}
+                    onClick={() => onEnterWorld('lobby', createdRoom)}
                     className="inline-flex items-center gap-1 rounded-lg px-3 py-1 text-[11px] font-extrabold text-white cursor-pointer"
                     style={{ background: tokens.buttonGradient }}
                   >
@@ -199,9 +266,9 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
           </div>
         </div>
 
-        {/* Right Bento Stack: Season Rank + Online Friends + Daily FreshGems Quests */}
+        {/* Right Bento Stack: Rank & Obby Progress + Obby Leaderboard + Daily XP Quests */}
         <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:col-span-5">
-          {/* Season Rank Bento Card */}
+          {/* Season Rank & Test Obby Progress */}
           <div
             className="min-w-0 flex flex-col justify-between rounded-3xl border p-4 sm:p-5 backdrop-blur-md"
             style={{ background: tokens.cardBg, borderColor: tokens.cardBorder }}
@@ -230,56 +297,56 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
 
             <div className="flex items-center justify-between text-xs font-bold">
               <span className="inline-flex items-center gap-1" style={{ color: ARCTIC_SKY.skyMain }}>
+                <Flag className="h-3.5 w-3.5" />
+                Obby: {profile.obbyBestStage}/100
+              </span>
+              <span className="inline-flex items-center gap-1" style={{ color: tokens.textSecondary }}>
                 <Sparkles className="h-3.5 w-3.5" />
                 {profile.badges.length} {lang === 'pl' ? 'odznak' : 'badges'}
-              </span>
-              <span className="inline-flex items-center gap-1" style={{ color: tokens.textPrimary }}>
-                <FreshGemShard size={16} />
-                {profile.freshGems.toLocaleString()}
               </span>
             </div>
           </div>
 
-          {/* Friends Online Bento Card */}
+          {/* Live Test Obby 100 Leaderboard (from Supabase!) */}
           <div
             className="min-w-0 flex flex-col justify-between rounded-3xl border p-4 sm:p-5 backdrop-blur-md"
             style={{ background: tokens.cardBg, borderColor: tokens.cardBorder }}
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider" style={{ color: tokens.textSecondary }}>
-                {t.onlineFriends}
+                {t.obbyLeaderboard}
               </span>
-              <span
-                className="rounded-full px-2 py-0.5 text-[10px] font-extrabold"
-                style={{ background: tokens.badgeBg, color: tokens.badgeText }}
-              >
-                {profile.friends.length}
-              </span>
+              <Flag className="h-4 w-4 text-amber-400" />
             </div>
 
-            <div className="my-3 space-y-2">
-              {profile.friends.slice(0, 3).map((fr) => (
-                <div key={fr.id} className="flex items-center justify-between gap-2 text-xs">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
-                    <div className="min-w-0">
-                      <div className="truncate font-bold" style={{ color: tokens.textPrimary }}>
-                        {fr.username}
-                      </div>
-                      <div className="truncate text-[10px]" style={{ color: tokens.textSecondary }}>
-                        #{fr.roomCode ?? 'PUBLIC-1'}
-                      </div>
+            <div className="my-2.5 space-y-1.5">
+              {leaderboard.length > 0 ? (
+                leaderboard.slice(0, 4).map((p, idx) => (
+                  <div key={p.id} className="flex items-center justify-between gap-2 text-xs">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md font-mono text-[10px] font-black"
+                        style={{
+                          background: idx === 0 ? 'rgba(251,191,36,0.22)' : tokens.mutedBg,
+                          color: idx === 0 ? '#FBBF24' : tokens.textSecondary,
+                        }}
+                      >
+                        {idx + 1}
+                      </span>
+                      <span className="truncate font-bold" style={{ color: tokens.textPrimary }}>
+                        {p.username}
+                      </span>
                     </div>
+                    <span className="shrink-0 font-mono text-[11px] font-extrabold" style={{ color: ARCTIC_SKY.skyMain }}>
+                      {p.obbyBestStage}/100
+                    </span>
                   </div>
-                  <button
-                    onClick={() => onEnterRoom(fr.roomCode ?? 'PUBLIC-1')}
-                    className="shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-extrabold transition hover:brightness-110 cursor-pointer"
-                    style={{ background: tokens.badgeBg, color: tokens.badgeText }}
-                  >
-                    {t.join}
-                  </button>
-                </div>
-              ))}
+                ))
+              ) : (
+                <p className="text-xs py-2" style={{ color: tokens.textSecondary }}>
+                  {t.noLeaderboardYet}
+                </p>
+              )}
             </div>
 
             <div className="text-[11px]" style={{ color: tokens.textSecondary }}>
@@ -287,14 +354,14 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
             </div>
           </div>
 
-          {/* Daily FreshGems Quests Bento Card (Full width across right stack!) */}
+          {/* Daily XP Quests Bento Card */}
           <div
             className="min-w-0 rounded-3xl border p-4 sm:p-5 backdrop-blur-md sm:col-span-2"
             style={{ background: tokens.cardBg, borderColor: tokens.cardBorder }}
           >
             <div className="mb-3 flex items-center justify-between">
               <span className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider" style={{ color: tokens.badgeText }}>
-                <FreshGemShard size={18} />
+                <Sparkles className="h-4 w-4" style={{ color: ARCTIC_SKY.skyMain }} />
                 {t.dailyQuests}
               </span>
               <span className="text-[11px] font-semibold" style={{ color: tokens.textSecondary }}>
@@ -302,7 +369,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
               </span>
             </div>
 
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               {DAILY_QUESTS.slice(0, 4).map((q) => {
                 const prog = profile.quests.progress[q.id] ?? 0
                 const done = prog >= q.target
@@ -318,12 +385,15 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2 text-xs font-bold" style={{ color: tokens.textPrimary }}>
                         <span className="truncate">{lang === 'pl' ? q.titlePl : q.titleEn}</span>
-                        <span className="shrink-0 font-mono-code text-[10px]" style={{ color: ARCTIC_SKY.skyMain }}>
+                        <span className="shrink-0 font-mono text-[10px]" style={{ color: tokens.textSecondary }}>
                           {prog}/{q.target}
                         </span>
                       </div>
-                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-500/25">
-                        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: tokens.buttonGradient }} />
+                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-500/20">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{ width: `${pct}%`, background: tokens.buttonGradient }}
+                        />
                       </div>
                     </div>
 
@@ -340,11 +410,11 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                         className="inline-flex shrink-0 items-center gap-1 rounded-xl px-3 py-1.5 text-[11px] font-extrabold text-white shadow-md transition hover:scale-105 cursor-pointer"
                         style={{ background: tokens.buttonGradient }}
                       >
-                        <FreshGemShard size={13} /> +{q.rewardGems} {t.claim}
+                        +{q.rewardXp} XP {t.claim}
                       </button>
                     ) : (
-                      <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-bold" style={{ color: tokens.textSecondary }}>
-                        <FreshGemShard size={13} /> +{q.rewardGems}
+                      <span className="inline-flex shrink-0 items-center gap-1 font-mono text-[11px] font-bold" style={{ color: tokens.textSecondary }}>
+                        +{q.rewardXp} XP
                       </span>
                     )}
                   </div>
@@ -355,7 +425,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
         </div>
       </section>
 
-      {/* === PRO STATS (C-03) ROOM & UPCOMING PORTALS CARDS === */}
+      {/* === PRO STATS (C-03) WORLDS & ROOMS CARDS === */}
       <section className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
@@ -371,17 +441,17 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {LOBBY_ROOMS.map((room) => {
             const isLive = room.status === 'live'
+            const isObby = room.world === 'obby'
             return (
               <div
                 key={room.id}
                 className="group flex flex-col justify-between overflow-hidden rounded-3xl border transition-all duration-200 hover:-translate-y-1 backdrop-blur-md"
                 style={{
                   background: tokens.cardBg,
-                  borderColor: isLive ? `${ARCTIC_SKY.skyMain}44` : tokens.cardBorder,
-                  opacity: isLive ? 1 : 0.82,
+                  borderColor: isObby ? 'rgba(245,158,11,0.55)' : isLive ? `${ARCTIC_SKY.skyMain}44` : tokens.cardBorder,
+                  opacity: isLive ? 1 : 0.8,
                 }}
               >
-                {/* C-03 Pro Stats Top Banner */}
                 <div className="relative h-28 overflow-hidden p-3" style={{ background: room.gradient }}>
                   <div className="pointer-events-none absolute -right-4 -bottom-4 h-20 w-20 rotate-12 rounded-2xl border border-white/40 bg-white/20" />
                   <div className="relative flex items-start justify-between gap-2">
@@ -400,12 +470,15 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                   </div>
                   <div className="absolute bottom-2.5 left-3">
                     <span className="rounded-md bg-slate-950/55 px-2 py-0.5 font-mono-code text-[10px] font-bold text-sky-100 backdrop-blur">
-                      {isLive ? `● ${t.liveNow} • #${room.code}` : `PORTAL • ${room.code}`}
+                      {isObby
+                        ? `● STAGE ${profile.obbyStage}/100`
+                        : isLive
+                          ? `● ${t.liveNow} • #${room.code}`
+                          : `PORTAL • ${room.code}`}
                     </span>
                   </div>
                 </div>
 
-                {/* C-03 Pro Stats Body */}
                 <div className="flex flex-1 flex-col justify-between p-4">
                   <h3 className="font-display text-base font-extrabold leading-snug" style={{ color: tokens.textPrimary }}>
                     {lang === 'pl' ? room.titlePl : room.titleEn}
@@ -415,7 +488,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                     <div className="flex items-center gap-2.5 text-xs" style={{ color: tokens.textSecondary }}>
                       <span className="inline-flex items-center gap-1 font-bold" style={{ color: ARCTIC_SKY.skyMain }}>
                         <Users className="h-3.5 w-3.5" />
-                        {isLive ? `${room.players}/${room.maxPlayers}` : '0'}
+                        {isLive ? `max ${room.maxPlayers}` : '0'}
                       </span>
                       <span className="inline-flex items-center gap-1 font-mono-code text-[11px]">
                         <Wifi className="h-3 w-3 text-emerald-400" /> {room.pingMs}ms
@@ -424,9 +497,9 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
 
                     {isLive ? (
                       <button
-                        onClick={() => onEnterRoom(room.code)}
+                        onClick={() => onEnterWorld(room.world, room.code)}
                         className="inline-flex items-center gap-1 rounded-xl px-3.5 py-1.5 text-xs font-extrabold text-white shadow-md transition hover:brightness-110 cursor-pointer"
-                        style={{ background: tokens.buttonGradient }}
+                        style={{ background: isObby ? 'linear-gradient(135deg,#F59E0B,#EA580C)' : tokens.buttonGradient }}
                       >
                         <Play className="h-3 w-3 fill-current" />
                         {t.playNow}
