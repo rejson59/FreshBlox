@@ -45,13 +45,13 @@ interface AvatarEditorViewProps {
 }
 
 type EditorTab = 'outfits' | 'hats' | 'faces' | 'skin'
-type StudioLighting = 'day' | 'neon'
+type StudioLighting = 'day' | 'night'
 
 const OUTFIT_SWATCHES: Record<OutfitId, { torso: string; arms: string; legs: string }> = {
   'fresh-creator': { torso: '#0EA5E9', arms: '#38BDF8', legs: '#1E3A8A' },
   'classic-remaster': { torso: '#2563EB', arms: '#FDE0B6', legs: '#22C55E' },
   'arctic-frost': { torso: '#E0F2FE', arms: '#7DD3FC', legs: '#0369A1' },
-  'midnight-neon': { torso: '#0F172A', arms: '#0284C7', legs: '#1E293B' },
+  'midnight-slate': { torso: '#0F172A', arms: '#0284C7', legs: '#1E293B' },
   'glacier-captain': { torso: '#0891B2', arms: '#E0F2FE', legs: '#0C4A6E' },
   'crystal-royal': { torso: '#38BDF8', arms: '#F8FAFC', legs: '#1D4ED8' },
 }
@@ -73,7 +73,6 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
   // Free Try-On preview avatar (can combine unowned outfits, hats & faces before buying!)
   const [previewAvatar, setPreviewAvatar] = useState<R6AvatarConfig>(() => ({ ...profile.avatar }))
 
-  // Keep skin synced with owned profile immediately
   useEffect(() => {
     setPreviewAvatar((prev) => ({ ...prev, skinColor: profile.avatar.skinColor }))
   }, [profile.avatar.skinColor])
@@ -84,8 +83,12 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
   const controlsRef = useRef<OrbitControls | null>(null)
   const hemiRef = useRef<THREE.HemisphereLight | null>(null)
   const sunRef = useRef<THREE.DirectionalLight | null>(null)
-  const rimRef = useRef<THREE.DirectionalLight | null>(null)
-  const ringMatRef = useRef<THREE.MeshStandardMaterial | null>(null)
+  const fillRef = useRef<THREE.DirectionalLight | null>(null)
+  const dayGroupRef = useRef<THREE.Group | null>(null)
+  const nightGroupRef = useRef<THREE.Group | null>(null)
+  const podiumMatRef = useRef<THREE.MeshStandardMaterial | null>(null)
+  const trimMatRef = useRef<THREE.MeshStandardMaterial | null>(null)
+  const archMatRef = useRef<THREE.MeshStandardMaterial | null>(null)
   const poseRef = useRef<PlayerPose>(previewPose)
   poseRef.current = previewPose
 
@@ -115,49 +118,60 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
 
   const totalTryOnPrice = useMemo(() => triedUnowned.reduce((acc, i) => acc + i.price, 0), [triedUnowned])
 
-  // Apply studio lighting theme (Day / Neon) live!
+  // Apply natural Day / Night lighting live (clean sky & moonlight — zero neon!)
   useEffect(() => {
     const scene = sceneRef.current
     const hemi = hemiRef.current
     const sun = sunRef.current
-    const rim = rimRef.current
-    const ringMat = ringMatRef.current
+    const fill = fillRef.current
     if (!scene) return
 
     if (studioLight === 'day') {
-      scene.background = new THREE.Color('#D7EFFE')
-      scene.fog = new THREE.Fog('#D7EFFE', 15, 34)
+      scene.background = new THREE.Color('#D4EEFF')
+      scene.fog = new THREE.Fog('#D4EEFF', 16, 38)
       if (hemi) {
-        hemi.color.set('#F4FBFF')
-        hemi.groundColor.set('#6BA5D4')
+        hemi.color.set('#F5FBFF')
+        hemi.groundColor.set('#7BB4DC')
         hemi.intensity = 1.25
       }
       if (sun) {
-        sun.color.set('#FFFFFF')
+        sun.color.set('#FFFDF7')
         sun.intensity = 1.65
+        sun.position.set(6, 11, 8)
       }
-      if (rim) {
-        rim.color.set('#38BDF8')
-        rim.intensity = 1.0
+      if (fill) {
+        fill.color.set('#BAE6FD')
+        fill.intensity = 0.72
       }
-      if (ringMat) ringMat.emissiveIntensity = 0.65
+      if (dayGroupRef.current) dayGroupRef.current.visible = true
+      if (nightGroupRef.current) nightGroupRef.current.visible = false
+      if (podiumMatRef.current) podiumMatRef.current.color.set('#F4FAFF')
+      if (trimMatRef.current) trimMatRef.current.color.set('#7DD3FC')
+      if (archMatRef.current) archMatRef.current.color.set('#E2F1FC')
     } else {
-      scene.background = new THREE.Color('#07142B')
-      scene.fog = new THREE.Fog('#07142B', 14, 32)
+      scene.background = new THREE.Color('#0B1528')
+      scene.fog = new THREE.Fog('#0B1528', 16, 38)
       if (hemi) {
-        hemi.color.set('#7DD3FC')
-        hemi.groundColor.set('#0C2446')
+        hemi.color.set('#94B8E0')
+        hemi.groundColor.set('#14233C')
         hemi.intensity = 0.85
       }
       if (sun) {
-        sun.color.set('#E0F2FE')
-        sun.intensity = 1.3
+        // Soft natural moonlight from upper right
+        sun.color.set('#DCEBFF')
+        sun.intensity = 1.2
+        sun.position.set(5, 10, 7)
       }
-      if (rim) {
-        rim.color.set('#38BDF8')
-        rim.intensity = 2.1
+      if (fill) {
+        // Warm subtle lantern fill so avatar colors stay natural and clear at night
+        fill.color.set('#FFE6C4')
+        fill.intensity = 0.75
       }
-      if (ringMat) ringMat.emissiveIntensity = 1.35
+      if (dayGroupRef.current) dayGroupRef.current.visible = false
+      if (nightGroupRef.current) nightGroupRef.current.visible = true
+      if (podiumMatRef.current) podiumMatRef.current.color.set('#CAD9EA')
+      if (trimMatRef.current) trimMatRef.current.color.set('#47698F')
+      if (archMatRef.current) archMatRef.current.color.set('#223552')
     }
   }, [studioLight])
 
@@ -167,7 +181,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
     }
   }, [autoRotate])
 
-  // Initialize Flagship 3D Locker Room Showcase Stage
+  // Initialize Clean Fresh Glossy 3D Locker Terrace (Day & Starry Night — Zero Neon!)
   useEffect(() => {
     const container = mountRef.current
     if (!container) return
@@ -184,28 +198,28 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 1.08
+    renderer.toneMappingExposure = 1.06
     renderer.domElement.style.touchAction = 'none'
     container.innerHTML = ''
     container.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color('#D7EFFE')
-    scene.fog = new THREE.Fog('#D7EFFE', 15, 34)
+    scene.background = new THREE.Color('#D4EEFF')
+    scene.fog = new THREE.Fog('#D4EEFF', 16, 38)
     sceneRef.current = scene
 
     const camera = new THREE.PerspectiveCamera(
       38,
       (container.clientWidth || 420) / (container.clientHeight || 440),
       0.1,
-      65,
+      70,
     )
-    camera.position.set(0, 2.55, 8.7)
+    camera.position.set(0, 2.5, 8.6)
 
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
     controls.dampingFactor = 0.07
-    controls.target.set(0, 1.92, 0)
+    controls.target.set(0, 1.9, 0)
     controls.minDistance = 4.8
     controls.maxDistance = 12.2
     controls.maxPolarAngle = Math.PI * 0.52
@@ -213,100 +227,137 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
     controls.autoRotateSpeed = 0.65
     controlsRef.current = controls
 
-    // Studio 3-point lighting
-    const hemi = new THREE.HemisphereLight('#F4FBFF', '#6BA5D4', 1.25)
+    // Natural 3-point outdoor lighting (Sun / Moon + Soft Sky Fill)
+    const hemi = new THREE.HemisphereLight('#F5FBFF', '#7BB4DC', 1.25)
     scene.add(hemi)
     hemiRef.current = hemi
 
-    const sun = new THREE.DirectionalLight('#FFFFFF', 1.65)
+    const sun = new THREE.DirectionalLight('#FFFDF7', 1.65)
     sun.position.set(6, 11, 8)
     sun.castShadow = true
     sun.shadow.mapSize.set(512, 512)
     scene.add(sun)
     sunRef.current = sun
 
-    const rim = new THREE.DirectionalLight('#38BDF8', 1.0)
-    rim.position.set(-6, 5, -6)
-    scene.add(rim)
-    rimRef.current = rim
+    const fill = new THREE.DirectionalLight('#BAE6FD', 0.72)
+    fill.position.set(-6, 5, -5)
+    scene.add(fill)
+    fillRef.current = fill
 
-    // === LOCKER ROOM TURNTABLE PODIUM & ARCHITECTURAL BACKDROP ===
+    // === CLEAN FRESH GLOSSY TURNTABLE PODIUM (ZERO NEON / ZERO LED) ===
     const studMap = track(getSharedFreshStudTexture().clone())
     studMap.needsUpdate = true
     studMap.repeat.set(3, 3)
 
-    // Upper circular studio podium
-    const topDisc = new THREE.Mesh(
-      track(new THREE.CylinderGeometry(2.35, 2.55, 0.34, 32)),
-      track(
-        new THREE.MeshStandardMaterial({
-          color: '#F0F9FF',
-          map: studMap,
-          roughness: 0.22,
-          metalness: 0.08,
-        }),
-      ),
+    const podiumMat = track(
+      new THREE.MeshStandardMaterial({
+        color: '#F4FAFF',
+        map: studMap,
+        roughness: 0.28,
+        metalness: 0.04,
+      }),
     )
+    podiumMatRef.current = podiumMat
+
+    const topDisc = new THREE.Mesh(track(new THREE.CylinderGeometry(2.35, 2.55, 0.34, 32)), podiumMat)
     topDisc.position.y = -0.17
     topDisc.receiveShadow = true
     scene.add(topDisc)
 
-    // Glowing Arctic Sky accent rim around turntable
-    const ringMat = track(
+    // Clean glossy sky-stone trim ring (no emissive neon!)
+    const trimMat = track(
       new THREE.MeshStandardMaterial({
         color: '#7DD3FC',
-        emissive: '#0EA5E9',
-        emissiveIntensity: 0.65,
-        roughness: 0.16,
-        metalness: 0.2,
+        roughness: 0.24,
+        metalness: 0.08,
       }),
     )
-    ringMatRef.current = ringMat
-    const glowRing = new THREE.Mesh(track(new THREE.TorusGeometry(2.44, 0.065, 10, 48)), ringMat)
-    glowRing.rotation.x = Math.PI / 2
-    glowRing.position.y = -0.02
-    scene.add(glowRing)
+    trimMatRef.current = trimMat
+    const trimRing = new THREE.Mesh(track(new THREE.TorusGeometry(2.44, 0.06, 10, 48)), trimMat)
+    trimRing.rotation.x = Math.PI / 2
+    trimRing.position.y = -0.02
+    scene.add(trimRing)
 
-    // Lower dark slate base pedestal
     const lowerBase = new THREE.Mesh(
       track(new THREE.CylinderGeometry(2.9, 3.15, 0.38, 32)),
-      track(new THREE.MeshStandardMaterial({ color: '#0F172A', roughness: 0.35, metalness: 0.2 })),
+      track(new THREE.MeshStandardMaterial({ color: '#334155', roughness: 0.42, metalness: 0.08 })),
     )
     lowerBase.position.y = -0.52
+    lowerBase.receiveShadow = true
     scene.add(lowerBase)
 
-    // Subtle sleek studio showcase pillars behind avatar
-    const pillarGeo = track(new RoundedBoxGeometry(0.52, 6.4, 0.52, 2, 0.08))
-    const pillarMat = track(new THREE.MeshStandardMaterial({ color: '#0C2340', roughness: 0.32, metalness: 0.25 }))
-    const stripGeo = track(new THREE.BoxGeometry(0.12, 5.2, 0.08))
-    const stripMat = track(new THREE.MeshBasicMaterial({ color: '#38BDF8' }))
+    // Subtle open-air pavilion backdrop pillars (matte architectural stone — no LED strips!)
+    const archMat = track(new THREE.MeshStandardMaterial({ color: '#E2F1FC', roughness: 0.36, metalness: 0.05 }))
+    archMatRef.current = archMat
+    const pillarGeo = track(new RoundedBoxGeometry(0.56, 5.8, 0.56, 2, 0.09))
 
     for (const side of [-1, 1]) {
-      const p = new THREE.Mesh(pillarGeo, pillarMat)
-      p.position.set(side * 4.2, 2.4, -3.6)
-      p.rotation.y = side * -0.22
+      const p = new THREE.Mesh(pillarGeo, archMat)
+      p.position.set(side * 4.3, 2.2, -4.1)
+      p.rotation.y = side * -0.18
+      p.receiveShadow = true
       scene.add(p)
-
-      const strip = new THREE.Mesh(stripGeo, stripMat)
-      strip.position.set(0, 0, 0.26)
-      p.add(strip)
     }
 
-    // Floating background studio arch beam
-    const topArch = new THREE.Mesh(
-      track(new RoundedBoxGeometry(9.4, 0.42, 0.65, 2, 0.1)),
-      pillarMat,
-    )
-    topArch.position.set(0, 5.65, -3.6)
-    scene.add(topArch)
+    const topBeam = new THREE.Mesh(track(new RoundedBoxGeometry(9.6, 0.42, 0.68, 2, 0.1)), archMat)
+    topBeam.position.set(0, 5.25, -4.1)
+    scene.add(topBeam)
 
-    // Subtle orbiting background FreshGem emblem behind stage
-    const decoGem = new THREE.Mesh(
-      track(new THREE.OctahedronGeometry(0.42, 0)),
-      ringMat,
+    // === DAY SKY DETAILS (Soft stylized FreshBlox clouds) ===
+    const dayGroup = new THREE.Group()
+    const cloudMat = track(new THREE.MeshStandardMaterial({ color: '#FFFFFF', roughness: 0.55 }))
+    const cloudSpecs: Array<[number, number, number, number, number, number]> = [
+      [-6.5, 6.2, -10, 3.6, 0.85, 1.6],
+      [-5.2, 6.75, -10, 2.2, 0.7, 1.4],
+      [6.2, 5.6, -11, 3.8, 0.85, 1.6],
+      [7.4, 6.15, -11, 2.1, 0.65, 1.3],
+      [0.4, 7.6, -13, 3.2, 0.75, 1.5],
+    ]
+    for (const [cx, cy, cz, cw, ch, cd] of cloudSpecs) {
+      const cm = new THREE.Mesh(track(new RoundedBoxGeometry(cw, ch, cd, 2, 0.25)), cloudMat)
+      cm.position.set(cx, cy, cz)
+      dayGroup.add(cm)
+    }
+    scene.add(dayGroup)
+    dayGroupRef.current = dayGroup
+
+    // === NIGHT SKY DETAILS (Natural Moon + Gentle Starfield — Zero Neon!) ===
+    const nightGroup = new THREE.Group()
+    nightGroup.visible = false
+
+    const moon = new THREE.Mesh(
+      track(new THREE.SphereGeometry(0.95, 20, 16)),
+      track(new THREE.MeshBasicMaterial({ color: '#F4F7FF' })),
     )
-    decoGem.position.set(0, 4.75, -3.2)
-    scene.add(decoGem)
+    moon.position.set(5.6, 6.8, -14)
+    nightGroup.add(moon)
+
+    const starCoords: Array<[number, number, number, number]> = [
+      [-8.5, 7.8, -14, 0.08],
+      [-6.2, 6.4, -15, 0.06],
+      [-4.1, 8.2, -14, 0.07],
+      [-2.3, 6.9, -15, 0.05],
+      [-0.6, 8.6, -15, 0.08],
+      [1.8, 7.4, -14, 0.06],
+      [3.1, 8.5, -15, 0.07],
+      [8.2, 7.6, -14, 0.07],
+      [7.1, 4.9, -15, 0.05],
+      [-7.4, 4.6, -15, 0.06],
+      [-3.2, 4.4, -16, 0.05],
+      [2.6, 5.1, -16, 0.05],
+      [-9.6, 5.9, -15, 0.07],
+      [9.4, 6.1, -15, 0.06],
+    ]
+    const starGeo = track(new THREE.OctahedronGeometry(1, 0))
+    const starMat = track(new THREE.MeshBasicMaterial({ color: '#E2ECFF' }))
+    for (const [sx, sy, sz, sr] of starCoords) {
+      const st = new THREE.Mesh(starGeo, starMat)
+      st.position.set(sx, sy, sz)
+      st.scale.setScalar(sr)
+      nightGroup.add(st)
+    }
+    scene.add(nightGroup)
+    nightGroupRef.current = nightGroup
 
     let rafId = 0
     let lastTime = performance.now()
@@ -316,8 +367,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
       const dt = Math.min(0.05, (now - lastTime) / 1000)
       lastTime = now
       elapsed += dt
-      decoGem.rotation.y = elapsed * 1.1
-      decoGem.position.y = 4.75 + Math.sin(elapsed * 2) * 0.14
+      dayGroup.position.x = Math.sin(elapsed * 0.14) * 0.45
       rigRef.current?.update(dt, elapsed, poseRef.current)
       controls.update()
       renderer.render(scene, camera)
@@ -348,6 +398,8 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
       renderer.dispose()
       sceneRef.current = null
       controlsRef.current = null
+      dayGroupRef.current = null
+      nightGroupRef.current = null
     }
   }, [])
 
@@ -371,7 +423,6 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
   const t = LOCALES[lang].avatar
   const tokens = getThemeTokens(mode)
 
-  // Clicking a card: if owned -> equip immediately; if NOT owned -> FREE TRY-ON!
   const handleCardClick = (category: 'outfit' | 'hat' | 'face', itemId: string, isOwned: boolean) => {
     sfx.playClick()
     if (category === 'outfit') setPreviewAvatar((p) => ({ ...p, outfitId: itemId as OutfitId }))
@@ -383,7 +434,6 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
     }
   }
 
-  // Clicking explicit "Kup" button on a card buys & equips immediately!
   const handleBuyItem = (
     e: React.MouseEvent,
     category: 'outfit' | 'hat' | 'face',
@@ -391,6 +441,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
     price: number,
   ) => {
     e.stopPropagation()
+    if (profile.freshGems < price) return
     const ok = onBuyAndEquip(category, itemId, price)
     if (ok) {
       sfx.playGemCollect()
@@ -400,7 +451,6 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
     }
   }
 
-  // Buy all currently tried-on unowned items atomically in one click!
   const handleBuyTryOnBundle = () => {
     if (profile.freshGems < totalTryOnPrice || triedUnowned.length === 0) return
     const ok = onBuyBundle(triedUnowned.map(({ category, id, price }) => ({ category, id, price })))
@@ -459,7 +509,6 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
             }}
           >
             <div className="flex items-start gap-3">
-              {/* Visual R6 Block Thumbnail Swatch */}
               {outfitSw ? (
                 <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl border border-white/20 bg-slate-950/35 p-1.5">
                   <div className="flex items-center gap-[2px]">
@@ -530,7 +579,6 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
               </div>
             </div>
 
-            {/* Footer bar on locked items: Free Try-On indicator + 1-click Buy button */}
             {!isOwned && (
               <div
                 className="mt-3 pt-2.5 border-t flex items-center justify-between gap-2 text-[11px]"
@@ -568,7 +616,8 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-3 sm:gap-4">
         <div className="max-w-2xl min-w-0">
-          <div className="mb-1 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase"
+          <div
+            className="mb-1 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase"
             style={{ background: tokens.badgeBg, color: tokens.badgeText, borderColor: `${ARCTIC_SKY.skyMain}44` }}
           >
             <Sparkles className="h-3 w-3" />
@@ -599,9 +648,9 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
         </div>
       </div>
 
-      {/* Main Split: Flagship 3D Locker Room + Shop Catalog */}
+      {/* Main Split: Clean 3D Locker Terrace + Shop Catalog */}
       <div className="grid gap-5 sm:gap-6 lg:grid-cols-12">
-        {/* Left: 3D Locker Room Showcase Stage */}
+        {/* Left: 3D Locker Showcase Stage */}
         <div
           className="min-w-0 flex flex-col overflow-hidden rounded-3xl border p-3 lg:col-span-5"
           style={{
@@ -625,18 +674,22 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
               )}
             </div>
 
-            {/* Top-right Studio Stage Controls (Day/Neon + Auto-Rotate) */}
+            {/* Top-right Stage Controls (Day/Night + Auto-Rotate) */}
             <div className="absolute top-3 right-3 flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => {
-                  setStudioLight((s) => (s === 'day' ? 'neon' : 'day'))
+                  setStudioLight((s) => (s === 'day' ? 'night' : 'day'))
                   sfx.playClick()
                 }}
                 className="flex items-center gap-1 rounded-xl bg-slate-950/70 px-2.5 py-1.5 text-[11px] font-bold text-sky-100 border border-sky-400/30 backdrop-blur hover:bg-slate-900 cursor-pointer"
               >
-                {studioLight === 'day' ? <Sun className="h-3.5 w-3.5 text-amber-300" /> : <Moon className="h-3.5 w-3.5 text-sky-300" />}
-                <span>{studioLight === 'day' ? t.studioDay : t.studioNeon}</span>
+                {studioLight === 'day' ? (
+                  <Sun className="h-3.5 w-3.5 text-amber-300" />
+                ) : (
+                  <Moon className="h-3.5 w-3.5 text-sky-200" />
+                )}
+                <span>{studioLight === 'day' ? t.studioDay : t.studioNight}</span>
               </button>
 
               <button
@@ -658,7 +711,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
             </div>
           </div>
 
-          {/* LIVE TRY-ON CHECKOUT BAR (Appears whenever trying on 1+ unowned items!) */}
+          {/* LIVE TRY-ON CHECKOUT BAR */}
           {triedUnowned.length > 0 && (
             <div className="mt-3 rounded-2xl border border-amber-400/45 bg-amber-500/10 p-3 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
@@ -710,7 +763,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
             </div>
           )}
 
-          {/* Animation Tester Pills — Full Pro Showcase */}
+          {/* Animation Tester Pills */}
           <div className="mt-3 px-0.5">
             <div className="mb-2 text-[11px] font-bold uppercase tracking-wider" style={{ color: tokens.textSecondary }}>
               {t.testAnim}
@@ -742,7 +795,6 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
           className="min-w-0 flex flex-col rounded-3xl border p-4 sm:p-5 backdrop-blur-md lg:col-span-7"
           style={{ background: tokens.cardBg, borderColor: tokens.cardBorder }}
         >
-          {/* Category Switcher + Wallet Balance */}
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2.5">
             <div className="flex flex-wrap gap-1.5">
               {tabs.map((tb) => {
@@ -775,7 +827,6 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
             </div>
           </div>
 
-          {/* Active Catalog Content */}
           <div className="flex-1">
             {tab === 'outfits' &&
               renderCatalogGrid(

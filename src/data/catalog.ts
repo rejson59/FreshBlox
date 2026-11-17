@@ -2,7 +2,7 @@ export type OutfitId =
   | 'fresh-creator'
   | 'classic-remaster'
   | 'arctic-frost'
-  | 'midnight-neon'
+  | 'midnight-slate'
   | 'glacier-captain'
   | 'crystal-royal'
 
@@ -50,17 +50,17 @@ export const OUTFIT_CATALOG: CatalogItem<OutfitId>[] = [
     id: 'arctic-frost',
     namePl: 'Arctic Frost Pro',
     nameEn: 'Arctic Frost Pro',
-    descPl: 'Lodowo-biała kurtka arktyczna ze świetlistymi błękitnymi liniami.',
-    descEn: 'Crisp glacier-white jacket accented with glowing sky tech trim.',
+    descPl: 'Lodowo-biała kurtka arktyczna z czystym błękitnym wykończeniem.',
+    descEn: 'Crisp glacier-white jacket with clean sky-blue trim.',
     price: 120,
     accent: '#BAE6FD',
   },
   {
-    id: 'midnight-neon',
-    namePl: 'Midnight Neon',
-    nameEn: 'Midnight Neon',
-    descPl: 'Ciemny nocny grafit z elektryczną błękitną obwódką.',
-    descEn: 'Deep midnight slate jacket framed in electric sky-blue lines.',
+    id: 'midnight-slate',
+    namePl: 'Nocny Grafit',
+    nameEn: 'Midnight Slate',
+    descPl: 'Ciemna granatowo-grafitowa bluza z błękitnymi rękawami.',
+    descEn: 'Deep midnight navy hoodie paired with clean sky-blue sleeves.',
     price: 160,
     accent: '#0EA5E9',
   },
@@ -105,10 +105,10 @@ export const HAT_CATALOG: CatalogItem<HatId>[] = [
   },
   {
     id: 'headphones',
-    namePl: 'Słuchawki Arctic LED',
-    nameEn: 'Arctic LED Headphones',
-    descPl: 'Gamingowe słuchawki nauszne ze świecącym błękitnym pierścieniem.',
-    descEn: 'Pro gaming headphones with glowing arctic sky LED rings.',
+    namePl: 'Słuchawki Arctic Studio',
+    nameEn: 'Arctic Studio Headphones',
+    descPl: 'Klasyczne słuchawki nauszne z błękitno-srebrnym wykończeniem.',
+    descEn: 'Classic over-ear studio headphones with sky-blue trim.',
     price: 140,
     accent: '#0EA5E9',
   },
@@ -116,17 +116,17 @@ export const HAT_CATALOG: CatalogItem<HatId>[] = [
     id: 'crystal-halo',
     namePl: 'Kryształowa Aureola',
     nameEn: 'Crystal Halo',
-    descPl: 'Lewitujący świetlisty pierścień błękitnego lodu nad głową R6.',
-    descEn: 'Floating luminous sky-crystal ring hovering above your R6 head.',
+    descPl: 'Lekki pierścień z błękitnego lodu unoszący się nad głową R6.',
+    descEn: 'Polished sky-ice ring floating above your R6 head.',
     price: 190,
     accent: '#7DD3FC',
   },
   {
     id: 'frost-horns',
-    namePl: 'Mroźne Rogi Cyber',
-    nameEn: 'Cyber Frost Horns',
-    descPl: 'Stylizowane kryształowe rogi dla fanów mocniejszego looku.',
-    descEn: 'Sculpted translucent frost horns for a bold pro-gaming silhouette.',
+    namePl: 'Mroźne Rogi',
+    nameEn: 'Frost Horns',
+    descPl: 'Stylizowane lodowe rogi w połysku Fresh Glossy.',
+    descEn: 'Sculpted ice horns finished in clean Fresh Glossy polish.',
     price: 230,
     accent: '#22D3EE',
   },
@@ -162,10 +162,10 @@ export const FACE_CATALOG: CatalogItem<FaceId>[] = [
   },
   {
     id: 'arctic-visor',
-    namePl: 'Wizjer Arctic Tech',
-    nameEn: 'Arctic Tech Visor',
-    descPl: 'Świecący błękitno-biały wizjer nowej generacji.',
-    descEn: 'Glowing sky-blue next-gen panoramic visor.',
+    namePl: 'Gogle Arctic',
+    nameEn: 'Arctic Goggles',
+    descPl: 'Zimowe błękitno-białe gogle z czystym odbiciem nieba.',
+    descEn: 'Crisp sky-blue winter goggles with clean glossy lenses.',
     price: 90,
     accent: '#0EA5E9',
   },

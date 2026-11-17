@@ -324,7 +324,7 @@ function getOutfitColors(outfitId: OutfitId, skinColor: string): OutfitColors {
       return { torso: '#2563EB', arms: skinColor, legs: '#22C55E', hasChestEmblem: false }
     case 'arctic-frost':
       return { torso: '#E0F2FE', arms: '#7DD3FC', legs: '#0369A1', hasChestEmblem: true }
-    case 'midnight-neon':
+    case 'midnight-slate':
       return { torso: '#0F172A', arms: '#0284C7', legs: '#1E293B', hasChestEmblem: true }
     case 'glacier-captain':
       return { torso: '#0891B2', arms: '#E0F2FE', legs: '#0C4A6E', hasChestEmblem: true }
@@ -375,9 +375,9 @@ function buildHatGroup(hatId: HatId, castShadow: boolean): { group: THREE.Group;
     group.add(band)
 
     const cupGeo = trackGeo(new THREE.CylinderGeometry(0.2, 0.2, 0.14, 14))
-    const cupMat = trackMat(new THREE.MeshStandardMaterial({ color: '#1E293B', roughness: 0.25, metalness: 0.3 }))
-    const ledGeo = trackGeo(new THREE.TorusGeometry(0.14, 0.028, 6, 16))
-    const ledMat = trackMat(new THREE.MeshBasicMaterial({ color: '#38BDF8' }))
+    const cupMat = trackMat(new THREE.MeshStandardMaterial({ color: '#1E293B', roughness: 0.25, metalness: 0.28 }))
+    const trimGeo = trackGeo(new THREE.TorusGeometry(0.14, 0.028, 6, 16))
+    const trimMat = trackMat(new THREE.MeshStandardMaterial({ color: '#38BDF8', roughness: 0.22, metalness: 0.2 }))
 
     for (const side of [-1, 1]) {
       const cup = new THREE.Mesh(cupGeo, cupMat)
@@ -385,21 +385,19 @@ function buildHatGroup(hatId: HatId, castShadow: boolean): { group: THREE.Group;
       cup.position.set(side * 0.44, 0.04, 0)
       group.add(cup)
 
-      const led = new THREE.Mesh(ledGeo, ledMat)
-      led.rotation.y = Math.PI / 2
-      led.position.set(side * 0.51, 0.04, 0)
-      group.add(led)
+      const trim = new THREE.Mesh(trimGeo, trimMat)
+      trim.rotation.y = Math.PI / 2
+      trim.position.set(side * 0.51, 0.04, 0)
+      group.add(trim)
     }
   } else if (hatId === 'crystal-halo') {
     const halo = new THREE.Mesh(
       trackGeo(new THREE.TorusGeometry(0.48, 0.052, 8, 22)),
       trackMat(
         new THREE.MeshStandardMaterial({
-          color: '#7DD3FC',
-          emissive: '#38BDF8',
-          emissiveIntensity: 0.85,
-          roughness: 0.15,
-          metalness: 0.2,
+          color: '#BAE6FD',
+          roughness: 0.14,
+          metalness: 0.25,
         }),
       ),
     )
@@ -410,11 +408,9 @@ function buildHatGroup(hatId: HatId, castShadow: boolean): { group: THREE.Group;
     const hornGeo = trackGeo(new THREE.ConeGeometry(0.13, 0.5, 6))
     const hornMat = trackMat(
       new THREE.MeshStandardMaterial({
-        color: '#38BDF8',
-        emissive: '#0284C7',
-        emissiveIntensity: 0.35,
-        roughness: 0.16,
-        metalness: 0.15,
+        color: '#7DD3FC',
+        roughness: 0.18,
+        metalness: 0.16,
       }),
     )
     for (const side of [-1, 1]) {

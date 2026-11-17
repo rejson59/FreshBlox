@@ -85,11 +85,17 @@ function loadProfile(): PlayerProfile {
     if (!raw) return createDefaultProfile()
     const parsed = JSON.parse(raw) as Partial<PlayerProfile>
     const def = createDefaultProfile()
+    const migrateOutfit = (id?: string): OutfitId =>
+      id === 'midnight-neon' ? 'midnight-slate' : ((id as OutfitId) ?? def.avatar.outfitId)
+    const unlockedOutfits = Array.isArray(parsed.unlockedOutfits)
+      ? Array.from(new Set(parsed.unlockedOutfits.map((id) => migrateOutfit(id))))
+      : def.unlockedOutfits
     return {
       ...def,
       ...parsed,
+      unlockedOutfits,
       avatar: {
-        outfitId: parsed.avatar?.outfitId ?? def.avatar.outfitId,
+        outfitId: migrateOutfit(parsed.avatar?.outfitId),
         faceId: parsed.avatar?.faceId ?? def.avatar.faceId,
         hatId: parsed.avatar?.hatId ?? def.avatar.hatId,
         skinColor: parsed.avatar?.skinColor ?? def.avatar.skinColor,
