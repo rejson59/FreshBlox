@@ -51,20 +51,20 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto w-full max-w-7xl space-y-5 sm:space-y-6 px-3 py-5 sm:px-6 sm:py-8 overflow-x-clip">
       <div>
         <h1 className="font-display text-2xl font-extrabold sm:text-3xl" style={{ color: tokens.textPrimary }}>
           {t.title}
         </h1>
-        <p className="mt-1 text-sm" style={{ color: tokens.textSecondary }}>
+        <p className="mt-1 text-xs sm:text-sm" style={{ color: tokens.textSecondary }}>
           {t.subtitle}
         </p>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-12">
+      <div className="grid gap-4 sm:gap-5 lg:grid-cols-12">
         {/* Profile Card */}
         <div
-          className="space-y-4 rounded-3xl border p-6 backdrop-blur-md lg:col-span-6"
+          className="min-w-0 space-y-4 rounded-3xl border p-4 sm:p-6 backdrop-blur-md lg:col-span-6"
           style={{ background: tokens.cardBg, borderColor: `${ARCTIC_SKY.skyMain}44` }}
         >
           <div className="flex items-center justify-between">
@@ -117,12 +117,12 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
                 value={nickInput}
                 onChange={(e) => setNickInput(e.target.value)}
                 maxLength={20}
-                className="flex-1 rounded-xl border px-3.5 py-2.5 text-sm font-bold outline-none focus:ring-2 focus:ring-sky-400/50"
+                className="min-w-0 flex-1 rounded-xl border px-3.5 py-2.5 text-sm font-bold outline-none focus:ring-2 focus:ring-sky-400/50"
                 style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg, color: tokens.textPrimary }}
               />
               <button
                 type="submit"
-                className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-extrabold text-white cursor-pointer"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-extrabold text-white cursor-pointer"
                 style={{ background: tokens.buttonGradient }}
               >
                 {nickSaved && <Check className="h-3.5 w-3.5" />}
@@ -134,7 +134,7 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
 
         {/* Friends Card */}
         <div
-          className="flex flex-col justify-between space-y-4 rounded-3xl border p-6 backdrop-blur-md lg:col-span-6"
+          className="min-w-0 flex flex-col justify-between space-y-4 rounded-3xl border p-4 sm:p-6 backdrop-blur-md lg:col-span-6"
           style={{ background: tokens.cardBg, borderColor: tokens.cardBorder }}
         >
           <div className="space-y-3">
@@ -155,12 +155,12 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
                 onChange={(e) => setFriendInput(e.target.value)}
                 placeholder={t.addFriendPlaceholder}
                 maxLength={20}
-                className="flex-1 rounded-xl border px-3.5 py-2 text-xs font-semibold outline-none"
+                className="min-w-0 flex-1 rounded-xl border px-3.5 py-2 text-xs font-semibold outline-none"
                 style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg, color: tokens.textPrimary }}
               />
               <button
                 type="submit"
-                className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold text-white cursor-pointer"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold text-white cursor-pointer"
                 style={{ background: tokens.buttonGradient }}
               >
                 <UserPlus className="h-3.5 w-3.5" />
@@ -202,7 +202,7 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
 
         {/* Badges Card */}
         <div
-          className="space-y-4 rounded-3xl border p-6 backdrop-blur-md lg:col-span-7"
+          className="min-w-0 space-y-4 rounded-3xl border p-4 sm:p-6 backdrop-blur-md lg:col-span-7"
           style={{ background: tokens.cardBg, borderColor: tokens.cardBorder }}
         >
           <h2 className="flex items-center gap-2 font-display text-lg font-extrabold" style={{ color: tokens.textPrimary }}>
@@ -244,7 +244,7 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
 
         {/* Supabase Cloud Status Card */}
         <div
-          className="space-y-3 rounded-3xl border p-6 backdrop-blur-md lg:col-span-5"
+          className="min-w-0 space-y-3 rounded-3xl border p-4 sm:p-6 backdrop-blur-md lg:col-span-5"
           style={{ background: tokens.cardBg, borderColor: `${ARCTIC_SKY.skyMain}44` }}
         >
           <div className="flex items-center justify-between">

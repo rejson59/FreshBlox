@@ -243,7 +243,15 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   const triggerEmote = useCallback(
     (pose: PlayerPose) => {
       activeEmoteRef.current = pose
-      emoteTimerRef.current = pose === 'sit' ? 14 : 3.4
+      const durations: Partial<Record<PlayerPose, number>> = {
+        backflip: 1.75,
+        spin: 1.45,
+        dance: 6.4,
+        cheer: 2.4,
+        wave: 3.2,
+        sit: 18,
+      }
+      emoteTimerRef.current = durations[pose] ?? 3.4
       setActiveEmote(pose)
       sfx.playClick()
       callbacksRef.current.onEmoteUsed()

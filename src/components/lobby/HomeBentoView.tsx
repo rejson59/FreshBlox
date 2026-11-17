@@ -69,12 +69,12 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8 px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto w-full max-w-7xl space-y-6 sm:space-y-8 px-3 py-5 sm:px-6 sm:py-8 overflow-x-clip">
       {/* === CREATOR BENTO (UI-02) TOP GRID === */}
-      <section className="grid gap-5 lg:grid-cols-12">
+      <section className="grid gap-4 sm:gap-5 lg:grid-cols-12">
         {/* Main Hero Bento Tile: Lobby Główne 3D */}
         <div
-          className="relative flex flex-col justify-between overflow-hidden rounded-3xl border p-6 sm:p-8 lg:col-span-7"
+          className="relative min-w-0 flex flex-col justify-between overflow-hidden rounded-3xl border p-4 sm:p-8 lg:col-span-7"
           style={{
             background: tokens.heroGradient,
             borderColor: `${ARCTIC_SKY.skyMain}58`,
@@ -83,72 +83,72 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
         >
           {/* Decorative glossy 3D block shapes */}
           <div
-            className="pointer-events-none absolute -top-20 -right-20 h-64 w-64 rounded-full blur-3xl opacity-45"
+            className="pointer-events-none absolute -top-20 -right-20 h-56 w-56 rounded-full blur-3xl opacity-45"
             style={{ background: ARCTIC_SKY.auraGlow }}
           />
           <div className="pointer-events-none absolute right-8 bottom-8 hidden h-24 w-24 rotate-12 rounded-3xl border-2 border-white/25 bg-sky-400/15 backdrop-blur-sm sm:block" />
           <div className="pointer-events-none absolute right-24 bottom-20 hidden h-12 w-12 -rotate-12 rounded-2xl border border-white/30 bg-white/15 sm:block" />
 
-          <div className="relative space-y-3">
+          <div className="relative space-y-3 min-w-0">
             <span
-              className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-extrabold tracking-wide"
+              className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] sm:text-[11px] font-extrabold tracking-wide"
               style={{ background: tokens.badgeBg, color: tokens.badgeText, borderColor: `${ARCTIC_SKY.skyMain}44` }}
             >
-              <span className="h-2 w-2 rounded-full bg-emerald-400" />
-              {t.liveBadge}
+              <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+              <span>{t.liveBadge}</span>
             </span>
 
-            <h1 className="font-display text-3xl font-extrabold tracking-tight sm:text-4xl" style={{ color: tokens.textPrimary }}>
+            <h1 className="font-display text-2xl font-extrabold tracking-tight leading-tight sm:text-4xl break-words" style={{ color: tokens.textPrimary }}>
               {t.heroTitle}
             </h1>
 
-            <p className="max-w-xl text-sm leading-relaxed" style={{ color: tokens.textSecondary }}>
+            <p className="max-w-xl text-xs sm:text-sm leading-relaxed" style={{ color: tokens.textSecondary }}>
               {t.heroDesc}
             </p>
           </div>
 
           {/* Primary Actions + Private Friend Room Creator */}
-          <div className="relative mt-6 space-y-4">
-            <div className="flex flex-wrap items-center gap-3">
+          <div className="relative mt-5 sm:mt-6 space-y-3 sm:space-y-4 min-w-0">
+            <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
               <button
                 onClick={() => onEnterRoom('PUBLIC-1')}
-                className="inline-flex items-center gap-2 rounded-2xl px-6 py-3.5 text-sm font-extrabold text-white shadow-xl transition hover:scale-[1.02] hover:brightness-110 cursor-pointer"
+                className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-2xl px-5 py-3 sm:px-6 sm:py-3.5 text-sm font-extrabold text-white shadow-xl transition hover:scale-[1.02] hover:brightness-110 cursor-pointer"
                 style={{
                   background: tokens.buttonGradient,
                   boxShadow: `0 12px 32px rgba(56, 189, 248, 0.35)`,
                 }}
               >
-                <Play className="h-4 w-4 fill-current" />
+                <Play className="h-4 w-4 fill-current shrink-0" />
                 <span>{t.enterLobby}</span>
               </button>
 
               <button
                 onClick={onOpenAvatar}
-                className="inline-flex items-center gap-2 rounded-2xl border px-4 py-3.5 text-sm font-bold transition hover:scale-[1.02] cursor-pointer backdrop-blur-md"
+                className="inline-flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-2xl border px-3.5 py-3 sm:px-4 sm:py-3.5 text-xs sm:text-sm font-bold transition hover:scale-[1.02] cursor-pointer backdrop-blur-md"
                 style={{ borderColor: tokens.cardBorder, background: tokens.cardBg, color: tokens.textPrimary }}
               >
-                <UserCircle2 className="h-4 w-4" style={{ color: ARCTIC_SKY.skyMain }} />
+                <UserCircle2 className="h-4 w-4 shrink-0" style={{ color: ARCTIC_SKY.skyMain }} />
                 <span>{t.editAvatar}</span>
               </button>
 
               <button
                 onClick={handleCreatePrivateRoom}
-                className="inline-flex items-center gap-1.5 rounded-2xl border px-4 py-3.5 text-xs font-bold transition hover:scale-[1.02] cursor-pointer backdrop-blur-md"
+                className="inline-flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-2xl border px-3.5 py-3 sm:px-4 sm:py-3.5 text-xs font-bold transition hover:scale-[1.02] cursor-pointer backdrop-blur-md"
                 style={{ borderColor: `${ARCTIC_SKY.skyMain}50`, background: tokens.mutedBg, color: tokens.badgeText }}
               >
-                <Plus className="h-4 w-4" />
-                <span>{t.createPrivate}</span>
+                <Plus className="h-4 w-4 shrink-0" />
+                <span className="truncate">{t.createPrivate}</span>
               </button>
             </div>
 
             {/* Created Private Room Invite Banner OR Join By Code */}
-            <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-2.5 min-w-0">
               {createdRoom ? (
                 <div
-                  className="flex flex-wrap items-center gap-2 rounded-2xl border px-3.5 py-2 text-xs backdrop-blur-md"
+                  className="flex w-full sm:w-auto flex-wrap items-center gap-2 rounded-2xl border px-3 py-2 text-xs backdrop-blur-md"
                   style={{ borderColor: `${ARCTIC_SKY.skyMain}66`, background: tokens.cardBg }}
                 >
-                  <KeyRound className="h-3.5 w-3.5" style={{ color: ARCTIC_SKY.skyMain }} />
+                  <KeyRound className="h-3.5 w-3.5 shrink-0" style={{ color: ARCTIC_SKY.skyMain }} />
                   <span className="font-mono-code font-extrabold" style={{ color: tokens.textPrimary }}>
                     #{createdRoom}
                   </span>
@@ -170,25 +170,25 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                   </button>
                 </div>
               ) : (
-                <form onSubmit={handleJoinSubmit} className="flex items-center gap-2">
+                <form onSubmit={handleJoinSubmit} className="flex w-full sm:w-auto items-center gap-2 min-w-0">
                   <div
-                    className="flex items-center gap-2 rounded-xl border px-3 py-1.5 backdrop-blur-md"
+                    className="flex min-w-0 flex-1 sm:flex-none items-center gap-2 rounded-xl border px-3 py-2 sm:py-1.5 backdrop-blur-md"
                     style={{ borderColor: tokens.cardBorder, background: tokens.cardBg }}
                   >
-                    <KeyRound className="h-3.5 w-3.5" style={{ color: ARCTIC_SKY.skyMain }} />
+                    <KeyRound className="h-3.5 w-3.5 shrink-0" style={{ color: ARCTIC_SKY.skyMain }} />
                     <input
                       type="text"
                       value={joinCode}
                       onChange={(e) => setJoinCode(e.target.value)}
                       placeholder={t.codePlaceholder}
                       maxLength={12}
-                      className="w-28 bg-transparent font-mono-code text-xs font-bold uppercase outline-none"
+                      className="min-w-0 w-full sm:w-28 bg-transparent font-mono-code text-xs font-bold uppercase outline-none"
                       style={{ color: tokens.textPrimary }}
                     />
                   </div>
                   <button
                     type="submit"
-                    className="rounded-xl border px-3 py-1.5 text-xs font-bold transition cursor-pointer"
+                    className="shrink-0 rounded-xl border px-3 py-2 sm:py-1.5 text-xs font-bold transition cursor-pointer"
                     style={{ borderColor: tokens.cardBorder, background: tokens.cardBg, color: tokens.textPrimary }}
                   >
                     {t.joinByCode}
@@ -200,10 +200,10 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
         </div>
 
         {/* Right Bento Stack: Season Rank + Online Friends + Daily FreshGems Quests */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:col-span-5">
+        <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:col-span-5">
           {/* Season Rank Bento Card */}
           <div
-            className="flex flex-col justify-between rounded-3xl border p-5 backdrop-blur-md"
+            className="min-w-0 flex flex-col justify-between rounded-3xl border p-4 sm:p-5 backdrop-blur-md"
             style={{ background: tokens.cardBg, borderColor: tokens.cardBorder }}
           >
             <div className="flex items-center justify-between">
@@ -242,7 +242,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
 
           {/* Friends Online Bento Card */}
           <div
-            className="flex flex-col justify-between rounded-3xl border p-5 backdrop-blur-md"
+            className="min-w-0 flex flex-col justify-between rounded-3xl border p-4 sm:p-5 backdrop-blur-md"
             style={{ background: tokens.cardBg, borderColor: tokens.cardBorder }}
           >
             <div className="flex items-center justify-between">
@@ -289,7 +289,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
 
           {/* Daily FreshGems Quests Bento Card (Full width across right stack!) */}
           <div
-            className="rounded-3xl border p-5 backdrop-blur-md sm:col-span-2"
+            className="min-w-0 rounded-3xl border p-4 sm:p-5 backdrop-blur-md sm:col-span-2"
             style={{ background: tokens.cardBg, borderColor: tokens.cardBorder }}
           >
             <div className="mb-3 flex items-center justify-between">

@@ -41,6 +41,12 @@ export function App() {
     document.documentElement.lang = lang
   }, [lang])
 
+  useEffect(() => {
+    const bg = mode === 'dark' ? '#050C1B' : '#E8F6FF'
+    document.documentElement.style.backgroundColor = bg
+    document.body.style.backgroundColor = bg
+  }, [mode])
+
   const tokens = getThemeTokens(mode)
   const t = LOCALES[lang].nav
 
@@ -62,22 +68,22 @@ export function App() {
 
   return (
     <div
-      className="min-h-screen transition-colors duration-300"
+      className="min-h-dvh w-full max-w-full overflow-x-clip transition-colors duration-300"
       style={{ background: tokens.pageBg, color: tokens.textPrimary }}
     >
       {/* === STICKY ARCTIC SKY HEADER === */}
       <header
-        className="sticky top-0 z-30 h-14 sm:h-16 border-b backdrop-blur-xl transition-colors"
+        className="sticky top-0 z-30 h-14 sm:h-16 w-full max-w-full border-b backdrop-blur-xl transition-colors"
         style={{ background: tokens.navBg, borderColor: tokens.cardBorder }}
       >
-        <div className="mx-auto flex h-full max-w-7xl items-center justify-between gap-2 sm:gap-3 px-3 sm:px-6">
+        <div className="mx-auto flex h-full w-full max-w-7xl items-center justify-between gap-1.5 sm:gap-3 px-2.5 sm:px-6">
           {/* Official Brand Lockup: F-03 (0% Aura) + T-03 Glacier Flow Italic */}
           <button
             onClick={() => setView('home')}
-            className="flex items-center gap-1.5 sm:gap-2 text-left cursor-pointer"
+            className="flex min-w-0 shrink items-center gap-1 sm:gap-2 text-left cursor-pointer"
           >
-            <FreshBloxLogo size={32} />
-            <FreshBloxWordmark mode={mode} size="sm" />
+            <FreshBloxLogo size={28} className="shrink-0 sm:h-9 sm:w-9" />
+            <FreshBloxWordmark mode={mode} size="sm" className="w-[92px] h-auto sm:w-[116px] shrink-0" />
           </button>
 
           {/* Main Navigation */}
@@ -104,14 +110,14 @@ export function App() {
           </nav>
 
           {/* Right Controls: FreshGems Wallet + Dark/Light + PL/EN */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <button
               onClick={() => setView('avatar')}
-              className="flex items-center gap-1 sm:gap-1.5 rounded-xl border px-2.5 sm:px-3 py-1.5 text-xs font-extrabold transition hover:scale-105 cursor-pointer"
+              className="flex items-center gap-1 rounded-xl border px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-xs font-extrabold transition hover:scale-105 cursor-pointer"
               style={{ borderColor: `${ARCTIC_SKY.skyMain}55`, background: tokens.badgeBg, color: tokens.textPrimary }}
               title="FreshGems"
             >
-              <FreshGemShard size={16} />
+              <FreshGemShard size={14} className="sm:h-4 sm:w-4 shrink-0" />
               <span>{profile.freshGems.toLocaleString()}</span>
             </button>
 
@@ -121,34 +127,34 @@ export function App() {
             >
               <button
                 onClick={() => setMode('dark')}
-                className="flex h-7 w-7 items-center justify-center rounded-lg transition cursor-pointer"
+                className="flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-lg transition cursor-pointer"
                 style={{
                   background: mode === 'dark' ? tokens.buttonGradient : 'transparent',
                   color: mode === 'dark' ? '#FFFFFF' : tokens.textSecondary,
                 }}
                 aria-label="Dark mode"
               >
-                <Moon className="h-3.5 w-3.5" />
+                <Moon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
               </button>
               <button
                 onClick={() => setMode('light')}
-                className="flex h-7 w-7 items-center justify-center rounded-lg transition cursor-pointer"
+                className="flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-lg transition cursor-pointer"
                 style={{
                   background: mode === 'light' ? tokens.buttonGradient : 'transparent',
                   color: mode === 'light' ? '#FFFFFF' : tokens.textSecondary,
                 }}
                 aria-label="Light mode"
               >
-                <Sun className="h-3.5 w-3.5" />
+                <Sun className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
               </button>
             </div>
 
             <button
               onClick={() => setLang((l) => (l === 'pl' ? 'en' : 'pl'))}
-              className="inline-flex items-center gap-1 rounded-xl border px-2 sm:px-2.5 py-1.5 text-xs font-bold transition hover:scale-105 cursor-pointer"
+              className="inline-flex items-center gap-1 rounded-xl border px-1.5 sm:px-2.5 py-1 sm:py-1.5 text-[11px] sm:text-xs font-bold transition hover:scale-105 cursor-pointer"
               style={{ borderColor: tokens.cardBorder, background: tokens.cardBg, color: tokens.textPrimary }}
             >
-              <Globe className="h-3.5 w-3.5" style={{ color: ARCTIC_SKY.skyMain }} />
+              <Globe className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" style={{ color: ARCTIC_SKY.skyMain }} />
               <span>{lang.toUpperCase()}</span>
             </button>
           </div>

@@ -17,6 +17,14 @@
 @import "@fontsource/jetbrains-mono/600.css";
 
 @layer base {
+  html,
+  body,
+  #root {
+    max-width: 100%;
+    overflow-x: clip;
+    background-color: #050c1b;
+  }
+
   html {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     scroll-behavior: smooth;

@@ -67,22 +67,22 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
     sceneRef.current = scene
 
     const camera = new THREE.PerspectiveCamera(
-      36,
+      38,
       (container.clientWidth || 420) / (container.clientHeight || 440),
       0.1,
       60,
     )
-    camera.position.set(0, 2.75, 7.6)
+    camera.position.set(0, 2.55, 8.8)
 
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
     controls.dampingFactor = 0.07
-    controls.target.set(0, 1.75, 0)
-    controls.minDistance = 4.5
-    controls.maxDistance = 11.5
+    controls.target.set(0, 1.95, 0)
+    controls.minDistance = 4.8
+    controls.maxDistance = 12.5
     controls.maxPolarAngle = Math.PI * 0.52
     controls.autoRotate = true
-    controls.autoRotateSpeed = 0.85
+    controls.autoRotateSpeed = 0.75
 
     // Fresh-day lighting
     scene.add(new THREE.HemisphereLight(0xf4fbff, 0x5c8ab5, 1.25))
@@ -280,58 +280,58 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
   )
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto w-full max-w-7xl space-y-5 sm:space-y-6 px-3 py-5 sm:px-6 sm:py-8 overflow-x-clip">
       {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="max-w-2xl">
+      <div className="flex flex-wrap items-end justify-between gap-3 sm:gap-4">
+        <div className="max-w-2xl min-w-0">
           <h1 className="font-display text-2xl font-extrabold sm:text-3xl" style={{ color: tokens.textPrimary }}>
             {t.title}
           </h1>
-          <p className="mt-1 text-sm" style={{ color: tokens.textSecondary }}>
+          <p className="mt-1 text-xs sm:text-sm" style={{ color: tokens.textSecondary }}>
             {t.subtitle}
           </p>
         </div>
 
         <button
           onClick={onEnterLobby}
-          className="inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-extrabold text-white shadow-lg transition hover:brightness-110 cursor-pointer"
+          className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-2xl px-4 py-3 sm:px-5 text-xs sm:text-sm font-extrabold text-white shadow-lg transition hover:brightness-110 cursor-pointer"
           style={{ background: tokens.buttonGradient }}
         >
-          <Play className="h-4 w-4 fill-current" />
+          <Play className="h-4 w-4 fill-current shrink-0" />
           <span>{t.enterWithAvatar}</span>
         </button>
       </div>
 
       {/* Main Split: 3D R6 Turntable + Shop Panel */}
-      <div className="grid gap-6 lg:grid-cols-12">
+      <div className="grid gap-5 sm:gap-6 lg:grid-cols-12">
         {/* Left: 3D R6 Live Stage */}
         <div
-          className="flex flex-col overflow-hidden rounded-3xl border p-3 lg:col-span-5"
+          className="min-w-0 flex flex-col overflow-hidden rounded-3xl border p-3 lg:col-span-5"
           style={{ background: tokens.cardBg, borderColor: `${ARCTIC_SKY.skyMain}44` }}
         >
           <div className="relative h-[340px] w-full overflow-hidden rounded-2xl sm:h-[430px]">
             <div ref={mountRef} className="h-full w-full cursor-grab active:cursor-grabbing" />
             <div className="pointer-events-none absolute top-3 left-3 rounded-full bg-slate-950/60 px-3 py-1 text-[11px] font-bold text-sky-200 backdrop-blur">
-              Classic R6 (1:1) • Fresh Glossy
+              Classic R6 (1:1) • Pro Animations
             </div>
             <div className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-slate-950/55 px-3 py-1 text-[10px] font-semibold text-white backdrop-blur">
               {t.dragPreview}
             </div>
           </div>
 
-          {/* Animation Tester Pills */}
-          <div className="mt-3 px-1">
+          {/* Animation Tester Pills — Full Pro Showcase */}
+          <div className="mt-3 px-0.5">
             <div className="mb-2 text-[11px] font-bold uppercase tracking-wider" style={{ color: tokens.textSecondary }}>
               {t.testAnim}
             </div>
-            <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
-              {(['idle', 'walk', 'run', 'wave', 'dance', 'backflip'] as PlayerPose[]).map((p) => {
+            <div className="grid grid-cols-4 gap-1.5">
+              {(['idle', 'walk', 'run', 'jump', 'wave', 'dance', 'spin', 'backflip'] as PlayerPose[]).map((p) => {
                 const active = previewPose === p
                 return (
                   <button
                     key={p}
                     onClick={() => setPreviewPose(p)}
-                    className="rounded-xl border px-2 py-1.5 text-[11px] font-bold capitalize transition cursor-pointer"
+                    className="rounded-xl border px-1.5 py-2 text-[11px] font-bold capitalize transition cursor-pointer"
                     style={{
                       background: active ? tokens.buttonGradient : tokens.mutedBg,
                       borderColor: active ? 'transparent' : tokens.cardBorder,
@@ -348,7 +348,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
 
         {/* Right: Category Tabs & FreshGems Catalog */}
         <div
-          className="flex flex-col rounded-3xl border p-5 backdrop-blur-md lg:col-span-7"
+          className="min-w-0 flex flex-col rounded-3xl border p-4 sm:p-5 backdrop-blur-md lg:col-span-7"
           style={{ background: tokens.cardBg, borderColor: tokens.cardBorder }}
         >
           {/* Category Switcher + Wallet Balance */}

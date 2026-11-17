@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { FaceId, HatId, OutfitId, R6AvatarConfig } from '../data/catalog'
 import { PlayerPose } from '../lib/multiplayer'
+import { createEmptyPoseTarget, evaluateR6Pose } from './r6Animations'
 
 // Cached shared geometries & lightweight textures to slash GPU memory & draw-call setup
 let sharedStudTex: THREE.CanvasTexture | null = null
@@ -79,8 +80,8 @@ function getBlobShadowTexture(): THREE.CanvasTexture {
   canvas.height = 64
   const ctx = canvas.getContext('2d')!
   const grad = ctx.createRadialGradient(32, 32, 4, 32, 32, 30)
-  grad.addColorStop(0, 'rgba(12, 24, 48, 0.38)')
-  grad.addColorStop(0.65, 'rgba(12, 24, 48, 0.14)')
+  grad.addColorStop(0, 'rgba(12, 24, 48, 0.42)')
+  grad.addColorStop(0.65, 'rgba(12, 24, 48, 0.15)')
   grad.addColorStop(1, 'rgba(12, 24, 48, 0)')
   ctx.fillStyle = grad
   ctx.fillRect(0, 0, 64, 64)
@@ -454,13 +455,15 @@ function buildHatGroup(hatId: HatId, castShadow: boolean): { group: THREE.Group;
 
 export interface R6RigHandle {
   root: THREE.Group
-  body: THREE.Group
+  comPivot: THREE.Group
   shadowBlob: THREE.Mesh
   update: (dt: number, elapsed: number, pose: PlayerPose) => void
   setSpeech: (text: string | null) => void
   setNameplate: (username: string, rank: string) => void
   dispose: () => void
 }
+
+const REST_COM_Y = 1.72
 
 export function createR6Rig(opts: {
   avatar: R6AvatarConfig
@@ -479,8 +482,6 @@ export function createR6Rig(opts: {
   }
 
   const root = new THREE.Group()
-  const body = new THREE.Group()
-  root.add(body)
 
   // Soft blob shadow beneath feet (always keeps R6 grounded even when shadow maps are disabled in Eco mode)
   const shadowBlobMat = trackMat(
@@ -496,14 +497,18 @@ export function createR6Rig(opts: {
   shadowBlob.position.y = 0.03
   root.add(shadowBlob)
 
-  const colors = getOutfitColors(avatar.outfitId, avatar.skinColor)
+  // === TRUE HIERARCHICAL CENTER-OF-MASS R6 RIG ===
+  // Center of Mass sits at world y = 1.72 — backflips, tornado spins, leans & squash-stretch pivot cleanly around the body core!
+  const comPivot = new THREE.Group()
+  comPivot.position.y = REST_COM_Y
+  root.add(comPivot)
 
-  // Lightweight Fresh Glossy standard materials (much faster on integrated GPUs & mobile than MeshPhysicalMaterial)
+  const colors = getOutfitColors(avatar.outfitId, avatar.skinColor)
   const makeGlossyMat = (hex: string) =>
     trackMat(
       new THREE.MeshStandardMaterial({
         color: hex,
-        roughness: 0.25,
+        roughness: 0.24,
         metalness: 0.08,
       }),
     )
@@ -513,12 +518,19 @@ export function createR6Rig(opts: {
   const legMat = makeGlossyMat(colors.legs)
   const headMat = makeGlossyMat(avatar.skinColor)
 
-  // Classic 1:1 R6 proportions — grounded feet at y = 0
+  // Pelvis / Hip line sits at local y = -0.44 (world y = 1.28 — exact leg height!)
+  const pelvisY = -0.44
+
+  // Upper body spine pivot (independent chest twist, lean, & dance isolation!)
+  const torsoPivot = new THREE.Group()
+  torsoPivot.position.set(0, pelvisY, 0)
+  comPivot.add(torsoPivot)
+
   const torso = new THREE.Mesh(geos.torso, torsoMat)
-  torso.position.y = 1.94
+  torso.position.y = 0.66 // torso spans world y=1.28..2.60
   torso.castShadow = castShadow
   torso.receiveShadow = castShadow
-  body.add(torso)
+  torsoPivot.add(torso)
 
   if (colors.hasChestEmblem) {
     const emblem = new THREE.Mesh(
@@ -529,11 +541,13 @@ export function createR6Rig(opts: {
     torso.add(emblem)
   }
 
+  // Neck-based head pivot (natural nods, tilts & glances without head detaching!)
   const headPivot = new THREE.Group()
-  headPivot.position.set(0, 2.98, 0)
-  body.add(headPivot)
+  headPivot.position.set(0, 1.34, 0) // neck base at world y=2.62
+  torsoPivot.add(headPivot)
 
   const head = new THREE.Mesh(geos.head, headMat)
+  head.position.y = 0.38 // head center at world y=3.00, top at 3.38
   head.castShadow = castShadow
   headPivot.add(head)
 
@@ -545,40 +559,42 @@ export function createR6Rig(opts: {
   head.add(facePlane)
 
   const hatRes = buildHatGroup(avatar.hatId, castShadow)
-  headPivot.add(hatRes.group)
+  head.add(hatRes.group)
   disposables.push(...hatRes.disposables)
 
+  // Shoulders attached to torsoPivot (arms move naturally with torso twist & lean!)
   const leftArmPivot = new THREE.Group()
-  leftArmPivot.position.set(-0.88, 2.52, 0)
+  leftArmPivot.position.set(-0.88, 1.22, 0) // shoulder at world y=2.50
   const leftArm = new THREE.Mesh(geos.limb, armMat)
   leftArm.position.y = -0.58
   leftArm.castShadow = castShadow
   leftArmPivot.add(leftArm)
-  body.add(leftArmPivot)
+  torsoPivot.add(leftArmPivot)
 
   const rightArmPivot = new THREE.Group()
-  rightArmPivot.position.set(0.88, 2.52, 0)
+  rightArmPivot.position.set(0.88, 1.22, 0)
   const rightArm = new THREE.Mesh(geos.limb, armMat)
   rightArm.position.y = -0.58
   rightArm.castShadow = castShadow
   rightArmPivot.add(rightArm)
-  body.add(rightArmPivot)
+  torsoPivot.add(rightArmPivot)
 
+  // Legs attached at pelvis line under comPivot (bottom of feet at 1.72 - 0.44 - 1.28 = 0.00 EXACTLY!)
   const leftLegPivot = new THREE.Group()
-  leftLegPivot.position.set(-0.31, 1.28, 0)
+  leftLegPivot.position.set(-0.31, pelvisY, 0)
   const leftLeg = new THREE.Mesh(geos.limb, legMat)
   leftLeg.position.y = -0.64
   leftLeg.castShadow = castShadow
   leftLegPivot.add(leftLeg)
-  body.add(leftLegPivot)
+  comPivot.add(leftLegPivot)
 
   const rightLegPivot = new THREE.Group()
-  rightLegPivot.position.set(0.31, 1.28, 0)
+  rightLegPivot.position.set(0.31, pelvisY, 0)
   const rightLeg = new THREE.Mesh(geos.limb, legMat)
   rightLeg.position.y = -0.64
   rightLeg.castShadow = castShadow
   rightLegPivot.add(rightLeg)
-  body.add(rightLegPivot)
+  comPivot.add(rightLegPivot)
 
   // Nameplate sprite
   let nameplateSprite: THREE.Sprite | null = null
@@ -601,123 +617,98 @@ export function createR6Rig(opts: {
   root.add(speechSprite)
   let speechTex: THREE.CanvasTexture | null = null
 
-  let spinAngle = 0
-  let flipAngle = 0
-  const lerp = (cur: number, target: number, alpha: number) => cur + (target - cur) * alpha
+  // Per-rig animation state (zero allocation!)
+  const target = createEmptyPoseTarget()
+  let prevPose: PlayerPose = 'idle'
+  let poseTime = 0
+  let landingImpact = 0
+  const lerp = (cur: number, tgt: number, a: number) => cur + (tgt - cur) * a
 
   const update = (dt: number, elapsed: number, pose: PlayerPose) => {
-    const a = Math.min(1, dt * 14)
-
-    let targetBodyY = 0
-    let targetBodyRotZ = 0
-    let targetBodyRotX = 0
-    let targetLArmX = 0
-    let targetLArmZ = 0.04
-    let targetRArmX = 0
-    let targetRArmZ = -0.04
-    let targetLLegX = 0
-    let targetRLegX = 0
-    let targetHeadY = 0
-    let targetHeadZ = 0
-
-    if (pose === 'idle') {
-      targetBodyY = Math.sin(elapsed * 2.5) * 0.04
-      targetLArmX = Math.sin(elapsed * 2.2) * 0.06
-      targetRArmX = -Math.sin(elapsed * 2.2) * 0.06
-      targetHeadY = Math.sin(elapsed * 1.1) * 0.09
-    } else if (pose === 'walk') {
-      const w = elapsed * 8.5
-      targetLArmX = Math.sin(w) * 0.68
-      targetRArmX = -Math.sin(w) * 0.68
-      targetLLegX = -Math.sin(w) * 0.68
-      targetRLegX = Math.sin(w) * 0.68
-      targetBodyY = Math.abs(Math.sin(w)) * 0.1
-    } else if (pose === 'run') {
-      const r = elapsed * 12.8
-      targetLArmX = Math.sin(r) * 1.08
-      targetRArmX = -Math.sin(r) * 1.08
-      targetLLegX = -Math.sin(r) * 1.02
-      targetRLegX = Math.sin(r) * 1.02
-      targetBodyY = Math.abs(Math.sin(r)) * 0.16
-      targetBodyRotX = 0.12
-    } else if (pose === 'jump' || pose === 'fall') {
-      targetLArmX = -2.3
-      targetRArmX = -2.3
-      targetLArmZ = 0.25
-      targetRArmZ = -0.25
-      targetLLegX = 0.32
-      targetRLegX = -0.22
-    } else if (pose === 'wave') {
-      targetRArmX = -2.65
-      targetRArmZ = -0.35 + Math.sin(elapsed * 13) * 0.35
-      targetLArmX = 0.1
-      targetHeadZ = 0.12
-      targetBodyY = Math.sin(elapsed * 4) * 0.05
-    } else if (pose === 'dance') {
-      const d = elapsed * 7.8
-      targetBodyY = Math.abs(Math.sin(d)) * 0.24
-      targetBodyRotZ = Math.sin(d) * 0.14
-      targetLArmX = -1.6 + Math.sin(d) * 0.75
-      targetRArmX = -1.6 - Math.sin(d) * 0.75
-      targetLArmZ = 0.55 + Math.cos(d) * 0.25
-      targetRArmZ = -0.55 - Math.cos(d) * 0.25
-      targetLLegX = Math.sin(d) * 0.45
-      targetRLegX = -Math.sin(d) * 0.45
-      targetHeadY = Math.sin(d * 0.5) * 0.22
-    } else if (pose === 'cheer') {
-      const c = elapsed * 10
-      targetBodyY = Math.max(0, Math.sin(c)) * 0.42
-      targetLArmX = -2.8
-      targetRArmX = -2.8
-      targetLArmZ = 0.4
-      targetRArmZ = -0.4
-      targetLLegX = Math.sin(c) * 0.25
-      targetRLegX = -Math.sin(c) * 0.25
-    } else if (pose === 'sit') {
-      targetBodyY = -0.56
-      targetLLegX = -1.42
-      targetRLegX = -1.42
-      targetLArmX = -0.4
-      targetRArmX = -0.4
-      targetHeadY = Math.sin(elapsed * 1.4) * 0.15
-    } else if (pose === 'spin') {
-      spinAngle += dt * 9.5
-      targetLArmZ = 1.2
-      targetRArmZ = -1.2
-      targetBodyY = 0.18 + Math.sin(elapsed * 8) * 0.08
-    } else if (pose === 'backflip') {
-      flipAngle -= dt * 8.6
-      targetBodyY = 0.55 + Math.abs(Math.sin(flipAngle * 0.5)) * 0.55
-      targetLArmX = -2.1
-      targetRArmX = -2.1
-      targetLLegX = -0.85
-      targetRLegX = -0.85
+    if (pose !== prevPose) {
+      // Trigger juicy automatic landing squash when touching down from air!
+      if ((prevPose === 'jump' || prevPose === 'fall') && pose !== 'jump' && pose !== 'fall') {
+        landingImpact = 1
+      }
+      prevPose = pose
+      poseTime = 0
+    } else {
+      poseTime += dt
     }
 
-    if (pose !== 'spin') {
-      spinAngle = lerp(spinAngle, 0, a)
-    }
-    if (pose !== 'backflip') {
-      flipAngle = lerp(flipAngle, 0, a)
+    if (landingImpact > 0) {
+      landingImpact = Math.max(0, landingImpact - dt * 4.8)
     }
 
-    body.position.y = lerp(body.position.y, targetBodyY, a)
-    body.rotation.y = spinAngle
-    body.rotation.x = pose === 'backflip' ? flipAngle : lerp(body.rotation.x, targetBodyRotX, a)
-    body.rotation.z = lerp(body.rotation.z, targetBodyRotZ, a)
+    evaluateR6Pose(pose, elapsed, poseTime, landingImpact, target)
+    const a = Math.min(1, dt * target.snappiness)
 
-    leftArmPivot.rotation.x = lerp(leftArmPivot.rotation.x, targetLArmX, a)
-    leftArmPivot.rotation.z = lerp(leftArmPivot.rotation.z, targetLArmZ, a)
-    rightArmPivot.rotation.x = lerp(rightArmPivot.rotation.x, targetRArmX, a)
-    rightArmPivot.rotation.z = lerp(rightArmPivot.rotation.z, targetRArmZ, a)
-    leftLegPivot.rotation.x = lerp(leftLegPivot.rotation.x, targetLLegX, a)
-    rightLegPivot.rotation.x = lerp(rightLegPivot.rotation.x, targetRLegX, a)
-    headPivot.rotation.y = lerp(headPivot.rotation.y, targetHeadY, a)
-    headPivot.rotation.z = lerp(headPivot.rotation.z, targetHeadZ, a)
+    comPivot.position.x = lerp(comPivot.position.x, target.comPos.x, a)
+    comPivot.position.y = lerp(comPivot.position.y, REST_COM_Y + target.comPos.y, a)
+    comPivot.position.z = lerp(comPivot.position.z, target.comPos.z, a)
 
-    // Subtle shadow disc scale response when jumping/flipping
-    const shadowScale = Math.max(0.55, 1 - Math.max(0, body.position.y) * 0.32)
+    const wrapPi = (rad: number) => {
+      let r = ((rad + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI
+      return r
+    }
+
+    // Direct spin channels avoid lerp-rewinding on 360°/720° flips & spins; normalize modulo 2π when exiting!
+    if (target.directSpinX) {
+      comPivot.rotation.x = target.comRot.x
+    } else {
+      comPivot.rotation.x = lerp(wrapPi(comPivot.rotation.x), target.comRot.x, a)
+    }
+    if (target.directSpinY) {
+      comPivot.rotation.y = target.comRot.y
+    } else {
+      comPivot.rotation.y = lerp(wrapPi(comPivot.rotation.y), target.comRot.y, a)
+    }
+    comPivot.rotation.z = lerp(comPivot.rotation.z, target.comRot.z, a)
+
+    // Subtle squash & stretch
+    comPivot.scale.set(
+      lerp(comPivot.scale.x, target.scaleXZ, a),
+      lerp(comPivot.scale.y, target.scaleY, a),
+      lerp(comPivot.scale.z, target.scaleXZ, a),
+    )
+
+    torsoPivot.rotation.x = lerp(torsoPivot.rotation.x, target.torsoRot.x, a)
+    torsoPivot.rotation.y = lerp(torsoPivot.rotation.y, target.torsoRot.y, a)
+    torsoPivot.rotation.z = lerp(torsoPivot.rotation.z, target.torsoRot.z, a)
+
+    headPivot.rotation.x = lerp(headPivot.rotation.x, target.headRot.x, a)
+    headPivot.rotation.y = lerp(headPivot.rotation.y, target.headRot.y, a)
+    headPivot.rotation.z = lerp(headPivot.rotation.z, target.headRot.z, a)
+
+    leftArmPivot.rotation.x = lerp(leftArmPivot.rotation.x, target.lArmRot.x, a)
+    leftArmPivot.rotation.y = lerp(leftArmPivot.rotation.y, target.lArmRot.y, a)
+    leftArmPivot.rotation.z = lerp(leftArmPivot.rotation.z, target.lArmRot.z, a)
+
+    rightArmPivot.rotation.x = lerp(rightArmPivot.rotation.x, target.rArmRot.x, a)
+    rightArmPivot.rotation.y = lerp(rightArmPivot.rotation.y, target.rArmRot.y, a)
+    rightArmPivot.rotation.z = lerp(rightArmPivot.rotation.z, target.rArmRot.z, a)
+
+    leftLegPivot.rotation.x = lerp(leftLegPivot.rotation.x, target.lLegRot.x, a)
+    leftLegPivot.rotation.y = lerp(leftLegPivot.rotation.y, target.lLegRot.y, a)
+    leftLegPivot.rotation.z = lerp(leftLegPivot.rotation.z, target.lLegRot.z, a)
+
+    rightLegPivot.rotation.x = lerp(rightLegPivot.rotation.x, target.rLegRot.x, a)
+    rightLegPivot.rotation.y = lerp(rightLegPivot.rotation.y, target.rLegRot.y, a)
+    rightLegPivot.rotation.z = lerp(rightLegPivot.rotation.z, target.rLegRot.z, a)
+
+    // Dynamic ground blob shadow responds smoothly to jump / backflip height!
+    const airHeight = Math.max(0, comPivot.position.y - REST_COM_Y)
+    const shadowScale = Math.max(0.45, 1 - airHeight * 0.24)
     shadowBlob.scale.set(shadowScale, shadowScale, 1)
+    shadowBlobMat.opacity = Math.max(0.28, 0.85 - airHeight * 0.25)
+
+    // Keep overhead nameplate cleanly above the head during high jumps/flips
+    if (nameplateSprite) {
+      nameplateSprite.position.y = 4.18 + airHeight * 0.75
+    }
+    if (speechSprite.visible) {
+      speechSprite.position.y = 4.92 + airHeight * 0.75
+    }
   }
 
   const setSpeech = (text: string | null) => {
@@ -751,7 +742,7 @@ export function createR6Rig(opts: {
 
   return {
     root,
-    body,
+    comPivot,
     shadowBlob,
     update,
     setSpeech,
