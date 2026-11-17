@@ -1,9 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import {
   ArrowRight,
-  Box,
   Compass,
-  Flag,
   Hash,
   Loader2,
   LogOut,
@@ -261,8 +259,6 @@ export function App() {
     accent?: string
   }> = [
     { id: 'home', label: lang === 'pl' ? 'Odkrywaj' : 'Discover', icon: Compass },
-    { id: 'world', label: lang === 'pl' ? 'Lobby Główne' : 'Main Lobby', icon: Box },
-    { id: 'obby', label: 'Test Obby 100', icon: Flag, accent: '#F59E0B' },
     { id: 'avatar', label: lang === 'pl' ? 'Szatnia R6' : 'Wardrobe', icon: Shirt },
     { id: 'social', label: lang === 'pl' ? 'Profil i Znajomi' : 'Profile', icon: Users },
   ]
