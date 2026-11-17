@@ -13,6 +13,7 @@ import {
   Minimize2,
   RotateCw,
   Send,
+  Settings,
   Share2,
   Smartphone,
   Sparkles,
@@ -147,6 +148,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   const [chatOpen, setChatOpen] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 860 && !isTouchMobileDevice() : true,
   )
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
 
   // Interactive bench & portal state
@@ -353,14 +355,6 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     })
   }, [])
 
-  const cycleQuality = useCallback(() => {
-    setQuality((cur) => {
-      const idx = QUALITY_ORDER.indexOf(cur)
-      return QUALITY_ORDER[(idx + 1) % QUALITY_ORDER.length]
-    })
-    sfx.playClick()
-  }, [])
-
   const handleToggleFullscreen = useCallback(() => {
     sfx.playClick()
     if (isDocumentFullscreen()) {
@@ -504,11 +498,11 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     addBlock(0, -0.02, 0, 26, 0.3, 26, '#BAE6FD', { radius: 0.12, roughness: 0.28, castShadow: false })
     addBlock(0, 0.06, 0, 14, 0.26, 14, '#7DD3FC', { radius: 0.1, roughness: 0.24, castShadow: false })
 
-    // Four cardinal walkway carpets (now seamlessly auto-stepped onto!)
-    addBlock(0, 0.03, 18, 6.2, 0.2, 22, '#F0F9FF', { radius: 0.08, castShadow: false })
-    addBlock(0, 0.03, -18, 6.2, 0.2, 22, '#F0F9FF', { radius: 0.08, castShadow: false })
-    addBlock(18, 0.03, 0, 22, 0.2, 6.2, '#F0F9FF', { radius: 0.08, castShadow: false })
-    addBlock(-18, 0.03, 0, 22, 0.2, 6.2, '#F0F9FF', { radius: 0.08, castShadow: false })
+    // Four cardinal walkway carpets (raised 0.025 above plaza top to prevent z-fighting; still smoothly auto-stepped!)
+    addBlock(0, 0.055, 18, 6.2, 0.2, 22, '#F0F9FF', { radius: 0.08, castShadow: false })
+    addBlock(0, 0.055, -18, 6.2, 0.2, 22, '#F0F9FF', { radius: 0.08, castShadow: false })
+    addBlock(18, 0.055, 0, 22, 0.2, 6.2, '#F0F9FF', { radius: 0.08, castShadow: false })
+    addBlock(-18, 0.055, 0, 22, 0.2, 6.2, '#F0F9FF', { radius: 0.08, castShadow: false })
 
     // Central FreshBlox Crystal Fountain Monument
     addBlock(0, 0.45, 0, 6.4, 0.9, 6.4, '#F8FAFC', { radius: 0.16 })
@@ -1533,129 +1527,259 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       {/* 3D Canvas Host */}
       <div ref={mountRef} className="h-full w-full cursor-grab active:cursor-grabbing" style={{ touchAction: 'none' }} />
 
-      {/* TOP HUD BAR */}
-      <div className="pointer-events-none absolute top-2.5 sm:top-3.5 left-2.5 sm:left-3.5 right-2.5 sm:right-3.5 flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 z-10">
-        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
-          <button
-            onClick={onBackHome}
-            className="flex items-center gap-1 rounded-xl bg-slate-950/75 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-bold text-sky-50 border border-sky-400/30 backdrop-blur-md hover:bg-slate-900 transition cursor-pointer"
-          >
-            <ArrowLeft className="h-3.5 w-3.5 text-sky-400" />
-            <span className="hidden sm:inline">{t.backToLobby}</span>
-          </button>
+      {/* === SINGLE-ROW CLEAN TOP HUD BAR (Never wraps, never overlaps!) === */}
+      <div
+        className="pointer-events-none absolute top-2.5 inset-x-0 z-20 flex flex-nowrap items-center justify-between gap-2"
+        style={{
+          paddingLeft: 'max(0.75rem, env(safe-area-inset-left))',
+          paddingRight: 'max(0.75rem, env(safe-area-inset-right))',
+        }}
+      >
+        {/* Left integrated pill cluster: Menu + Chat + Room/Invite */}
+        <div className="pointer-events-auto flex min-w-0 items-center gap-1.5">
+          <div className="flex h-10 items-center rounded-2xl border border-white/15 bg-slate-950/72 p-1 shadow-lg backdrop-blur-xl">
+            <button
+              type="button"
+              onClick={onBackHome}
+              title={t.backToLobby}
+              className="flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold text-sky-50 hover:bg-white/10 active:scale-95 transition cursor-pointer"
+            >
+              <ArrowLeft className="h-4 w-4 text-sky-400 shrink-0" />
+              <span className="hidden md:inline">{t.backToLobby}</span>
+            </button>
 
-          <div className="flex items-center gap-1.5 sm:gap-2 rounded-xl bg-slate-950/75 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-bold text-sky-50 border border-sky-400/30 backdrop-blur-md">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="hidden md:inline">{t.roomLabel}</span>
-            <span className="font-mono text-sky-300">{roomCode}</span>
-            <span className="flex items-center gap-1 text-sky-200/80 pl-1 border-l border-sky-400/20">
-              <Users className="h-3.5 w-3.5" />
-              {onlineCount}
-            </span>
+            <div className="mx-0.5 h-4 w-[1px] bg-white/15" />
+
+            <button
+              type="button"
+              onClick={() => {
+                setChatOpen((open) => {
+                  const next = !open
+                  if (next) {
+                    setUnreadCount(0)
+                    setSettingsOpen(false)
+                  }
+                  return next
+                })
+                sfx.playClick()
+              }}
+              title={t.chatTitle}
+              className={`relative flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold transition active:scale-95 cursor-pointer ${
+                chatOpen ? 'bg-sky-500/25 text-sky-100' : 'text-sky-100/90 hover:bg-white/10'
+              }`}
+            >
+              <MessageSquare className="h-4 w-4 text-sky-400 shrink-0" />
+              <span className="hidden lg:inline">{t.chatTitle}</span>
+              {unreadCount > 0 && !chatOpen && (
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-400 px-1 text-[10px] font-black text-slate-950">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
           </div>
 
+          {/* Room badge — tap to copy invite link cleanly! */}
           <button
+            type="button"
             onClick={handleCopyInvite}
-            className="flex items-center gap-1 rounded-xl bg-sky-500/90 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-extrabold text-slate-950 shadow-lg hover:bg-sky-400 transition cursor-pointer"
+            title={t.inviteBtn}
+            className="flex h-10 min-w-0 items-center gap-1.5 rounded-2xl border border-white/15 bg-slate-950/72 px-3 text-xs font-bold text-sky-50 shadow-lg backdrop-blur-xl hover:bg-slate-900/90 active:scale-95 transition cursor-pointer"
           >
-            {copiedInvite ? <Check className="h-3.5 w-3.5" /> : <Share2 className="h-3.5 w-3.5" />}
-            <span className="hidden sm:inline">{copiedInvite ? t.inviteCopied : t.inviteBtn}</span>
+            <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+            <span className="truncate font-mono text-[11px] sm:text-xs text-sky-200">{roomCode}</span>
+            <span className="flex shrink-0 items-center gap-1 border-l border-white/15 pl-1.5 text-[11px] text-sky-100/80">
+              <Users className="h-3.5 w-3.5 text-sky-300" />
+              {onlineCount}
+            </span>
+            <span className="flex shrink-0 items-center gap-1 border-l border-white/15 pl-1.5 text-sky-300">
+              {copiedInvite ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Share2 className="h-3.5 w-3.5" />}
+              <span className="hidden md:inline text-[11px] font-extrabold">
+                {copiedInvite ? t.inviteCopied : t.inviteBtn}
+              </span>
+            </span>
           </button>
         </div>
 
-        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
+        {/* Right integrated pill cluster: FreshGems + Locker + Settings Drawer */}
+        <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">
           {/* FreshGems live counter */}
-          <div className="flex items-center gap-1 rounded-xl bg-slate-950/75 px-2.5 py-1.5 sm:py-2 text-xs font-extrabold text-sky-100 border border-sky-400/30 backdrop-blur-md">
+          <div className="flex h-10 items-center gap-1.5 rounded-2xl border border-white/15 bg-slate-950/72 px-3 text-xs font-extrabold text-sky-50 shadow-lg backdrop-blur-xl">
             <FreshGemShard size={15} />
             <span>{freshGems}</span>
           </div>
 
-          {/* Quality + FPS switcher */}
-          <button
-            onClick={cycleQuality}
-            title="Graphics Quality"
-            className="flex items-center gap-1 rounded-xl bg-slate-950/75 px-2 sm:px-2.5 py-1.5 sm:py-2 text-xs font-bold text-sky-100 border border-sky-400/30 backdrop-blur-md hover:bg-slate-900 transition cursor-pointer"
-          >
-            <Gauge className="h-3.5 w-3.5 text-sky-400" />
-            <span>{t.quality[quality]}</span>
-            <span className="hidden lg:inline font-mono text-[10px] text-emerald-300/90 pl-0.5">
-              {fpsDisplay} FPS
-            </span>
-          </button>
+          {/* Locker + Settings grouped pill */}
+          <div className="flex h-10 items-center rounded-2xl border border-white/15 bg-slate-950/72 p-1 shadow-lg backdrop-blur-xl">
+            <button
+              type="button"
+              onClick={onOpenAvatar}
+              title={t.quickAvatar}
+              className="flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold text-sky-100 hover:bg-white/10 active:scale-95 transition cursor-pointer"
+            >
+              <Sparkles className="h-4 w-4 text-sky-400 shrink-0" />
+              <span className="hidden sm:inline">{t.quickAvatar}</span>
+            </button>
 
-          {/* Spawn Reset Button */}
-          <button
-            onClick={() => resetSpawnActionRef.current()}
-            title={t.spawnReset}
-            className="flex items-center gap-1 rounded-xl bg-slate-950/75 px-2 py-1.5 sm:py-2 text-xs font-bold text-sky-100 border border-sky-400/30 backdrop-blur-md hover:bg-slate-900 transition cursor-pointer"
-          >
-            <LocateFixed className="h-3.5 w-3.5 text-sky-400" />
-          </button>
+            <div className="mx-0.5 h-4 w-[1px] bg-white/15" />
 
-          {/* Fullscreen + Landscape toggle */}
-          <button
-            onClick={handleToggleFullscreen}
-            title={t.fullscreenBtn}
-            className={`flex items-center gap-1 rounded-xl px-2 py-1.5 sm:py-2 text-xs font-bold border backdrop-blur-md transition cursor-pointer ${
-              isFullscreen
-                ? 'bg-sky-500/30 text-sky-50 border-sky-300/60'
-                : 'bg-slate-950/75 text-sky-100 border-sky-400/30 hover:bg-slate-900'
-            }`}
-          >
-            {isFullscreen ? <Minimize2 className="h-3.5 w-3.5 text-sky-300" /> : <Maximize2 className="h-3.5 w-3.5 text-sky-400" />}
-          </button>
-
-          {/* Touch Controls Toggle */}
-          <button
-            onClick={() => {
-              setTouchMode((v) => !v)
-              sfx.playClick()
-            }}
-            className={`flex items-center gap-1 rounded-xl px-2 py-1.5 sm:py-2 text-xs font-bold border backdrop-blur-md transition cursor-pointer ${
-              touchMode
-                ? 'bg-sky-500/30 text-sky-50 border-sky-300/60'
-                : 'bg-slate-950/75 text-slate-300 border-slate-500/30'
-            }`}
-          >
-            <Smartphone className="h-3.5 w-3.5 text-sky-300" />
-          </button>
-
-          <button
-            onClick={() => setBotsEnabled((b) => !b)}
-            className={`hidden lg:flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 sm:py-2 text-xs font-bold border backdrop-blur-md transition cursor-pointer ${
-              botsEnabled
-                ? 'bg-slate-950/75 text-sky-100 border-sky-400/30'
-                : 'bg-slate-950/55 text-slate-400 border-slate-500/30'
-            }`}
-          >
-            <Bot className="h-3.5 w-3.5 text-sky-400" />
-            {botsEnabled ? t.botsOn : t.botsOff}
-          </button>
-
-          <button
-            onClick={toggleSound}
-            className="flex items-center gap-1 rounded-xl bg-slate-950/75 px-2 py-1.5 sm:py-2 text-xs font-bold text-sky-100 border border-sky-400/30 backdrop-blur-md hover:bg-slate-900 transition cursor-pointer"
-            aria-label={soundEnabled ? t.soundOn : t.soundOff}
-          >
-            {soundEnabled ? <Volume2 className="h-3.5 w-3.5 text-sky-400" /> : <VolumeX className="h-3.5 w-3.5 text-slate-400" />}
-          </button>
-
-          <button
-            onClick={onOpenAvatar}
-            className="flex items-center gap-1 rounded-xl bg-slate-950/75 px-2.5 py-1.5 sm:py-2 text-xs font-bold text-sky-200 border border-sky-400/40 backdrop-blur-md hover:bg-sky-950 transition cursor-pointer"
-          >
-            <Sparkles className="h-3.5 w-3.5 text-sky-400" />
-            <span className="hidden sm:inline">{t.quickAvatar}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSettingsOpen((s) => {
+                  const next = !s
+                  if (next && touchMode) setChatOpen(false)
+                  return next
+                })
+                sfx.playClick()
+              }}
+              aria-label="Settings"
+              className={`flex h-8 w-8 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+                settingsOpen ? 'bg-sky-500/30 text-white' : 'text-sky-100/90 hover:bg-white/10'
+              }`}
+            >
+              {settingsOpen ? <X className="h-4 w-4" /> : <Settings className="h-4 w-4 text-sky-300" />}
+            </button>
+          </div>
         </div>
       </div>
 
+      {/* === CLEAN COLLAPSIBLE SETTINGS POPOVER (All extra tools neatly organized!) === */}
+      {settingsOpen && (
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          className="pointer-events-auto absolute top-14 z-30 w-[min(272px,calc(100vw-24px))] max-h-[calc(100dvh-76px)] overflow-y-auto rounded-2xl border border-white/15 bg-slate-950/88 p-3 text-xs text-sky-50 shadow-2xl backdrop-blur-xl space-y-2.5"
+          style={{ right: 'max(0.75rem, env(safe-area-inset-right))' }}
+        >
+          {/* Quality segmented selector + FPS */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[11px] font-bold text-sky-200/80">
+              <span className="flex items-center gap-1.5">
+                <Gauge className="h-3.5 w-3.5 text-sky-400" />
+                {lang === 'pl' ? 'Jakość grafiki' : 'Graphics'}
+              </span>
+              <span className="font-mono text-[10px] text-emerald-300">{fpsDisplay} FPS</span>
+            </div>
+            <div className="grid grid-cols-3 gap-1 rounded-xl bg-white/5 p-1">
+              {(['low', 'medium', 'high'] as GraphicsQuality[]).map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => {
+                    setQuality(q)
+                    sfx.playClick()
+                  }}
+                  className={`rounded-lg py-1.5 text-[11px] font-bold transition cursor-pointer ${
+                    quality === q
+                      ? 'bg-sky-500 text-slate-950 shadow'
+                      : 'text-sky-100/75 hover:bg-white/10'
+                  }`}
+                >
+                  {t.quality[q]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="h-[1px] bg-white/10" />
+
+          {/* Clean 2x2 toggles grid */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={toggleSound}
+              className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold transition cursor-pointer ${
+                soundEnabled
+                  ? 'border-sky-400/40 bg-sky-500/15 text-sky-50'
+                  : 'border-white/10 bg-white/5 text-slate-400'
+              }`}
+            >
+              {soundEnabled ? <Volume2 className="h-3.5 w-3.5 text-sky-400" /> : <VolumeX className="h-3.5 w-3.5" />}
+              <span>{lang === 'pl' ? (soundEnabled ? 'Dźwięk' : 'Wycisz.') : soundEnabled ? 'Sound' : 'Muted'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setBotsEnabled((b) => !b)
+                sfx.playClick()
+              }}
+              className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold transition cursor-pointer ${
+                botsEnabled
+                  ? 'border-sky-400/40 bg-sky-500/15 text-sky-50'
+                  : 'border-white/10 bg-white/5 text-slate-400'
+              }`}
+            >
+              <Bot className="h-3.5 w-3.5 text-sky-400" />
+              <span>{botsEnabled ? t.botsOn : t.botsOff}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setTouchMode((v) => !v)
+                sfx.playClick()
+              }}
+              className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold transition cursor-pointer ${
+                touchMode
+                  ? 'border-sky-400/40 bg-sky-500/15 text-sky-50'
+                  : 'border-white/10 bg-white/5 text-slate-400'
+              }`}
+            >
+              <Smartphone className="h-3.5 w-3.5 text-sky-400" />
+              <span>{lang === 'pl' ? 'Dotyk' : 'Touch'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleToggleFullscreen}
+              className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold transition cursor-pointer ${
+                isFullscreen
+                  ? 'border-sky-400/40 bg-sky-500/15 text-sky-50'
+                  : 'border-white/10 bg-white/5 text-sky-100/85 hover:bg-white/10'
+              }`}
+            >
+              {isFullscreen ? <Minimize2 className="h-3.5 w-3.5 text-sky-400" /> : <Maximize2 className="h-3.5 w-3.5 text-sky-400" />}
+              <span>{lang === 'pl' ? 'Pełny' : 'Full'}</span>
+            </button>
+          </div>
+
+          <div className="h-[1px] bg-white/10" />
+
+          {/* Quick Utility Actions */}
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                resetSpawnActionRef.current()
+                setSettingsOpen(false)
+              }}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/8 px-2.5 py-2 text-[11px] font-bold text-sky-100 hover:bg-white/15 active:scale-95 transition cursor-pointer"
+            >
+              <LocateFixed className="h-3.5 w-3.5 text-sky-400" />
+              <span>{t.spawnReset}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                handleCopyInvite()
+                setSettingsOpen(false)
+              }}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-sky-500 px-2.5 py-2 text-[11px] font-extrabold text-slate-950 hover:bg-sky-400 active:scale-95 transition cursor-pointer"
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              <span>{t.inviteBtn}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* MOBILE PORTRAIT ROTATE + FULLSCREEN HELPER BANNER */}
       {isPortraitMobile && !rotateBannerDismissed && (
-        <div className="pointer-events-auto absolute top-14 left-1/2 -translate-x-1/2 z-30 w-[min(340px,calc(100vw-24px))]">
-          <div className="flex items-center justify-between gap-2 rounded-2xl border border-sky-400/50 bg-slate-950/90 px-3 py-2 text-xs text-sky-50 shadow-2xl backdrop-blur-xl">
+        <div className="pointer-events-auto absolute top-14 left-1/2 -translate-x-1/2 z-30 w-[min(330px,calc(100vw-24px))]">
+          <div className="flex items-center justify-between gap-2 rounded-2xl border border-white/15 bg-slate-950/90 px-3 py-2 text-xs text-sky-50 shadow-2xl backdrop-blur-xl">
             <div className="flex items-center gap-2 min-w-0">
-              <RotateCw className="h-4 w-4 shrink-0 text-sky-400 animate-spin" style={{ animationDuration: '5s' }} />
+              <RotateCw className="h-4 w-4 shrink-0 text-sky-400" />
               <span className="text-[11px] font-semibold leading-tight">{t.rotateBannerText}</span>
             </div>
             <div className="flex shrink-0 items-center gap-1">
@@ -1681,9 +1805,9 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
       {/* REWARD / EVENT TOAST */}
       {toast && (
-        <div className="pointer-events-none absolute top-16 left-1/2 -translate-x-1/2 z-30 animate-[rewardPop_0.35s_ease-out]">
-          <div className="flex items-center gap-2 rounded-full bg-slate-950/90 border border-sky-400/60 px-4 py-2 text-xs sm:text-sm font-extrabold text-sky-100 shadow-[0_8px_30px_rgba(14,165,233,0.45)] backdrop-blur-md">
-            <FreshGemShard size={17} />
+        <div className="pointer-events-none absolute top-14 left-1/2 -translate-x-1/2 z-30 animate-[rewardPop_0.35s_ease-out]">
+          <div className="flex items-center gap-2 rounded-full bg-slate-950/88 border border-sky-400/40 px-4 py-1.5 text-xs sm:text-sm font-extrabold text-sky-100 shadow-xl backdrop-blur-md">
+            <FreshGemShard size={16} />
             {toast}
           </div>
         </div>
@@ -1691,26 +1815,22 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
       {/* INTERACTIVE BENCH SIT / STAND PROMPT OR PORTAL HINT */}
       {(seatedBench || nearBench || nearPortalName) && (
-        <div
-          className={`pointer-events-auto absolute left-1/2 -translate-x-1/2 z-20 ${
-            touchMode ? 'bottom-20 sm:bottom-8' : 'bottom-20'
-          }`}
-        >
+        <div className="pointer-events-auto absolute bottom-5 sm:bottom-6 left-1/2 -translate-x-1/2 z-20">
           {seatedBench || nearBench ? (
             <button
               type="button"
               onClick={() => toggleSitActionRef.current()}
               onPointerDown={(e) => e.stopPropagation()}
-              className="flex items-center gap-2 rounded-full border border-sky-300/70 bg-slate-950/85 px-4 py-2.5 text-xs font-extrabold text-sky-50 shadow-[0_8px_28px_rgba(14,165,233,0.4)] backdrop-blur-xl transition hover:bg-sky-950 active:scale-95 cursor-pointer"
+              className="flex items-center gap-2 rounded-full border border-sky-300/60 bg-slate-950/85 px-4 py-2 text-xs font-extrabold text-sky-50 shadow-xl backdrop-blur-xl transition hover:bg-slate-900 active:scale-95 cursor-pointer"
             >
               <Armchair className="h-4 w-4 text-sky-400" />
               <span>{seatedBench ? t.standPrompt : t.sitPrompt}</span>
-              <span className="hidden sm:inline rounded-md bg-sky-400/20 border border-sky-300/40 px-1.5 py-0.5 font-mono text-[10px] text-sky-200">
+              <span className="hidden sm:inline rounded-md bg-white/10 border border-white/20 px-1.5 py-0.5 font-mono text-[10px] text-sky-200">
                 E
               </span>
             </button>
           ) : nearPortalName ? (
-            <div className="flex items-center gap-2 rounded-full border border-sky-400/40 bg-slate-950/80 px-4 py-2 text-xs font-bold text-sky-100 backdrop-blur-xl shadow-lg">
+            <div className="flex items-center gap-2 rounded-full border border-white/20 bg-slate-950/80 px-4 py-2 text-xs font-bold text-sky-100 backdrop-blur-xl shadow-lg">
               <Sparkles className="h-3.5 w-3.5 text-sky-400" />
               <span>
                 {nearPortalName} — {t.portalSoonHint}
@@ -1720,90 +1840,70 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         </div>
       )}
 
-      {/* CHAT PANEL */}
-      <div
-        className={`pointer-events-auto absolute left-3 z-20 ${
-          touchMode ? 'top-14 sm:top-16' : 'bottom-4'
-        }`}
-      >
-        {!chatOpen ? (
-          <button
-            type="button"
-            onClick={() => {
-              setChatOpen(true)
-              setUnreadCount(0)
-            }}
-            className="relative flex items-center gap-1.5 rounded-xl bg-slate-950/78 px-3 py-2 text-xs font-bold text-sky-100 border border-sky-400/35 backdrop-blur-md shadow-lg hover:bg-slate-900 transition cursor-pointer"
-          >
-            <MessageSquare className="h-4 w-4 text-sky-400" />
-            <span>{t.chatTitle}</span>
-            {unreadCount > 0 && (
-              <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-400 px-1 text-[10px] font-black text-slate-950">
-                {unreadCount}
+      {/* === CLEAN CHAT DRAWER (Only visible when opened via top bar button — never blocks controls!) === */}
+      {chatOpen && (
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          className={`pointer-events-auto absolute z-25 w-[min(300px,calc(100vw-28px))] rounded-2xl bg-slate-950/82 border border-white/15 backdrop-blur-xl shadow-2xl overflow-hidden flex flex-col ${
+            touchMode ? 'top-14 max-h-[calc(100dvh-195px)]' : 'bottom-4 max-h-60'
+          }`}
+          style={{ left: 'max(0.75rem, env(safe-area-inset-left))' }}
+        >
+          <div className="flex shrink-0 items-center justify-between px-3 py-1.5 border-b border-white/10">
+            <div className="flex items-center gap-1.5 text-xs font-extrabold text-sky-100">
+              <MessageSquare className="h-3.5 w-3.5 text-sky-400" />
+              {t.chatTitle}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="hidden sm:inline text-[10px] font-semibold text-sky-300/75">
+                {isSupabaseConfigured ? t.multiplayerHintSupabase : t.multiplayerHintLocal}
               </span>
-            )}
-          </button>
-        ) : (
-          <div
-            onPointerDown={(e) => e.stopPropagation()}
-            className="w-[min(310px,calc(100vw-24px))] rounded-2xl bg-slate-950/80 border border-sky-400/30 backdrop-blur-xl shadow-2xl overflow-hidden"
-          >
-            <div className="flex items-center justify-between px-3 py-2 border-b border-sky-400/20">
-              <div className="flex items-center gap-1.5 text-xs font-extrabold text-sky-100">
-                <MessageSquare className="h-3.5 w-3.5 text-sky-400" />
-                {t.chatTitle}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-semibold text-sky-300/80">
-                  {isSupabaseConfigured ? t.multiplayerHintSupabase : t.multiplayerHintLocal}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setChatOpen(false)}
-                  className="rounded-lg p-0.5 text-sky-200/70 hover:bg-sky-500/20 hover:text-white cursor-pointer"
-                  aria-label="Minimize chat"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="max-h-28 sm:max-h-36 overflow-y-auto px-3 py-2 space-y-1.5 text-xs">
-              {messages.map((m) => (
-                <div key={m.id} className="leading-snug">
-                  <span className={m.system ? 'font-bold text-sky-400' : 'font-extrabold text-sky-200'}>
-                    {m.username}:{' '}
-                  </span>
-                  <span className={m.system ? 'text-sky-100/80' : 'text-white/95'}>{m.text}</span>
-                </div>
-              ))}
-            </div>
-
-            <form onSubmit={handleSendChat} className="flex items-center gap-1.5 p-2 border-t border-sky-400/20 bg-slate-950/60">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onFocus={() => {
-                  chatInputFocusedRef.current = true
-                }}
-                onBlur={() => {
-                  chatInputFocusedRef.current = false
-                }}
-                placeholder={t.chatPlaceholder}
-                className="min-w-0 flex-1 rounded-xl bg-slate-900/90 px-3 py-1.5 text-xs text-white placeholder-sky-200/45 border border-sky-400/25 focus:outline-none focus:border-sky-400"
-              />
               <button
-                type="submit"
-                className="flex shrink-0 items-center justify-center rounded-xl bg-sky-500 p-2 text-slate-950 hover:bg-sky-400 transition cursor-pointer"
-                aria-label={t.chatSend}
+                type="button"
+                onClick={() => setChatOpen(false)}
+                className="rounded-lg p-1 text-sky-200/75 hover:bg-white/10 hover:text-white cursor-pointer"
+                aria-label="Minimize chat"
               >
-                <Send className="h-3.5 w-3.5" />
+                <X className="h-3.5 w-3.5" />
               </button>
-            </form>
+            </div>
           </div>
-        )}
-      </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-1 text-xs">
+            {messages.map((m) => (
+              <div key={m.id} className="leading-snug">
+                <span className={m.system ? 'font-bold text-sky-400' : 'font-extrabold text-sky-200'}>
+                  {m.username}:{' '}
+                </span>
+                <span className={m.system ? 'text-sky-100/80' : 'text-white/95'}>{m.text}</span>
+              </div>
+            ))}
+          </div>
+
+          <form onSubmit={handleSendChat} className="flex shrink-0 items-center gap-1.5 p-1.5 border-t border-white/10 bg-slate-950/55">
+            <input
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onFocus={() => {
+                chatInputFocusedRef.current = true
+              }}
+              onBlur={() => {
+                chatInputFocusedRef.current = false
+              }}
+              placeholder={t.chatPlaceholder}
+              className="min-w-0 flex-1 rounded-xl bg-slate-900/90 px-2.5 py-1.5 text-xs text-white placeholder-sky-200/45 border border-white/15 focus:outline-none focus:border-sky-400"
+            />
+            <button
+              type="submit"
+              className="flex shrink-0 items-center justify-center rounded-xl bg-sky-500 p-2 text-slate-950 hover:bg-sky-400 transition cursor-pointer"
+              aria-label={t.chatSend}
+            >
+              <Send className="h-3.5 w-3.5" />
+            </button>
+          </form>
+        </div>
+      )}
 
       {/* DESKTOP EMOTE BAR & CONTROLS */}
       {!touchMode && (

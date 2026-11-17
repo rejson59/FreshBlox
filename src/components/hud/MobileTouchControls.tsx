@@ -24,7 +24,7 @@ interface MobileTouchControlsProps {
   }
 }
 
-const MAX_RADIUS = 44
+const MAX_RADIUS = 38
 
 export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
   onMoveVector,
@@ -62,7 +62,6 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
     const nx = dist > 2 ? Math.cos(angle) * clamped : 0
     const ny = dist > 2 ? Math.sin(angle) * clamped : 0
     setKnob({ x: nx, y: ny })
-    // Normalized [-1..1]; up on stick is forward (+1 on y or -1 depending on convention; we pass standard screen dy normalized)
     onMoveVector(nx / MAX_RADIUS, ny / MAX_RADIUS)
   }
 
@@ -91,8 +90,15 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
   ]
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex items-end justify-between px-4 sm:px-6 select-none">
-      {/* LEFT VIRTUAL THUMBSTICK */}
+    <div
+      className="pointer-events-none absolute inset-x-0 z-20 flex items-end justify-between select-none"
+      style={{
+        bottom: 'max(0.85rem, env(safe-area-inset-bottom))',
+        paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+        paddingRight: 'max(1rem, env(safe-area-inset-right))',
+      }}
+    >
+      {/* LEFT VIRTUAL THUMBSTICK — Compact & ergonomic for both landscape & portrait */}
       <div
         ref={padRef}
         onPointerDown={handlePadDown}
@@ -100,34 +106,32 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
         onPointerUp={resetStick}
         onPointerCancel={resetStick}
         style={{ touchAction: 'none' }}
-        className={`pointer-events-auto relative flex h-32 w-32 items-center justify-center rounded-full border-2 transition-colors ${
+        className={`pointer-events-auto relative flex h-28 w-28 sm:h-32 sm:w-32 items-center justify-center rounded-full border transition-colors ${
           joystickActive
-            ? 'border-sky-300/80 bg-slate-950/55 shadow-[0_0_24px_rgba(56,189,248,0.35)]'
-            : 'border-sky-300/35 bg-slate-950/40'
+            ? 'border-white/55 bg-slate-950/50'
+            : 'border-white/25 bg-slate-950/32'
         } backdrop-blur-md`}
         aria-label="Virtual Movement Joystick"
       >
-        {/* Subtle cardinal crosshairs */}
-        <div className="pointer-events-none absolute h-16 w-[1px] bg-sky-200/20" />
-        <div className="pointer-events-none absolute h-[1px] w-16 bg-sky-200/20" />
+        <div className="pointer-events-none absolute h-12 w-[1px] bg-white/15" />
+        <div className="pointer-events-none absolute h-[1px] w-12 bg-white/15" />
 
-        {/* Thumb knob */}
         <div
           style={{
             transform: `translate3d(${knob.x}px, ${knob.y}px, 0)`,
             background: 'linear-gradient(135deg, #E0F2FE 0%, #38BDF8 55%, #0284C7 100%)',
           }}
-          className="pointer-events-none h-14 w-14 rounded-full border-2 border-white/80 shadow-[0_6px_18px_rgba(2,132,199,0.55)]"
+          className="pointer-events-none h-12 w-12 sm:h-14 sm:w-14 rounded-full border-2 border-white/85 shadow-lg"
         />
       </div>
 
       {/* RIGHT ERGONOMIC ACTION CLUSTER */}
-      <div className="pointer-events-auto flex flex-col items-end gap-2.5" style={{ touchAction: 'none' }}>
+      <div className="pointer-events-auto flex flex-col items-end gap-2" style={{ touchAction: 'none' }}>
         {/* Collapsible Mobile Emotes Bar */}
         {emotesOpen && (
           <div
             onPointerDown={(e) => e.stopPropagation()}
-            className="mb-1 flex flex-wrap justify-end gap-1.5 rounded-2xl border border-sky-300/30 bg-slate-950/85 p-2 shadow-2xl backdrop-blur-xl max-w-[240px]"
+            className="mb-0.5 flex flex-wrap justify-end gap-1 rounded-2xl border border-white/15 bg-slate-950/85 p-1.5 shadow-2xl backdrop-blur-xl max-w-[230px]"
           >
             {emoteList.map((em) => (
               <button
@@ -137,10 +141,10 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
                   onEmote(em.pose)
                   setEmotesOpen(false)
                 }}
-                className={`rounded-xl px-2.5 py-1.5 text-xs font-bold transition ${
+                className={`rounded-xl px-2.5 py-1.5 text-[11px] font-bold transition ${
                   activeEmote === em.pose
                     ? 'bg-sky-400 text-slate-950'
-                    : 'bg-sky-500/15 text-sky-100 active:bg-sky-400/35'
+                    : 'bg-white/10 text-sky-50 active:bg-white/20'
                 }`}
               >
                 {em.label}
@@ -149,18 +153,18 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
           </div>
         )}
 
-        {/* Secondary row: Emotes + Sprint toggle */}
-        <div className="flex items-center gap-2.5">
+        {/* Secondary row: Emotes + Sprint */}
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onPointerDown={(e) => {
               e.stopPropagation()
               setEmotesOpen((o) => !o)
             }}
-            className={`flex h-12 w-12 flex-col items-center justify-center rounded-full border text-[10px] font-extrabold backdrop-blur-md transition active:scale-95 ${
+            className={`flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md transition active:scale-95 ${
               emotesOpen || activeEmote
                 ? 'border-sky-300 bg-sky-500/35 text-white'
-                : 'border-sky-300/35 bg-slate-950/60 text-sky-100'
+                : 'border-white/25 bg-slate-950/55 text-sky-100'
             }`}
             aria-label={labels.emotesLabel}
           >
@@ -173,10 +177,10 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
               e.stopPropagation()
               onToggleSprint()
             }}
-            className={`flex h-12 px-3.5 items-center gap-1 rounded-full border text-xs font-extrabold backdrop-blur-md transition active:scale-95 ${
+            className={`flex h-11 px-3.5 items-center gap-1 rounded-full border text-[11px] font-extrabold backdrop-blur-md transition active:scale-95 ${
               sprintActive
-                ? 'border-sky-200 bg-sky-400 text-slate-950 shadow-[0_0_16px_rgba(56,189,248,0.6)]'
-                : 'border-sky-300/35 bg-slate-950/60 text-sky-100'
+                ? 'border-white/70 bg-sky-400 text-slate-950 shadow-md'
+                : 'border-white/25 bg-slate-950/55 text-sky-100'
             }`}
           >
             <Zap className="h-3.5 w-3.5" />
@@ -184,7 +188,7 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
           </button>
         </div>
 
-        {/* Primary big Jump button */}
+        {/* Primary Jump button */}
         <button
           type="button"
           onPointerDown={(e) => {
@@ -192,12 +196,12 @@ export const MobileTouchControls: React.FC<MobileTouchControlsProps> = ({
             onJump()
           }}
           style={{
-            background: 'linear-gradient(135deg, #0284C7 0%, #38BDF8 60%, #BAE6FD 100%)',
+            background: 'linear-gradient(135deg, #0284C7 0%, #38BDF8 62%, #BAE6FD 100%)',
           }}
-          className="flex h-[72px] w-[72px] flex-col items-center justify-center rounded-full border-2 border-white/80 text-slate-950 shadow-[0_8px_28px_rgba(14,165,233,0.55)] transition active:scale-90"
+          className="flex h-16 w-16 sm:h-[70px] sm:w-[70px] flex-col items-center justify-center rounded-full border-2 border-white/85 text-slate-950 shadow-xl transition active:scale-90"
         >
-          <ArrowUp className="h-6 w-6 stroke-[2.8]" />
-          <span className="text-[10px] font-black tracking-wide leading-none">{labels.jumpBtn}</span>
+          <ArrowUp className="h-5 w-5 sm:h-6 sm:w-6 stroke-[2.8]" />
+          <span className="text-[9px] sm:text-[10px] font-black tracking-wide leading-none">{labels.jumpBtn}</span>
         </button>
       </div>
     </div>
