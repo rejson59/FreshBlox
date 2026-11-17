@@ -35,6 +35,7 @@ import { sfx } from '../../lib/sfx'
 
 export type MenuQuality = 'low' | 'medium' | 'high'
 export type MenuWorldTime = 'day' | 'night'
+export type MenuDrawerTab = 'overview' | 'players' | 'settings'
 
 export interface InGameRosterMember {
   id: string
@@ -46,6 +47,9 @@ export interface InGameRosterMember {
 
 export interface InGameMenuDrawerProps {
   open: boolean
+  activeTab?: MenuDrawerTab
+  onTabChange?: (tab: MenuDrawerTab) => void
+  onOpenShortcuts?: () => void
   worldKind: 'lobby' | 'obby'
   lang: Lang
   roomCode: string
@@ -109,7 +113,7 @@ const MENU_COPY = {
     invite: 'Zaproś linkiem',
     inviteCopied: 'Skopiowano!',
     resetLobby: 'Wróć na środek',
-    resetObby: 'Respawn (R)',
+    resetObby: 'Respawn',
     switchToObby: 'Wejdź do Test Obby 100',
     switchToLobby: 'Przejdź do Lobby Głównego',
     leaveHome: 'Menu główne',
@@ -140,15 +144,23 @@ const MENU_COPY = {
     touchMobile: 'Dotyk',
     fullscreenLabel: 'Pełny ekran',
     controlsTitle: 'Skróty klawiszowe (PC)',
+    shortcutsBtn: 'Pełna lista skrótów',
     controlsList: [
       ['WASD / Strzałki', 'Poruszanie się'],
       ['Spacja (przytrzymaj)', 'Skok bez cooldownu'],
       ['Shift', 'Sprint'],
       ['Klik / Tab / M', 'Lock myszy (kamera 360°)'],
-      ['Esc', 'Zwolnij mysz / Otwórz menu'],
-      ['Podciąganie', 'Automatycznie łapie krawędź!'],
+      ['L', 'Przełącz Shift-Lock w locie'],
+      ['T lub /', 'Otwórz Czat i pisz'],
+      ['I', 'Szatnia R6 (auto-zwolnienie myszy)'],
+      ['H / P / O', 'Menu / Gracze / Ustawienia'],
+      ['B', 'Zgłoś błąd lub pomysł'],
+      ['K lub ?', 'Ściągawka wszystkich skrótów'],
       ['C / R', 'Centruj kamerę / Respawn'],
+      ['[ / ] (Obby)', 'Poprzedni / Następny Stage'],
+      ['N / V / F', 'Dzień-Noc / Dźwięk / Pełny ekran'],
       ['1 – 6', 'Emotki i salto'],
+      ['Esc', 'Zwolnij mysz / Zamknij panel'],
     ] as Array<[string, string]>,
     cloudOnline: 'Multiplayer online',
     cloudLocal: 'Tryb lokalny',
@@ -168,7 +180,7 @@ const MENU_COPY = {
     invite: 'Copy Invite',
     inviteCopied: 'Copied!',
     resetLobby: 'Reset Spawn',
-    resetObby: 'Respawn (R)',
+    resetObby: 'Respawn',
     switchToObby: 'Play Test Obby 100',
     switchToLobby: 'Switch to Main Lobby',
     leaveHome: 'Home Menu',
@@ -199,15 +211,23 @@ const MENU_COPY = {
     touchMobile: 'Touch',
     fullscreenLabel: 'Fullscreen',
     controlsTitle: 'Keyboard Shortcuts (PC)',
+    shortcutsBtn: 'All Shortcuts',
     controlsList: [
       ['WASD / Arrows', 'Move'],
       ['Space (hold)', 'Zero-cooldown jump'],
       ['Shift', 'Sprint'],
       ['Click / Tab / M', 'Mouse Lock (360° camera)'],
-      ['Esc', 'Release mouse / Open menu'],
-      ['Ledge Mantle', 'Auto-grabs edges mid-air!'],
+      ['L', 'Toggle Shift-Lock on the fly'],
+      ['T or /', 'Open Chat & start typing'],
+      ['I', 'R6 Wardrobe (auto-unlocks mouse)'],
+      ['H / P / O', 'Menu / Players / Settings'],
+      ['B', 'Report Bug or Idea'],
+      ['K or ?', 'All Keyboard Shortcuts overlay'],
       ['C / R', 'Center camera / Respawn'],
+      ['[ / ] (Obby)', 'Previous / Next unlocked Stage'],
+      ['N / V / F', 'Day-Night / Audio / Fullscreen'],
       ['1 – 6', 'Emotes & backflip'],
+      ['Esc', 'Release mouse / Close panel'],
     ] as Array<[string, string]>,
     cloudOnline: 'Multiplayer live',
     cloudLocal: 'Local mode',
@@ -217,6 +237,9 @@ const MENU_COPY = {
 
 export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
   open,
+  activeTab,
+  onTabChange,
+  onOpenShortcuts,
   worldKind,
   lang,
   roomCode,
@@ -260,7 +283,12 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
   onOpenFeedback,
   onTeleportToMember,
 }) => {
-  const [tab, setTab] = useState<'overview' | 'players' | 'settings'>('overview')
+  const [internalTab, setInternalTab] = useState<MenuDrawerTab>('overview')
+  const tab = activeTab ?? internalTab
+  const setTab = (next: MenuDrawerTab) => {
+    setInternalTab(next)
+    onTabChange?.(next)
+  }
   const t = MENU_COPY[lang]
 
   if (!open) return null
@@ -371,9 +399,9 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
           <div className="mt-3 grid grid-cols-3 gap-1 rounded-2xl border border-white/10 bg-slate-950/70 p-1">
             {(
               [
-                { id: 'overview', label: t.tabOverview, icon: Gamepad2 },
-                { id: 'players', label: `${t.tabPlayers} (${onlineCount})`, icon: Users },
-                { id: 'settings', label: t.tabSettings, icon: Settings },
+                { id: 'overview', label: t.tabOverview, icon: Gamepad2, kbd: 'H' },
+                { id: 'players', label: `${t.tabPlayers} (${onlineCount})`, icon: Users, kbd: 'P' },
+                { id: 'settings', label: t.tabSettings, icon: Settings, kbd: 'O' },
               ] as const
             ).map((item) => {
               const Icon = item.icon
@@ -386,7 +414,7 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
                     sfx.playClick()
                     setTab(item.id)
                   }}
-                  className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-extrabold transition cursor-pointer ${
+                  className={`flex items-center justify-center gap-1 rounded-xl py-2 text-xs font-extrabold transition cursor-pointer ${
                     active
                       ? 'bg-gradient-to-r from-sky-500/35 to-blue-500/30 text-white ring-1 ring-sky-300/45 shadow'
                       : 'text-sky-200/75 hover:bg-white/6 hover:text-white'
@@ -394,6 +422,11 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
                 >
                   <Icon className="h-3.5 w-3.5 shrink-0 text-sky-300" />
                   <span className="truncate">{item.label}</span>
+                  {!touchMode && (
+                    <kbd className="hidden sm:inline-flex rounded border border-white/15 bg-black/30 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/85">
+                      {item.kbd}
+                    </kbd>
+                  )}
                 </button>
               )
             })}
@@ -419,7 +452,14 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
                   <MessageSquarePlus className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-extrabold text-white leading-tight">{t.reportTitle}</div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-extrabold text-white leading-tight">{t.reportTitle}</span>
+                    {!touchMode && (
+                      <kbd className="rounded-md border border-sky-300/35 bg-slate-950/70 px-1.5 py-0.5 font-mono text-[10px] font-extrabold text-sky-200">
+                        B
+                      </kbd>
+                    )}
+                  </div>
                   <div className="mt-0.5 text-[11px] font-medium text-sky-200/80 leading-snug">
                     {t.reportSub}
                   </div>
@@ -476,10 +516,17 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
                       sfx.playClick()
                       onOpenWardrobe()
                     }}
-                    className="flex items-center gap-2 rounded-2xl border border-sky-400/25 bg-sky-500/12 px-3 py-2.5 text-xs font-extrabold text-white hover:bg-sky-500/22 active:scale-[0.98] transition cursor-pointer"
+                    className="flex items-center justify-between gap-1.5 rounded-2xl border border-sky-400/25 bg-sky-500/12 px-3 py-2.5 text-xs font-extrabold text-white hover:bg-sky-500/22 active:scale-[0.98] transition cursor-pointer"
                   >
-                    <Shirt className="h-4 w-4 shrink-0 text-sky-300" />
-                    <span className="truncate">{t.wardrobe}</span>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <Shirt className="h-4 w-4 shrink-0 text-sky-300" />
+                      <span className="truncate">{t.wardrobe}</span>
+                    </span>
+                    {!touchMode && (
+                      <kbd className="shrink-0 rounded border border-white/15 bg-black/30 px-1.5 py-0.5 font-mono text-[9px] font-bold text-sky-200">
+                        I
+                      </kbd>
+                    )}
                   </button>
 
                   <button
@@ -502,10 +549,17 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
                       onResetPosition()
                       onClose()
                     }}
-                    className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2.5 text-xs font-extrabold text-white hover:bg-white/12 active:scale-[0.98] transition cursor-pointer"
+                    className="flex items-center justify-between gap-1.5 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2.5 text-xs font-extrabold text-white hover:bg-white/12 active:scale-[0.98] transition cursor-pointer"
                   >
-                    <RotateCcw className="h-4 w-4 shrink-0 text-sky-300" />
-                    <span className="truncate">{worldKind === 'obby' ? t.resetObby : t.resetLobby}</span>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <RotateCcw className="h-4 w-4 shrink-0 text-sky-300" />
+                      <span className="truncate">{worldKind === 'obby' ? t.resetObby : t.resetLobby}</span>
+                    </span>
+                    {!touchMode && (
+                      <kbd className="shrink-0 rounded border border-white/15 bg-black/30 px-1.5 py-0.5 font-mono text-[9px] font-bold text-sky-200">
+                        R
+                      </kbd>
+                    )}
                   </button>
 
                   <button
@@ -514,17 +568,44 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
                       sfx.playClick()
                       onToggleSound()
                     }}
-                    className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2.5 text-xs font-extrabold text-white hover:bg-white/12 active:scale-[0.98] transition cursor-pointer"
+                    className="flex items-center justify-between gap-1.5 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2.5 text-xs font-extrabold text-white hover:bg-white/12 active:scale-[0.98] transition cursor-pointer"
                   >
-                    {soundEnabled ? (
-                      <Volume2 className="h-4 w-4 shrink-0 text-emerald-300" />
-                    ) : (
-                      <VolumeX className="h-4 w-4 shrink-0 text-slate-400" />
-                    )}
-                    <span className="truncate">
-                      {t.soundLabel}: {soundEnabled ? t.on : t.off}
+                    <span className="flex min-w-0 items-center gap-2">
+                      {soundEnabled ? (
+                        <Volume2 className="h-4 w-4 shrink-0 text-emerald-300" />
+                      ) : (
+                        <VolumeX className="h-4 w-4 shrink-0 text-slate-400" />
+                      )}
+                      <span className="truncate">
+                        {t.soundLabel}: {soundEnabled ? t.on : t.off}
+                      </span>
                     </span>
+                    {!touchMode && (
+                      <kbd className="shrink-0 rounded border border-white/15 bg-black/30 px-1.5 py-0.5 font-mono text-[9px] font-bold text-sky-200">
+                        V
+                      </kbd>
+                    )}
                   </button>
+
+                  {!touchMode && onOpenShortcuts && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sfx.playClick()
+                        onClose()
+                        onOpenShortcuts()
+                      }}
+                      className="col-span-2 flex items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-extrabold text-sky-100 hover:bg-white/12 active:scale-[0.98] transition cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Keyboard className="h-4 w-4 shrink-0 text-sky-300" />
+                        <span>{t.shortcutsBtn}</span>
+                      </span>
+                      <kbd className="rounded border border-white/15 bg-black/30 px-1.5 py-0.5 font-mono text-[10px] font-bold text-sky-200">
+                        K / ?
+                      </kbd>
+                    </button>
+                  )}
 
                   <button
                     type="button"

@@ -5,6 +5,7 @@ import {
   Armchair,
   Crosshair,
   Flag,
+  Keyboard,
   MessageSquare,
   MessageSquarePlus,
   RotateCw,
@@ -30,7 +31,8 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { FreshBloxLogo } from '../components/brand/FreshBloxBrand'
 import { MobileTouchControls } from '../components/hud/MobileTouchControls'
 import { InGameWardrobeDrawer } from '../components/hud/InGameWardrobeDrawer'
-import { InGameMenuDrawer } from '../components/hud/InGameMenuDrawer'
+import { InGameMenuDrawer, MenuDrawerTab } from '../components/hud/InGameMenuDrawer'
+import { ShortcutsOverlayModal } from '../components/hud/ShortcutsOverlayModal'
 import { createR6Rig, R6RigHandle } from './r6Builder'
 import { cloneFreshTexturesWithRepeat, FreshSurfaceKind } from './freshTextures'
 
@@ -150,6 +152,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     typeof window !== 'undefined' ? window.innerWidth >= 860 && !isTouchMobileDevice() : true,
   )
   const [hubOpen, setHubOpen] = useState(false)
+  const [hubTab, setHubTab] = useState<MenuDrawerTab>('overview')
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [wardrobeOpen, setWardrobeOpen] = useState(false)
   const [previewAvatar, setPreviewAvatar] = useState<R6AvatarConfig>(() => ({ ...avatar }))
   const [worldTime, setWorldTime] = useState<WorldTimeMode>('day')
@@ -191,10 +195,16 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   chatOpenRef.current = chatOpen
   const hubOpenRef = useRef(hubOpen)
   hubOpenRef.current = hubOpen
+  const hubTabRef = useRef<MenuDrawerTab>(hubTab)
+  hubTabRef.current = hubTab
+  const shortcutsOpenRef = useRef(shortcutsOpen)
+  shortcutsOpenRef.current = shortcutsOpen
   const touchModeRef = useRef(touchMode)
   touchModeRef.current = touchMode
   const wardrobeOpenRef = useRef(wardrobeOpen)
   wardrobeOpenRef.current = wardrobeOpen
+  const chatInputRef = useRef<HTMLInputElement | null>(null)
+  const wasLockedBeforeUiRef = useRef<boolean>(false)
   const focusWardrobeCamRef = useRef<() => void>(() => {})
 
   const [mousePrefs, setMousePrefs] = useState(() => loadMousePrefs())
@@ -229,10 +239,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
   // Release pointer lock cleanly whenever any menu/modal opens
   useEffect(() => {
-    if ((hubOpen || wardrobeOpen || feedbackOpen) && document.pointerLockElement) {
+    if ((hubOpen || wardrobeOpen || shortcutsOpen || feedbackOpen) && document.pointerLockElement) {
       document.exitPointerLock?.()
     }
-  }, [hubOpen, wardrobeOpen, feedbackOpen])
+  }, [hubOpen, wardrobeOpen, shortcutsOpen, feedbackOpen])
 
   const touchMoveRef = useRef<{ x: number; y: number; autoSprint: boolean }>({
     x: 0,
@@ -281,6 +291,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     onJumpPadUsed,
     onReachTerrace,
     onEnterObby,
+    onOpenFeedback,
   })
   callbacksRef.current = {
     onChatSent,
@@ -288,6 +299,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     onJumpPadUsed,
     onReachTerrace,
     onEnterObby,
+    onOpenFeedback,
   }
 
   // Track mobile orientation cleanly
@@ -401,6 +413,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   const openLiveWardrobe = useCallback(() => {
     setPreviewAvatar({ ...avatarRef.current })
     setHubOpen(false)
+    setShortcutsOpen(false)
     setChatOpen(false)
     setWardrobeOpen(true)
     focusWardrobeCamRef.current()
@@ -452,7 +465,14 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     (e?: React.FormEvent) => {
       e?.preventDefault()
       const clean = chatInput.trim().slice(0, 140)
-      if (!clean) return
+      if (!clean) {
+        chatInputRef.current?.blur()
+        if (wasLockedBeforeUiRef.current && clickToLockRef.current) {
+          wasLockedBeforeUiRef.current = false
+          lockMouseRef.current()
+        }
+        return
+      }
       const msg: LobbyChatMessage = {
         id: `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         senderId: playerId,
@@ -462,6 +482,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       }
       setMessages((prev) => [...prev.slice(-34), msg])
       setChatInput('')
+      chatInputRef.current?.blur()
       sfx.playChatPop()
       mpRef.current?.broadcastChat(msg, authUserIdRef.current)
       callbacksRef.current.onChatSent()
@@ -471,6 +492,11 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       speechTimeoutRef.current = window.setTimeout(() => {
         localRigRef.current?.setSpeech(null)
       }, 5500)
+
+      if (wasLockedBeforeUiRef.current && clickToLockRef.current) {
+        wasLockedBeforeUiRef.current = false
+        lockMouseRef.current()
+      }
     },
     [chatInput, playerId],
   )
@@ -500,6 +526,138 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       enterGameFullscreenLandscape()
     }
   }, [])
+
+  const shortcutActionsRef = useRef({
+    openChatAndFocus: () => {},
+    toggleWardrobe: () => {},
+    toggleHubTab: (_tab: MenuDrawerTab) => {},
+    toggleShortcuts: () => {},
+    openFeedback: () => {},
+    toggleShiftLockAlign: () => {},
+    toggleWorldTime: () => {},
+    toggleSoundWithToast: () => {},
+    toggleFullscreen: () => {},
+    resetSpawnWithToast: () => {},
+  })
+
+  shortcutActionsRef.current = {
+    openChatAndFocus: () => {
+      if (shiftLockRef.current) {
+        wasLockedBeforeUiRef.current = true
+        document.exitPointerLock?.()
+      }
+      setHubOpen(false)
+      setWardrobeOpen(false)
+      setShortcutsOpen(false)
+      setChatOpen(true)
+      setUnreadCount(0)
+      sfx.playClick()
+      window.setTimeout(() => {
+        chatInputRef.current?.focus()
+      }, 25)
+    },
+    toggleWardrobe: () => {
+      if (wardrobeOpenRef.current) {
+        closeLiveWardrobe()
+        if (wasLockedBeforeUiRef.current && clickToLockRef.current) {
+          wasLockedBeforeUiRef.current = false
+          lockMouseRef.current()
+        }
+      } else {
+        if (shiftLockRef.current) {
+          wasLockedBeforeUiRef.current = true
+        }
+        openLiveWardrobe()
+      }
+    },
+    toggleHubTab: (targetTab: MenuDrawerTab) => {
+      if (hubOpenRef.current && hubTabRef.current === targetTab) {
+        setHubOpen(false)
+        sfx.playClick()
+        if (wasLockedBeforeUiRef.current && clickToLockRef.current) {
+          wasLockedBeforeUiRef.current = false
+          lockMouseRef.current()
+        }
+      } else {
+        if (!hubOpenRef.current && shiftLockRef.current) {
+          wasLockedBeforeUiRef.current = true
+        }
+        setWardrobeOpen(false)
+        setShortcutsOpen(false)
+        setHubTab(targetTab)
+        setHubOpen(true)
+        sfx.playClick()
+      }
+    },
+    toggleShortcuts: () => {
+      if (shortcutsOpenRef.current) {
+        setShortcutsOpen(false)
+        sfx.playClick()
+        if (wasLockedBeforeUiRef.current && clickToLockRef.current) {
+          wasLockedBeforeUiRef.current = false
+          lockMouseRef.current()
+        }
+      } else {
+        if (shiftLockRef.current) {
+          wasLockedBeforeUiRef.current = true
+        }
+        setHubOpen(false)
+        setWardrobeOpen(false)
+        setShortcutsOpen(true)
+        sfx.playClick()
+      }
+    },
+    openFeedback: () => {
+      if (!callbacksRef.current.onOpenFeedback) return
+      if (shiftLockRef.current) {
+        document.exitPointerLock?.()
+      }
+      setHubOpen(false)
+      setShortcutsOpen(false)
+      sfx.playClick()
+      callbacksRef.current.onOpenFeedback(`Lobby Główne (${roomCode})`)
+    },
+    toggleShiftLockAlign: () => {
+      const next = !shiftLockAlignRef.current
+      updateMousePrefs({ shiftLockAlign: next })
+      sfx.playClick()
+      showToast(
+        lang === 'pl'
+          ? `Shift-Lock: ${next ? 'WŁ.' : 'WYŁ.'}`
+          : `Shift-Lock: ${next ? 'ON' : 'OFF'}`,
+      )
+    },
+    toggleWorldTime: () => {
+      const next: WorldTimeMode = worldTimeRef.current === 'day' ? 'night' : 'day'
+      setWorldTime(next)
+      sfx.playClick()
+      showToast(
+        lang === 'pl'
+          ? `Pora dnia: ${next === 'night' ? 'Noc' : 'Dzień'}`
+          : `Time of day: ${next === 'night' ? 'Night' : 'Day'}`,
+      )
+    },
+    toggleSoundWithToast: () => {
+      setSoundEnabled((prev) => {
+        const next = !prev
+        sfx.setEnabled(next)
+        if (next) sfx.playClick()
+        showToast(
+          lang === 'pl'
+            ? `Dźwięki SFX: ${next ? 'WŁ.' : 'WYŁ.'}`
+            : `SFX Audio: ${next ? 'ON' : 'OFF'}`,
+        )
+        return next
+      })
+    },
+    toggleFullscreen: () => {
+      handleToggleFullscreen()
+    },
+    resetSpawnWithToast: () => {
+      resetSpawnActionRef.current()
+      showToast(lang === 'pl' ? 'Powrót na środek placu' : 'Returned to center spawn')
+    },
+  }
 
   useEffect(() => {
     const container = mountRef.current
@@ -1239,11 +1397,132 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     }
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (feedbackOpenRef.current || isTextFieldFocused()) return
+      if (feedbackOpenRef.current) return
       const code = e.code
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(code)) {
+
+      if (code === 'Escape' && isTextFieldFocused()) {
+        e.preventDefault()
+        ;(document.activeElement as HTMLElement | null)?.blur()
+        chatInputFocusedRef.current = false
+        wasLockedBeforeUiRef.current = false
+        sfx.playClick()
+        return
+      }
+
+      if (isTextFieldFocused()) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'F1'].includes(code)) {
         e.preventDefault()
       }
+
+      if (code === 'Escape') {
+        e.preventDefault()
+        wasLockedBeforeUiRef.current = false
+        if (shortcutsOpenRef.current) {
+          setShortcutsOpen(false)
+          sfx.playClick()
+          return
+        }
+        if (wardrobeOpenRef.current) {
+          setWardrobeOpen(false)
+          setPreviewAvatar({ ...avatarRef.current })
+          sfx.playClick()
+          return
+        }
+        if (hubOpenRef.current) {
+          setHubOpen(false)
+          sfx.playClick()
+          return
+        }
+        if (performance.now() - pointerLockReleasedAtRef.current < 220) {
+          return
+        }
+        setHubTab('overview')
+        setHubOpen(true)
+        sfx.playClick()
+        return
+      }
+
+      // Single-key UI shortcuts (all work cleanly even while Mouse Lock is active!)
+      if (!e.repeat) {
+        if (code === 'KeyT' || code === 'Slash') {
+          e.preventDefault()
+          keys.clear()
+          shortcutActionsRef.current.openChatAndFocus()
+          return
+        }
+        if (code === 'KeyI') {
+          e.preventDefault()
+          keys.clear()
+          shortcutActionsRef.current.toggleWardrobe()
+          return
+        }
+        if (code === 'KeyH') {
+          e.preventDefault()
+          keys.clear()
+          shortcutActionsRef.current.toggleHubTab('overview')
+          return
+        }
+        if (code === 'KeyP') {
+          e.preventDefault()
+          keys.clear()
+          shortcutActionsRef.current.toggleHubTab('players')
+          return
+        }
+        if (code === 'KeyO') {
+          e.preventDefault()
+          keys.clear()
+          shortcutActionsRef.current.toggleHubTab('settings')
+          return
+        }
+        if (code === 'KeyB') {
+          e.preventDefault()
+          keys.clear()
+          shortcutActionsRef.current.openFeedback()
+          return
+        }
+        if (code === 'KeyK' || code === 'F1' || e.key === '?') {
+          e.preventDefault()
+          keys.clear()
+          shortcutActionsRef.current.toggleShortcuts()
+          return
+        }
+        if (code === 'Tab' || code === 'KeyM') {
+          e.preventDefault()
+          if (hubOpenRef.current || wardrobeOpenRef.current || shortcutsOpenRef.current) {
+            setHubOpen(false)
+            setWardrobeOpen(false)
+            setShortcutsOpen(false)
+            setPreviewAvatar({ ...avatarRef.current })
+          }
+          toggleShiftLockRef.current()
+          return
+        }
+        if (code === 'KeyL') {
+          shortcutActionsRef.current.toggleShiftLockAlign()
+          return
+        }
+        if (code === 'KeyN') {
+          shortcutActionsRef.current.toggleWorldTime()
+          return
+        }
+        if (code === 'KeyV') {
+          shortcutActionsRef.current.toggleSoundWithToast()
+          return
+        }
+        if (code === 'KeyF') {
+          shortcutActionsRef.current.toggleFullscreen()
+          return
+        }
+        if (code === 'KeyR') {
+          shortcutActionsRef.current.resetSpawnWithToast()
+          return
+        }
+      }
+
+      if (hubOpenRef.current || shortcutsOpenRef.current) return
+
       if (code === 'Space') {
         const activeEl = document.activeElement as HTMLElement | null
         if (activeEl && activeEl.tagName === 'BUTTON') {
@@ -1253,28 +1532,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           jumpQueuedRef.current = true
         }
       }
-      if (code === 'Tab' || code === 'KeyM') {
-        e.preventDefault()
-        toggleShiftLockRef.current()
-        return
-      }
       if (code === 'KeyC') {
         recenterCamRef.current()
-        return
-      }
-      if (code === 'Escape') {
-        e.preventDefault()
-        if (wardrobeOpenRef.current) {
-          setWardrobeOpen(false)
-          setPreviewAvatar({ ...avatarRef.current })
-          sfx.playClick()
-          return
-        }
-        if (performance.now() - pointerLockReleasedAtRef.current < 220) {
-          return
-        }
-        setHubOpen((open) => !open)
-        sfx.playClick()
         return
       }
       keys.add(code)
@@ -1311,6 +1570,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         document.pointerLockElement !== renderer.domElement &&
         !hubOpenRef.current &&
         !wardrobeOpenRef.current &&
+        !shortcutsOpenRef.current &&
         !feedbackOpenRef.current
       ) {
         const activeEl = document.activeElement as HTMLElement | null
@@ -2024,20 +2284,27 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
                 setHubOpen((open) => {
                   const next = !open
                   if (next) {
+                    setHubTab('overview')
                     setWardrobeOpen(false)
+                    setShortcutsOpen(false)
                     if (touchMode) setChatOpen(false)
                   }
                   return next
                 })
                 sfx.playClick()
               }}
-              title="FreshBlox Hub (Esc)"
+              title="FreshBlox Hub (H / Esc)"
               aria-label="FreshBlox Quick Hub"
-              className={`flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+              className={`flex h-8 items-center justify-center gap-1 rounded-xl px-1.5 sm:px-2 transition active:scale-95 cursor-pointer ${
                 hubOpen ? 'bg-sky-500/30 ring-1 ring-sky-300/60' : 'hover:bg-white/10'
               }`}
             >
               <FreshBloxLogo size={23} />
+              {!touchMode && (
+                <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/80">
+                  H
+                </kbd>
+              )}
             </button>
 
             <div className="mx-0.5 h-4 w-[1px] bg-white/15" />
@@ -2050,19 +2317,25 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
                   if (next) {
                     setUnreadCount(0)
                     setHubOpen(false)
+                    setShortcutsOpen(false)
                     if (touchMode) setWardrobeOpen(false)
                   }
                   return next
                 })
                 sfx.playClick()
               }}
-              title={t.chatTitle}
+              title={`${t.chatTitle} (T / /)`}
               className={`relative flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold transition active:scale-95 cursor-pointer ${
                 chatOpen ? 'bg-sky-500/25 text-sky-100' : 'text-sky-100/90 hover:bg-white/10'
               }`}
             >
               <MessageSquare className="h-4 w-4 text-sky-400 shrink-0" />
               <span className="hidden lg:inline">{t.chatTitle}</span>
+              {!touchMode && (
+                <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/80">
+                  T
+                </kbd>
+              )}
               {unreadCount > 0 && !chatOpen && (
                 <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-400 px-1 text-[10px] font-black text-slate-950">
                   {unreadCount}
@@ -2075,9 +2348,13 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           <button
             type="button"
             onClick={() => {
-              setHubOpen((o) => !o)
+              setHubTab('players')
+              setHubOpen((o) => (o && hubTab === 'players' ? false : true))
+              setWardrobeOpen(false)
+              setShortcutsOpen(false)
               sfx.playClick()
             }}
+            title={lang === 'pl' ? 'Gracze w pokoju (P)' : 'Room Players (P)'}
             className="flex h-10 min-w-0 items-center gap-1.5 rounded-2xl border border-white/15 bg-slate-950/75 px-3 text-xs font-bold text-sky-50 shadow-lg backdrop-blur-xl hover:bg-slate-900/90 active:scale-95 transition cursor-pointer"
           >
             <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
@@ -2086,10 +2363,15 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
               <Users className="h-3.5 w-3.5 text-sky-300" />
               {onlineCount}
             </span>
+            {!touchMode && (
+              <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/80">
+                P
+              </kbd>
+            )}
           </button>
         </div>
 
-        {/* Right minimalist cluster: Obby 100 quick jump + Shift-Lock (PC) + Live Wardrobe */}
+        {/* Right minimalist cluster: Obby 100 quick jump + Feedback + Shortcuts + Mouse Lock + Live Wardrobe */}
         <div className="pointer-events-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
           <button
             type="button"
@@ -2111,11 +2393,39 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
                 sfx.playClick()
                 onOpenFeedback(`Lobby Główne (${roomCode})`)
               }}
-              title={lang === 'pl' ? 'Zgłoś błąd lub pomysł' : 'Report bug or idea'}
+              title={lang === 'pl' ? 'Zgłoś błąd lub pomysł (B)' : 'Report bug or idea (B)'}
               className="flex h-9 sm:h-10 items-center gap-1 rounded-2xl border border-white/15 bg-slate-950/75 px-2.5 text-xs font-bold text-sky-100 shadow-lg backdrop-blur-xl hover:bg-slate-900/90 active:scale-95 transition cursor-pointer"
             >
               <MessageSquarePlus className="h-4 w-4 text-sky-300 shrink-0" />
-              <span className="hidden lg:inline">{lang === 'pl' ? 'Zgłoś' : 'Feedback'}</span>
+              <span className="hidden xl:inline">{lang === 'pl' ? 'Zgłoś' : 'Feedback'}</span>
+              {!touchMode && (
+                <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/80">
+                  B
+                </kbd>
+              )}
+            </button>
+          )}
+
+          {!touchMode && (
+            <button
+              type="button"
+              onClick={() => {
+                setHubOpen(false)
+                setWardrobeOpen(false)
+                setShortcutsOpen((v) => !v)
+                sfx.playClick()
+              }}
+              title={lang === 'pl' ? 'Skróty klawiszowe (K / ?)' : 'Keyboard Shortcuts (K / ?)'}
+              className={`hidden sm:flex h-9 sm:h-10 items-center gap-1 rounded-2xl border px-2.5 text-xs font-bold shadow-lg backdrop-blur-xl active:scale-95 transition cursor-pointer ${
+                shortcutsOpen
+                  ? 'border-sky-300/80 bg-sky-500/35 text-white'
+                  : 'border-white/15 bg-slate-950/75 text-sky-100 hover:bg-slate-900/90'
+              }`}
+            >
+              <Keyboard className="h-4 w-4 text-sky-300 shrink-0" />
+              <kbd className="rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/85">
+                K
+              </kbd>
             </button>
           )}
 
@@ -2135,21 +2445,25 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
               }`}
             >
               <Crosshair className={`h-3.5 w-3.5 ${shiftLockActive ? 'text-white' : 'text-sky-300'}`} />
-              <span className="hidden sm:inline">
+              <span className="hidden lg:inline">
                 {shiftLockActive
                   ? lang === 'pl'
-                    ? 'Mysz zablok. · ESC'
-                    : 'Locked · ESC'
+                    ? 'Mysz zablok.'
+                    : 'Locked'
                   : lang === 'pl'
                     ? 'Lock myszy'
                     : 'Mouse Lock'}
               </span>
+              <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-100/90">
+                Tab
+              </kbd>
             </button>
           )}
 
           <button
             type="button"
             onClick={() => (wardrobeOpen ? closeLiveWardrobe() : openLiveWardrobe())}
+            title={`${t.quickAvatar} (I)`}
             className={`flex h-9 sm:h-10 items-center gap-1.5 rounded-2xl border px-2.5 sm:px-3 text-[11px] sm:text-xs font-extrabold shadow-lg backdrop-blur-xl active:scale-95 transition cursor-pointer ${
               wardrobeOpen
                 ? 'border-sky-300/70 bg-sky-500/30 text-white'
@@ -2158,6 +2472,11 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           >
             <Shirt className="h-4 w-4 text-sky-300 shrink-0" />
             <span className="hidden xs:inline sm:inline text-sky-100 font-bold">{t.quickAvatar}</span>
+            {!touchMode && (
+              <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/80">
+                I
+              </kbd>
+            )}
           </button>
         </div>
       </div>
@@ -2181,9 +2500,12 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         />
       )}
 
-      {/* === UPGRADED FRESHBLOX IN-GAME MENU (Logo F / Esc) === */}
+      {/* === UPGRADED FRESHBLOX IN-GAME MENU (Logo F / H / Esc) === */}
       <InGameMenuDrawer
         open={hubOpen}
+        activeTab={hubTab}
+        onTabChange={setHubTab}
+        onOpenShortcuts={() => setShortcutsOpen(true)}
         worldKind="lobby"
         lang={lang}
         roomCode={roomCode}
@@ -2224,6 +2546,26 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         onLeaveToHome={onBackHome}
         onOpenFeedback={() => onOpenFeedback?.(`Lobby Główne (${roomCode})`)}
         onTeleportToMember={(memberId) => teleportToMemberRef.current(memberId)}
+      />
+
+      {/* === PC KEYBOARD SHORTCUTS OVERLAY (K / ?) === */}
+      <ShortcutsOverlayModal
+        open={shortcutsOpen}
+        worldKind="lobby"
+        lang={lang}
+        onClose={() => {
+          setShortcutsOpen(false)
+          wasLockedBeforeUiRef.current = false
+        }}
+        onResumeAndLock={
+          !touchMode && mousePrefs.clickToLock
+            ? () => {
+                setShortcutsOpen(false)
+                wasLockedBeforeUiRef.current = false
+                lockMouseRef.current()
+              }
+            : undefined
+        }
       />
 
       {/* MOBILE PORTRAIT ROTATE + FULLSCREEN HELPER BANNER */}
@@ -2357,6 +2699,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
           <form onSubmit={handleSendChat} className="flex shrink-0 items-center gap-1.5 p-1.5 border-t border-white/10 bg-slate-950/55">
             <input
+              ref={chatInputRef}
               type="text"
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
@@ -2399,15 +2742,15 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
               </button>
             ))}
           </div>
-          <div className="rounded-full bg-slate-950/60 px-3 py-0.5 text-[10px] font-semibold text-sky-100/80 backdrop-blur">
+          <div className="rounded-full bg-slate-950/70 border border-white/10 px-3 py-1 text-[10px] font-semibold text-sky-100/90 backdrop-blur-md">
             {shiftLockActive
               ? lang === 'pl'
-                ? 'Mysz zablokowana · ESC lub Tab aby zwolnić kursor'
-                : 'Mouse locked · Press ESC or Tab to release cursor'
+                ? '[T] Czat · [I] Szatnia · [H] Menu · [P] Gracze · [B] Zgłoś · [L] Shift-Lock · [K] Skróty · [ESC/Tab] Kursor'
+                : '[T] Chat · [I] Wardrobe · [H] Menu · [P] Players · [B] Feedback · [L] Shift-Lock · [K] Shortcuts · [ESC/Tab] Cursor'
               : mousePrefs.clickToLock
                 ? lang === 'pl'
-                  ? 'Kliknij ekran 3D lub Tab/M = Lock myszy (bez przeciągania)'
-                  : 'Click 3D view or Tab/M = Mouse Lock (no dragging)'
+                  ? 'Kliknij 3D lub [Tab/M] = Lock myszy · [T] Czat · [I] Szatnia · [H] Menu · [K] Wszystkie skróty'
+                  : 'Click 3D or [Tab/M] = Mouse Lock · [T] Chat · [I] Wardrobe · [H] Menu · [K] All shortcuts'
                 : t.controlsList}
           </div>
         </div>
