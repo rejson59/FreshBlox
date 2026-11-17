@@ -15,7 +15,6 @@ import {
   Shirt,
   ShoppingBag,
   Smile,
-  Sparkles,
   Sun,
   Trophy,
 } from 'lucide-react'
@@ -586,90 +585,61 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
               )}
 
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center justify-between gap-1.5">
-                  <span className="font-display text-sm font-extrabold leading-tight" style={{ color: tokens.textPrimary }}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate font-display text-sm font-extrabold" style={{ color: tokens.textPrimary }}>
                     {lang === 'pl' ? item.namePl : item.nameEn}
                   </span>
 
                   {isEquipped ? (
                     <span
-                      className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-extrabold text-white"
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white"
                       style={{ background: tokens.buttonGradient }}
+                      title={t.equipped}
                     >
-                      <Check className="h-3 w-3" /> {t.equipped}
+                      <Check className="h-3.5 w-3.5 stroke-[3]" />
                     </span>
                   ) : isTryingOn ? (
-                    <span className="inline-flex items-center gap-1 rounded-lg bg-amber-400 px-2 py-0.5 text-[10px] font-black text-slate-950">
-                      <Eye className="h-3 w-3" /> {t.tryingOn}
-                    </span>
-                  ) : isOwned ? (
                     <span
-                      className="rounded-lg px-2 py-0.5 text-[10px] font-bold"
-                      style={{ background: tokens.badgeBg, color: tokens.badgeText }}
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-slate-950"
+                      title={t.tryingOn}
                     >
-                      {t.equip}
+                      <Eye className="h-3.5 w-3.5" />
                     </span>
-                  ) : isRewardOnly ? (
-                    <span className="inline-flex items-center gap-1 rounded-lg border border-amber-400/50 bg-amber-500/20 px-2 py-0.5 text-[10px] font-extrabold text-amber-300">
+                  ) : isOwned ? null : isRewardOnly ? (
+                    <span
+                      title={lang === 'pl' ? 'Nagroda za Stage 100 w Obby' : 'Stage 100 Obby Reward'}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-amber-400/45 bg-amber-500/18 px-2 py-0.5 font-mono text-[10px] font-extrabold text-amber-300"
+                    >
                       <Trophy className="h-3 w-3" />
-                      {lang === 'pl' ? item.rewardLabelPl : item.rewardLabelEn}
+                      100
+                    </span>
+                  ) : GEMS_SYSTEM_IN_PROGRESS ? (
+                    <span
+                      title={LOCALES[lang].gemsNotice.shopLocked}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-300"
+                    >
+                      <Lock className="h-3 w-3" />
                     </span>
                   ) : (
-                    <span
-                      className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-extrabold"
+                    <button
+                      type="button"
+                      disabled={!canAfford}
+                      onClick={(e) => handleBuyItem(e, category, item.id, item.price)}
+                      className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-extrabold transition cursor-pointer ${
+                        canAfford ? 'text-white hover:brightness-110' : 'opacity-60 cursor-not-allowed'
+                      }`}
                       style={{
-                        background: canAfford ? tokens.badgeBg : 'rgba(244,63,94,0.14)',
-                        color: canAfford ? tokens.badgeText : '#FB7185',
+                        background: canAfford ? tokens.buttonGradient : 'rgba(244,63,94,0.14)',
+                        color: canAfford ? '#FFFFFF' : '#FB7185',
                       }}
                     >
-                      <FreshGemShard size={13} />
+                      <FreshGemShard size={12} />
                       {item.price}
-                    </span>
+                    </button>
                   )}
                 </div>
-                <p className="mt-1 text-[11px] leading-snug" style={{ color: tokens.textSecondary }}>
-                  {lang === 'pl' ? item.descPl : item.descEn}
-                </p>
               </div>
             </div>
-
-            {!isOwned && (
-              <div
-                className="mt-3 pt-2.5 border-t flex items-center justify-between gap-2 text-[11px]"
-                style={{ borderColor: tokens.cardBorder }}
-              >
-                <span className="inline-flex items-center gap-1 font-semibold" style={{ color: isTryingOn ? '#FBBF24' : tokens.textSecondary }}>
-                  <Eye className="h-3.5 w-3.5" />
-                  {isTryingOn ? t.tryingOn : t.tryOnHint}
-                </span>
-
-                {isRewardOnly ? (
-                  <span className="inline-flex items-center gap-1 rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-1 text-[11px] font-extrabold text-amber-300">
-                    <Trophy className="h-3 w-3" />
-                    {lang === 'pl' ? 'Przejdź Obby 100' : 'Beat Obby 100'}
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={!canAfford}
-                    onClick={(e) => handleBuyItem(e, category, item.id, item.price)}
-                    className={`inline-flex items-center gap-1 rounded-xl px-3 py-1 text-[11px] font-extrabold transition cursor-pointer ${
-                      canAfford
-                        ? 'text-white shadow-md hover:brightness-110 active:scale-95'
-                        : 'opacity-80 cursor-not-allowed bg-amber-500/18 text-amber-300'
-                    }`}
-                    style={canAfford ? { background: tokens.buttonGradient } : undefined}
-                  >
-                    {!canAfford && <Lock className="h-3 w-3" />}
-                    {GEMS_SYSTEM_IN_PROGRESS
-                      ? LOCALES[lang].gemsNotice.shopLocked
-                      : canAfford
-                        ? `${t.buy} • ${item.price}`
-                        : t.notEnough}
-                  </button>
-                )}
-              </div>
-            )}
           </div>
         )
       })}
@@ -677,44 +647,28 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
   )
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-5 sm:space-y-6 px-3 py-5 sm:px-6 sm:py-8 overflow-x-clip">
-      {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-3 sm:gap-4">
-        <div className="max-w-2xl min-w-0">
-          <div
-            className="mb-1 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase"
-            style={{ background: tokens.badgeBg, color: tokens.badgeText, borderColor: `${ARCTIC_SKY.skyMain}44` }}
-          >
-            <Sparkles className="h-3 w-3" />
-            <span>{t.tryBannerTitle} • 0% Pay-to-Win</span>
-          </div>
-          <h1 className="font-display text-2xl font-extrabold sm:text-3xl" style={{ color: tokens.textPrimary }}>
-            {t.title}
+    <div className="mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:px-6 sm:py-6 overflow-x-clip">
+      {/* Compact Header */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <Shirt className="h-5 w-5" style={{ color: ARCTIC_SKY.skyMain }} />
+          <h1 className="font-display text-xl font-black sm:text-2xl" style={{ color: tokens.textPrimary }}>
+            {lang === 'pl' ? 'Szatnia R6' : 'R6 Wardrobe'}
           </h1>
-          <p className="mt-1 text-xs sm:text-sm" style={{ color: tokens.textSecondary }}>
-            {t.subtitle}
-          </p>
         </div>
 
-        <div className="flex w-full sm:w-auto flex-col items-stretch sm:items-end gap-1">
-          <button
-            onClick={onEnterLobby}
-            className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-2xl px-5 py-3 text-xs sm:text-sm font-extrabold text-white shadow-lg transition hover:brightness-110 cursor-pointer"
-            style={{ background: tokens.buttonGradient }}
-          >
-            <Play className="h-4 w-4 fill-current shrink-0" />
-            <span>{t.enterWithAvatar}</span>
-          </button>
-          {triedUnowned.length > 0 && (
-            <span className="text-center sm:text-right text-[10px] font-semibold text-amber-400">
-              {t.enterEquippedNote}
-            </span>
-          )}
-        </div>
+        <button
+          onClick={onEnterLobby}
+          className="inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs sm:text-sm font-extrabold text-white shadow-lg transition hover:brightness-110 cursor-pointer"
+          style={{ background: tokens.buttonGradient }}
+        >
+          <Play className="h-3.5 w-3.5 fill-current shrink-0" />
+          <span>{lang === 'pl' ? 'Wejdź do Lobby' : 'Enter Lobby'}</span>
+        </button>
       </div>
 
       {/* Main Split: Clean 3D Locker Terrace + Shop Catalog */}
-      <div className="grid gap-5 sm:gap-6 lg:grid-cols-12">
+      <div className="grid gap-4 sm:gap-5 lg:grid-cols-12">
         {/* Left: 3D Locker Showcase Stage */}
         <div
           className="min-w-0 flex flex-col overflow-hidden rounded-3xl border p-3 lg:col-span-5"
@@ -723,23 +677,23 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
             borderColor: triedUnowned.length > 0 ? 'rgba(245,158,11,0.55)' : `${ARCTIC_SKY.skyMain}44`,
           }}
         >
-          <div className="relative h-[350px] w-full overflow-hidden rounded-2xl sm:h-[430px]">
+          <div className="relative h-[340px] w-full overflow-hidden rounded-2xl sm:h-[410px]">
             <div ref={mountRef} className="h-full w-full cursor-grab active:cursor-grabbing" />
 
             {/* Top-left Status Badge */}
-            <div className="pointer-events-none absolute top-3 left-3 flex flex-wrap items-center gap-1.5">
-              <span className="rounded-full bg-slate-950/70 px-3 py-1 text-[11px] font-bold text-sky-200 border border-sky-400/30 backdrop-blur">
-                Classic R6 (1:1)
+            <div className="pointer-events-none absolute top-3 left-3 flex items-center gap-1.5">
+              <span className="rounded-full bg-slate-950/65 px-2.5 py-0.5 font-mono text-[10px] font-bold text-sky-200 border border-white/15 backdrop-blur">
+                R6
               </span>
               {triedUnowned.length > 0 && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-400 px-2.5 py-1 text-[10px] font-black text-slate-950 shadow-lg">
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-black text-slate-950 shadow">
                   <Eye className="h-3 w-3" />
-                  {t.tryingOn} ({triedUnowned.length})
+                  {triedUnowned.length}
                 </span>
               )}
             </div>
 
-            {/* Top-right Stage Controls (Day/Night + Auto-Rotate) */}
+            {/* Top-right Icon Controls (Day/Night + Auto-Rotate) */}
             <div className="absolute top-3 right-3 flex items-center gap-1.5">
               <button
                 type="button"
@@ -747,32 +701,30 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
                   setStudioLight((s) => (s === 'day' ? 'night' : 'day'))
                   sfx.playClick()
                 }}
-                className="flex items-center gap-1 rounded-xl bg-slate-950/70 px-2.5 py-1.5 text-[11px] font-bold text-sky-100 border border-sky-400/30 backdrop-blur hover:bg-slate-900 cursor-pointer"
+                title={studioLight === 'day' ? t.studioNight : t.studioDay}
+                aria-label="Toggle lighting"
+                className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-950/65 text-sky-100 border border-white/15 backdrop-blur hover:bg-slate-900 cursor-pointer"
               >
                 {studioLight === 'day' ? (
                   <Sun className="h-3.5 w-3.5 text-amber-300" />
                 ) : (
                   <Moon className="h-3.5 w-3.5 text-sky-200" />
                 )}
-                <span>{studioLight === 'day' ? t.studioDay : t.studioNight}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setAutoRotate((r) => !r)}
                 title="Auto-rotate"
+                aria-label="Auto-rotate"
                 className={`flex h-8 w-8 items-center justify-center rounded-xl border backdrop-blur transition cursor-pointer ${
                   autoRotate
                     ? 'bg-sky-500/35 border-sky-300/60 text-white'
-                    : 'bg-slate-950/70 border-slate-500/40 text-slate-300'
+                    : 'bg-slate-950/65 border-white/15 text-slate-300'
                 }`}
               >
                 <RotateCw className="h-3.5 w-3.5" />
               </button>
-            </div>
-
-            <div className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-slate-950/60 px-3 py-1 text-[10px] font-semibold text-white backdrop-blur">
-              {t.dragPreview}
             </div>
           </div>
 
@@ -880,41 +832,41 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
           className="min-w-0 flex flex-col rounded-3xl border p-4 sm:p-5 backdrop-blur-md lg:col-span-7"
           style={{ background: tokens.cardBg, borderColor: tokens.cardBorder }}
         >
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2.5">
-            <div className="flex flex-wrap gap-1.5">
+          <div className="mb-4 flex items-center justify-between gap-2.5">
+            <div className="grid grid-cols-4 gap-1.5 rounded-2xl border p-1" style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg }}>
               {tabs.map((tb) => {
                 const Icon = tb.icon
                 const active = tab === tb.id
                 return (
                   <button
                     key={tb.id}
+                    type="button"
+                    title={tb.label}
+                    aria-label={tb.label}
                     onClick={() => setTab(tb.id)}
-                    className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition cursor-pointer"
+                    className="flex h-9 w-11 sm:w-12 items-center justify-center rounded-xl transition cursor-pointer"
                     style={{
-                      background: active ? tokens.buttonGradient : tokens.mutedBg,
-                      borderColor: active ? 'transparent' : tokens.cardBorder,
+                      background: active ? tokens.buttonGradient : 'transparent',
                       color: active ? '#FFFFFF' : tokens.textSecondary,
                     }}
                   >
-                    <Icon className="h-3.5 w-3.5" />
-                    <span>{tb.label}</span>
+                    <Icon className="h-4 w-4" />
                   </button>
                 )
               })}
             </div>
 
             <div
-              className="flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-extrabold"
+              title={GEMS_SYSTEM_IN_PROGRESS ? LOCALES[lang].gemsNotice.short : `${profile.freshGems} FreshGems`}
+              className="flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-extrabold"
               style={{
-                borderColor: GEMS_SYSTEM_IN_PROGRESS ? 'rgba(245,158,11,0.45)' : `${ARCTIC_SKY.skyMain}55`,
+                borderColor: GEMS_SYSTEM_IN_PROGRESS ? 'rgba(245,158,11,0.4)' : `${ARCTIC_SKY.skyMain}50`,
                 background: GEMS_SYSTEM_IN_PROGRESS ? 'rgba(245,158,11,0.12)' : tokens.badgeBg,
                 color: GEMS_SYSTEM_IN_PROGRESS ? '#FBBF24' : tokens.textPrimary,
               }}
             >
-              <FreshGemShard size={17} />
-              <span>
-                {GEMS_SYSTEM_IN_PROGRESS ? LOCALES[lang].nav.gemsWipPill : profile.freshGems.toLocaleString()}
-              </span>
+              <FreshGemShard size={15} />
+              {GEMS_SYSTEM_IN_PROGRESS ? <Lock className="h-3.5 w-3.5" /> : <span>{profile.freshGems.toLocaleString()}</span>}
             </div>
           </div>
 

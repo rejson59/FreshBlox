@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Home, Box, UserCircle2, Users, Sun, Moon, Globe, Flag, Cloud, LogOut, Loader2, MessageSquarePlus } from 'lucide-react'
+import { Home, Box, UserCircle2, Users, Sun, Moon, Flag, LogOut, Loader2, MessageSquarePlus } from 'lucide-react'
 import { ARCTIC_SKY, getThemeTokens, ThemeMode } from './data/brandTheme'
 import { Lang, LOCALES } from './data/locales'
 import { WorldKind } from './data/catalog'
@@ -120,7 +120,6 @@ export function App() {
   }, [authUser, view])
 
   const tokens = getThemeTokens(mode)
-  const t = LOCALES[lang].nav
   const ta = LOCALES[lang].auth
 
   const handleSignOut = async () => {
@@ -211,11 +210,11 @@ export function App() {
     label: string
     icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>
   }> = [
-    { id: 'home', label: t.home, icon: Home },
-    { id: 'world', label: t.world, icon: Box },
-    { id: 'obby', label: t.obby, icon: Flag },
-    { id: 'avatar', label: t.avatar, icon: UserCircle2 },
-    { id: 'social', label: t.social, icon: Users },
+    { id: 'home', label: lang === 'pl' ? 'Start' : 'Home', icon: Home },
+    { id: 'world', label: 'Lobby', icon: Box },
+    { id: 'obby', label: 'Obby', icon: Flag },
+    { id: 'avatar', label: lang === 'pl' ? 'Awatar' : 'Avatar', icon: UserCircle2 },
+    { id: 'social', label: lang === 'pl' ? 'Profil' : 'Profile', icon: Users },
   ]
 
   return (
@@ -260,83 +259,71 @@ export function App() {
               })}
             </nav>
 
-            {/* Right Controls: Feedback + Signed-in Account Pill + Sign Out + Dark/Light + PL/EN */}
-            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            {/* Right Minimalist Icon Controls */}
+            <div className="flex shrink-0 items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => openFeedback()}
-                className="inline-flex h-7 sm:h-8 items-center gap-1.5 rounded-xl border px-2 sm:px-2.5 text-[11px] sm:text-xs font-extrabold transition hover:scale-105 cursor-pointer"
+                className="flex h-8 w-8 items-center justify-center rounded-xl border transition hover:scale-105 cursor-pointer"
                 style={{
-                  borderColor: `${ARCTIC_SKY.skyMain}52`,
-                  background: `${ARCTIC_SKY.skyMain}18`,
-                  color: tokens.textPrimary,
+                  borderColor: `${ARCTIC_SKY.skyMain}45`,
+                  background: `${ARCTIC_SKY.skyMain}15`,
+                  color: ARCTIC_SKY.skyMain,
                 }}
-                title={lang === 'pl' ? 'Zgłoś błąd lub pomysł na aktualizację' : 'Report a bug or suggest an idea'}
+                title={lang === 'pl' ? 'Zgłoś błąd / pomysł' : 'Feedback'}
+                aria-label={lang === 'pl' ? 'Zgłoś' : 'Feedback'}
               >
-                <MessageSquarePlus className="h-3.5 w-3.5 shrink-0" style={{ color: ARCTIC_SKY.skyMain }} />
-                <span className="hidden md:inline">{lang === 'pl' ? 'Zgłoś / Pomysły' : 'Feedback'}</span>
+                <MessageSquarePlus className="h-4 w-4" />
               </button>
 
               <button
                 onClick={() => navigateView('social')}
-                className="flex items-center gap-1.5 rounded-xl border px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-xs font-extrabold transition hover:scale-105 cursor-pointer"
+                className="flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-extrabold transition hover:scale-105 cursor-pointer"
                 style={{
-                  borderColor: 'rgba(52, 211, 153, 0.45)',
-                  background: tokens.badgeBg,
+                  borderColor: tokens.cardBorder,
+                  background: tokens.cardBg,
                   color: tokens.textPrimary,
                 }}
                 title={profile.username}
               >
-                <Cloud className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                <span className="max-w-[74px] sm:max-w-[110px] truncate">{profile.username}</span>
+                <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+                <span className="max-w-[78px] sm:max-w-[110px] truncate">{profile.username}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMode((m) => (m === 'dark' ? 'light' : 'dark'))}
+                className="flex h-8 w-8 items-center justify-center rounded-xl border transition hover:scale-105 cursor-pointer"
+                style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg, color: tokens.textPrimary }}
+                title={mode === 'dark' ? 'Light mode' : 'Dark mode'}
+                aria-label="Toggle theme"
+              >
+                {mode === 'dark' ? (
+                  <Sun className="h-3.5 w-3.5 text-amber-300" />
+                ) : (
+                  <Moon className="h-3.5 w-3.5 text-sky-600" />
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setLang((l) => (l === 'pl' ? 'en' : 'pl'))}
+                className="flex h-8 min-w-8 items-center justify-center rounded-xl border px-2 font-mono text-[11px] font-extrabold transition hover:scale-105 cursor-pointer"
+                style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg, color: tokens.textPrimary }}
+                title="Language"
+              >
+                {lang.toUpperCase()}
               </button>
 
               <button
                 type="button"
                 onClick={() => void handleSignOut()}
-                className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-xl border transition hover:bg-rose-500/15 hover:text-rose-400 cursor-pointer"
+                className="flex h-8 w-8 items-center justify-center rounded-xl border transition hover:bg-rose-500/15 hover:text-rose-400 cursor-pointer"
                 style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg, color: tokens.textSecondary }}
                 title={ta.logout}
                 aria-label={ta.logout}
               >
                 <LogOut className="h-3.5 w-3.5" />
-              </button>
-
-              <div
-                className="flex items-center rounded-xl border p-0.5"
-                style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg }}
-              >
-                <button
-                  onClick={() => setMode('dark')}
-                  className="flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-lg transition cursor-pointer"
-                  style={{
-                    background: mode === 'dark' ? tokens.buttonGradient : 'transparent',
-                    color: mode === 'dark' ? '#FFFFFF' : tokens.textSecondary,
-                  }}
-                  aria-label="Dark mode"
-                >
-                  <Moon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-                </button>
-                <button
-                  onClick={() => setMode('light')}
-                  className="flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-lg transition cursor-pointer"
-                  style={{
-                    background: mode === 'light' ? tokens.buttonGradient : 'transparent',
-                    color: mode === 'light' ? '#FFFFFF' : tokens.textSecondary,
-                  }}
-                  aria-label="Light mode"
-                >
-                  <Sun className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-                </button>
-              </div>
-
-              <button
-                onClick={() => setLang((l) => (l === 'pl' ? 'en' : 'pl'))}
-                className="inline-flex items-center gap-1 rounded-xl border px-1.5 sm:px-2.5 py-1 sm:py-1.5 text-[11px] sm:text-xs font-bold transition hover:scale-105 cursor-pointer"
-                style={{ borderColor: tokens.cardBorder, background: tokens.cardBg, color: tokens.textPrimary }}
-              >
-                <Globe className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" style={{ color: ARCTIC_SKY.skyMain }} />
-                <span>{lang.toUpperCase()}</span>
               </button>
             </div>
           </div>

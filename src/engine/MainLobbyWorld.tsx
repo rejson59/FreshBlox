@@ -5,9 +5,13 @@ import {
   Armchair,
   Crosshair,
   Flag,
+  Hand,
   Keyboard,
   MessageSquare,
   MessageSquarePlus,
+  Music,
+  PartyPopper,
+  RefreshCw,
   RotateCw,
   Send,
   Shirt,
@@ -2245,13 +2249,18 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     }
   }, [roomCode, playerId, lang, showToast, t.terraceUnlocked, triggerEmote])
 
-  const emotesList: Array<{ key: string; pose: PlayerPose; label: string }> = [
-    { key: '1', pose: 'wave', label: t.emotes.wave },
-    { key: '2', pose: 'dance', label: t.emotes.dance },
-    { key: '3', pose: 'cheer', label: t.emotes.cheer },
-    { key: '4', pose: 'sit', label: t.emotes.sit },
-    { key: '5', pose: 'spin', label: t.emotes.spin },
-    { key: '6', pose: 'backflip', label: t.emotes.backflip },
+  const emotesList: Array<{
+    key: string
+    pose: PlayerPose
+    label: string
+    icon: React.ComponentType<{ className?: string }>
+  }> = [
+    { key: '1', pose: 'wave', label: t.emotes.wave, icon: Hand },
+    { key: '2', pose: 'dance', label: t.emotes.dance, icon: Music },
+    { key: '3', pose: 'cheer', label: t.emotes.cheer, icon: PartyPopper },
+    { key: '4', pose: 'sit', label: t.emotes.sit, icon: Armchair },
+    { key: '5', pose: 'spin', label: t.emotes.spin, icon: RefreshCw },
+    { key: '6', pose: 'backflip', label: t.emotes.backflip, icon: Sparkles },
   ]
 
   return (
@@ -2266,85 +2275,82 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       {/* 3D Canvas Host */}
       <div ref={mountRef} className="h-full w-full cursor-grab active:cursor-grabbing" style={{ touchAction: 'none' }} />
 
-      {/* === ULTRA-CLEAN SINGLE-ROW TOP HUD BAR (Adapts to every screen width & height!) === */}
+      {/* === MINIMALIST ICON-FIRST TOP HUD === */}
       <div
-        className="pointer-events-none absolute top-0 inset-x-0 z-20 flex flex-nowrap items-center justify-between gap-1.5 sm:gap-2"
+        className="pointer-events-none absolute top-0 inset-x-0 z-20 flex flex-nowrap items-center justify-between gap-2"
         style={{
           paddingTop: 'max(0.5rem, calc(env(safe-area-inset-top) + 0.35rem))',
           paddingLeft: 'max(0.6rem, calc(env(safe-area-inset-left) + 0.4rem))',
           paddingRight: 'max(0.6rem, calc(env(safe-area-inset-right) + 0.4rem))',
         }}
       >
-        {/* Left integrated cluster: Official FreshBlox Logo Button (opens Quick Hub) + Chat + Room Pill */}
-        <div className="pointer-events-auto flex min-w-0 items-center gap-1 sm:gap-1.5">
-          <div className="flex h-9 sm:h-10 items-center rounded-2xl border border-white/15 bg-slate-950/75 p-0.5 sm:p-1 shadow-lg backdrop-blur-xl">
-            <button
-              type="button"
-              onClick={() => {
-                setHubOpen((open) => {
-                  const next = !open
-                  if (next) {
-                    setHubTab('overview')
-                    setWardrobeOpen(false)
-                    setShortcutsOpen(false)
-                    if (touchMode) setChatOpen(false)
-                  }
-                  return next
-                })
-                sfx.playClick()
-              }}
-              title="FreshBlox Hub (H / Esc)"
-              aria-label="FreshBlox Quick Hub"
-              className={`flex h-8 items-center justify-center gap-1 rounded-xl px-1.5 sm:px-2 transition active:scale-95 cursor-pointer ${
-                hubOpen ? 'bg-sky-500/30 ring-1 ring-sky-300/60' : 'hover:bg-white/10'
-              }`}
-            >
-              <FreshBloxLogo size={23} />
-              {!touchMode && (
-                <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/80">
-                  H
-                </kbd>
-              )}
-            </button>
+        {/* Left glass dock: Menu (H) · Chat (T) · Players (P) */}
+        <div className="pointer-events-auto flex h-10 items-center gap-0.5 rounded-2xl border border-white/15 bg-slate-950/70 p-1 shadow-lg backdrop-blur-xl">
+          <button
+            type="button"
+            onClick={() => {
+              setHubOpen((open) => {
+                const next = !open
+                if (next) {
+                  setHubTab('overview')
+                  setWardrobeOpen(false)
+                  setShortcutsOpen(false)
+                  if (touchMode) setChatOpen(false)
+                }
+                return next
+              })
+              sfx.playClick()
+            }}
+            title="Menu (H / Esc)"
+            aria-label="Menu"
+            className={`relative flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+              hubOpen ? 'bg-sky-500/35 ring-1 ring-sky-300/60' : 'hover:bg-white/10'
+            }`}
+          >
+            <FreshBloxLogo size={22} />
+            {!touchMode && (
+              <span className="pointer-events-none absolute right-0.5 bottom-0.5 font-mono text-[8px] font-black leading-none text-sky-200/80">
+                H
+              </span>
+            )}
+          </button>
 
-            <div className="mx-0.5 h-4 w-[1px] bg-white/15" />
+          <button
+            type="button"
+            onClick={() => {
+              setChatOpen((open) => {
+                const next = !open
+                if (next) {
+                  setUnreadCount(0)
+                  setHubOpen(false)
+                  setShortcutsOpen(false)
+                  if (touchMode) setWardrobeOpen(false)
+                }
+                return next
+              })
+              sfx.playClick()
+            }}
+            title={`${t.chatTitle} (T)`}
+            aria-label={t.chatTitle}
+            className={`relative flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+              chatOpen ? 'bg-sky-500/30 text-white' : 'text-sky-100/90 hover:bg-white/10'
+            }`}
+          >
+            <MessageSquare className="h-4 w-4 text-sky-300" />
+            {!touchMode && (
+              <span className="pointer-events-none absolute right-0.5 bottom-0.5 font-mono text-[8px] font-black leading-none text-sky-200/75">
+                T
+              </span>
+            )}
+            {unreadCount > 0 && !chatOpen && (
+              <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-400 px-1 text-[9px] font-black text-slate-950">
+                {unreadCount}
+              </span>
+            )}
+          </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setChatOpen((open) => {
-                  const next = !open
-                  if (next) {
-                    setUnreadCount(0)
-                    setHubOpen(false)
-                    setShortcutsOpen(false)
-                    if (touchMode) setWardrobeOpen(false)
-                  }
-                  return next
-                })
-                sfx.playClick()
-              }}
-              title={`${t.chatTitle} (T / /)`}
-              className={`relative flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold transition active:scale-95 cursor-pointer ${
-                chatOpen ? 'bg-sky-500/25 text-sky-100' : 'text-sky-100/90 hover:bg-white/10'
-              }`}
-            >
-              <MessageSquare className="h-4 w-4 text-sky-400 shrink-0" />
-              <span className="hidden lg:inline">{t.chatTitle}</span>
-              {!touchMode && (
-                <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/80">
-                  T
-                </kbd>
-              )}
-              {unreadCount > 0 && !chatOpen && (
-                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-400 px-1 text-[10px] font-black text-slate-950">
-                  {unreadCount}
-                </span>
-              )}
-            </button>
-          </div>
+          <div className="mx-0.5 h-4 w-[1px] bg-white/15" />
 
-          {/* Room badge — tap to open Players & Invite in FreshHub */}
           <button
             type="button"
             onClick={() => {
@@ -2354,37 +2360,77 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
               setShortcutsOpen(false)
               sfx.playClick()
             }}
-            title={lang === 'pl' ? 'Gracze w pokoju (P)' : 'Room Players (P)'}
-            className="flex h-10 min-w-0 items-center gap-1.5 rounded-2xl border border-white/15 bg-slate-950/75 px-3 text-xs font-bold text-sky-50 shadow-lg backdrop-blur-xl hover:bg-slate-900/90 active:scale-95 transition cursor-pointer"
+            title={`#${roomCode} · ${lang === 'pl' ? 'Gracze' : 'Players'} (P)`}
+            aria-label={lang === 'pl' ? 'Gracze' : 'Players'}
+            className="relative flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs font-extrabold text-sky-100 hover:bg-white/10 active:scale-95 transition cursor-pointer"
           >
-            <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
-            <span className="truncate font-mono text-[11px] sm:text-xs text-sky-200">{roomCode}</span>
-            <span className="flex shrink-0 items-center gap-1 border-l border-white/15 pl-1.5 text-[11px] text-sky-100/85">
-              <Users className="h-3.5 w-3.5 text-sky-300" />
-              {onlineCount}
-            </span>
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            <Users className="h-3.5 w-3.5 text-sky-300" />
+            <span className="font-mono text-[11px]">{onlineCount}</span>
             {!touchMode && (
-              <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/80">
-                P
-              </kbd>
+              <span className="font-mono text-[8px] font-black text-sky-200/65">P</span>
             )}
           </button>
         </div>
 
-        {/* Right minimalist cluster: Obby 100 quick jump + Feedback + Shortcuts + Mouse Lock + Live Wardrobe */}
-        <div className="pointer-events-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
+        {/* Right glass dock: Obby · Wardrobe (I) · Mouse Lock (Tab) · Feedback (B) · Shortcuts (K) */}
+        <div className="pointer-events-auto flex h-10 items-center gap-0.5 rounded-2xl border border-white/15 bg-slate-950/70 p-1 shadow-lg backdrop-blur-xl">
           <button
             type="button"
             onClick={() => {
               sfx.playClick()
               onEnterObby()
             }}
-            className="flex h-9 sm:h-10 items-center gap-1 sm:gap-1.5 rounded-2xl border border-amber-300/45 bg-slate-950/75 px-2.5 sm:px-3 text-[11px] sm:text-xs font-extrabold text-amber-200 shadow-lg backdrop-blur-xl hover:bg-slate-900/90 active:scale-95 transition cursor-pointer"
+            title="Test Obby 100"
+            aria-label="Test Obby 100"
+            className="flex h-8 items-center gap-1 rounded-xl bg-amber-500/18 px-2.5 text-[11px] font-extrabold text-amber-200 hover:bg-amber-500/30 active:scale-95 transition cursor-pointer"
           >
             <Flag className="h-3.5 w-3.5 text-amber-300 shrink-0" />
-            <span className="sm:hidden">Obby</span>
-            <span className="hidden sm:inline">Test Obby 100</span>
+            <span className="hidden sm:inline">Obby</span>
           </button>
+
+          <div className="mx-0.5 h-4 w-[1px] bg-white/15" />
+
+          <button
+            type="button"
+            onClick={() => (wardrobeOpen ? closeLiveWardrobe() : openLiveWardrobe())}
+            title={`${t.quickAvatar} (I)`}
+            aria-label={t.quickAvatar}
+            className={`relative flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+              wardrobeOpen ? 'bg-sky-500/40 text-white ring-1 ring-sky-300/60' : 'text-sky-100 hover:bg-white/10'
+            }`}
+          >
+            <Shirt className="h-4 w-4 text-sky-300" />
+            {!touchMode && (
+              <span className="pointer-events-none absolute right-0.5 bottom-0.5 font-mono text-[8px] font-black leading-none text-sky-200/75">
+                I
+              </span>
+            )}
+          </button>
+
+          {!touchMode && (
+            <button
+              type="button"
+              onClick={() => toggleShiftLockRef.current()}
+              title={
+                shiftLockActive
+                  ? lang === 'pl'
+                    ? 'Zwolnij mysz (Tab / Esc)'
+                    : 'Release mouse (Tab / Esc)'
+                  : lang === 'pl'
+                    ? 'Lock myszy (Tab / M)'
+                    : 'Mouse Lock (Tab / M)'
+              }
+              aria-label="Mouse Lock"
+              className={`relative flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+                shiftLockActive
+                  ? 'bg-sky-400 text-slate-950 shadow'
+                  : 'text-sky-100 hover:bg-white/10'
+              }`}
+            >
+              <Crosshair className={`h-4 w-4 ${shiftLockActive ? 'text-slate-950' : 'text-sky-300'}`} />
+            </button>
+          )}
 
           {onOpenFeedback && (
             <button
@@ -2393,15 +2439,15 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
                 sfx.playClick()
                 onOpenFeedback(`Lobby Główne (${roomCode})`)
               }}
-              title={lang === 'pl' ? 'Zgłoś błąd lub pomysł (B)' : 'Report bug or idea (B)'}
-              className="flex h-9 sm:h-10 items-center gap-1 rounded-2xl border border-white/15 bg-slate-950/75 px-2.5 text-xs font-bold text-sky-100 shadow-lg backdrop-blur-xl hover:bg-slate-900/90 active:scale-95 transition cursor-pointer"
+              title={lang === 'pl' ? 'Zgłoś błąd / pomysł (B)' : 'Feedback (B)'}
+              aria-label={lang === 'pl' ? 'Zgłoś' : 'Feedback'}
+              className="relative flex h-8 w-9 items-center justify-center rounded-xl text-sky-100 hover:bg-white/10 active:scale-95 transition cursor-pointer"
             >
-              <MessageSquarePlus className="h-4 w-4 text-sky-300 shrink-0" />
-              <span className="hidden xl:inline">{lang === 'pl' ? 'Zgłoś' : 'Feedback'}</span>
+              <MessageSquarePlus className="h-4 w-4 text-sky-300" />
               {!touchMode && (
-                <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/80">
+                <span className="pointer-events-none absolute right-0.5 bottom-0.5 font-mono text-[8px] font-black leading-none text-sky-200/75">
                   B
-                </kbd>
+                </span>
               )}
             </button>
           )}
@@ -2415,69 +2461,18 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
                 setShortcutsOpen((v) => !v)
                 sfx.playClick()
               }}
-              title={lang === 'pl' ? 'Skróty klawiszowe (K / ?)' : 'Keyboard Shortcuts (K / ?)'}
-              className={`hidden sm:flex h-9 sm:h-10 items-center gap-1 rounded-2xl border px-2.5 text-xs font-bold shadow-lg backdrop-blur-xl active:scale-95 transition cursor-pointer ${
-                shortcutsOpen
-                  ? 'border-sky-300/80 bg-sky-500/35 text-white'
-                  : 'border-white/15 bg-slate-950/75 text-sky-100 hover:bg-slate-900/90'
+              title={lang === 'pl' ? 'Skróty klawiszowe (K)' : 'Shortcuts (K)'}
+              aria-label="Shortcuts"
+              className={`relative hidden sm:flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+                shortcutsOpen ? 'bg-sky-500/40 text-white' : 'text-sky-100 hover:bg-white/10'
               }`}
             >
-              <Keyboard className="h-4 w-4 text-sky-300 shrink-0" />
-              <kbd className="rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/85">
+              <Keyboard className="h-4 w-4 text-sky-300" />
+              <span className="pointer-events-none absolute right-0.5 bottom-0.5 font-mono text-[8px] font-black leading-none text-sky-200/75">
                 K
-              </kbd>
-            </button>
-          )}
-
-          {!touchMode && (
-            <button
-              type="button"
-              onClick={() => toggleShiftLockRef.current()}
-              title={
-                lang === 'pl'
-                  ? 'Lock myszy (Klik / Tab / M — obrót kamery bez przeciągania)'
-                  : 'Mouse Lock (Click / Tab / M — look without dragging)'
-              }
-              className={`flex h-9 sm:h-10 items-center gap-1.5 rounded-2xl border px-2.5 text-xs font-extrabold shadow-lg backdrop-blur-xl transition cursor-pointer ${
-                shiftLockActive
-                  ? 'border-sky-300/80 bg-sky-500/40 text-white ring-1 ring-sky-300/40'
-                  : 'border-white/15 bg-slate-950/75 text-sky-100 hover:bg-slate-900/90'
-              }`}
-            >
-              <Crosshair className={`h-3.5 w-3.5 ${shiftLockActive ? 'text-white' : 'text-sky-300'}`} />
-              <span className="hidden lg:inline">
-                {shiftLockActive
-                  ? lang === 'pl'
-                    ? 'Mysz zablok.'
-                    : 'Locked'
-                  : lang === 'pl'
-                    ? 'Lock myszy'
-                    : 'Mouse Lock'}
               </span>
-              <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-100/90">
-                Tab
-              </kbd>
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={() => (wardrobeOpen ? closeLiveWardrobe() : openLiveWardrobe())}
-            title={`${t.quickAvatar} (I)`}
-            className={`flex h-9 sm:h-10 items-center gap-1.5 rounded-2xl border px-2.5 sm:px-3 text-[11px] sm:text-xs font-extrabold shadow-lg backdrop-blur-xl active:scale-95 transition cursor-pointer ${
-              wardrobeOpen
-                ? 'border-sky-300/70 bg-sky-500/30 text-white'
-                : 'border-white/15 bg-slate-950/75 text-sky-50 hover:bg-slate-900/90'
-            }`}
-          >
-            <Shirt className="h-4 w-4 text-sky-300 shrink-0" />
-            <span className="hidden xs:inline sm:inline text-sky-100 font-bold">{t.quickAvatar}</span>
-            {!touchMode && (
-              <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/80">
-                I
-              </kbd>
-            )}
-          </button>
         </div>
       </div>
 
@@ -2723,35 +2718,37 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         </div>
       )}
 
-      {/* DESKTOP EMOTE BAR & MOUSE LOCK HINT (hidden while Live Wardrobe is open) */}
+      {/* DESKTOP MINIMALIST ICON EMOTE DOCK (hidden while Live Wardrobe is open) */}
       {!touchMode && !wardrobeOpen && (
         <div className="pointer-events-none absolute bottom-4 right-4 hidden sm:flex flex-col items-end gap-1.5 z-10">
-          <div className="pointer-events-auto flex flex-wrap justify-end gap-1.5 rounded-2xl bg-slate-950/75 p-2 border border-white/15 backdrop-blur-xl shadow-2xl">
-            {emotesList.map((em) => (
-              <button
-                key={em.key}
-                onClick={() => triggerEmote(em.pose)}
-                className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-bold transition cursor-pointer ${
-                  activeEmote === em.pose
-                    ? 'bg-sky-400 text-slate-950 shadow-md'
-                    : 'bg-white/8 text-sky-100 hover:bg-white/15'
-                }`}
-              >
-                <span className="rounded bg-black/25 px-1.5 py-0.5 font-mono text-[10px]">{em.key}</span>
-                <span>{em.label}</span>
-              </button>
-            ))}
-          </div>
-          <div className="rounded-full bg-slate-950/70 border border-white/10 px-3 py-1 text-[10px] font-semibold text-sky-100/90 backdrop-blur-md">
-            {shiftLockActive
-              ? lang === 'pl'
-                ? '[T] Czat · [I] Szatnia · [H] Menu · [P] Gracze · [B] Zgłoś · [L] Shift-Lock · [K] Skróty · [ESC/Tab] Kursor'
-                : '[T] Chat · [I] Wardrobe · [H] Menu · [P] Players · [B] Feedback · [L] Shift-Lock · [K] Shortcuts · [ESC/Tab] Cursor'
-              : mousePrefs.clickToLock
-                ? lang === 'pl'
-                  ? 'Kliknij 3D lub [Tab/M] = Lock myszy · [T] Czat · [I] Szatnia · [H] Menu · [K] Wszystkie skróty'
-                  : 'Click 3D or [Tab/M] = Mouse Lock · [T] Chat · [I] Wardrobe · [H] Menu · [K] All shortcuts'
-                : t.controlsList}
+          <div className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/15 bg-slate-950/70 p-1.5 backdrop-blur-xl shadow-2xl">
+            {emotesList.map((em) => {
+              const Icon = em.icon
+              const isActive = activeEmote === em.pose
+              return (
+                <button
+                  key={em.key}
+                  type="button"
+                  onClick={() => triggerEmote(em.pose)}
+                  title={`${em.label} (${em.key})`}
+                  aria-label={em.label}
+                  className={`relative flex h-9 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+                    isActive
+                      ? 'bg-sky-400 text-slate-950 shadow-md'
+                      : 'bg-white/[0.06] text-sky-100 hover:bg-white/15'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span
+                    className={`pointer-events-none absolute top-0.5 left-1 font-mono text-[8px] font-black leading-none ${
+                      isActive ? 'text-slate-950/80' : 'text-sky-300/75'
+                    }`}
+                  >
+                    {em.key}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         </div>
       )}

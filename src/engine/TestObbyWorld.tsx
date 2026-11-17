@@ -2,22 +2,28 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import {
+  Armchair,
   Check,
   ChevronLeft,
   ChevronRight,
   Crosshair,
   Crown,
   Flag,
+  Hand,
   Home,
   Keyboard,
   Maximize2,
   MessageSquare,
   MessageSquarePlus,
+  Music,
+  PartyPopper,
+  RefreshCw,
   RotateCcw,
   Send,
   Shirt,
   Sparkles,
   Trophy,
+  Users,
 } from 'lucide-react'
 import {
   FaceId,
@@ -2685,166 +2691,219 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       {/* 3D WebGL Canvas */}
       <div ref={mountRef} className="h-full w-full touch-none" />
 
-      {/* === TOP HUD BAR (Zero-clipping across all mobile portrait, landscape & desktop viewports!) === */}
+      {/* === MINIMALIST ICON-FIRST TOP HUD === */}
       <div
-        className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-1.5 sm:gap-2"
+        className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-1.5 sm:gap-2"
         style={{
-          paddingTop: 'max(0.45rem, calc(env(safe-area-inset-top) + 0.3rem))',
-          paddingLeft: 'max(0.55rem, calc(env(safe-area-inset-left) + 0.35rem))',
-          paddingRight: 'max(0.55rem, calc(env(safe-area-inset-right) + 0.35rem))',
+          paddingTop: 'max(0.5rem, calc(env(safe-area-inset-top) + 0.35rem))',
+          paddingLeft: 'max(0.6rem, calc(env(safe-area-inset-left) + 0.4rem))',
+          paddingRight: 'max(0.6rem, calc(env(safe-area-inset-right) + 0.4rem))',
         }}
       >
-        {/* Left: FreshBlox Quick Hub + Chat toggle */}
-        <div className="pointer-events-auto flex items-center gap-1.5">
-          <div className="flex items-center gap-1 rounded-2xl border border-white/15 bg-slate-950/65 p-1 backdrop-blur-xl shadow-lg">
-            <button
-              type="button"
-              onClick={() => {
-                setHubOpen((open) => {
-                  const next = !open
-                  if (next) {
-                    setHubTab('overview')
-                    setWardrobeOpen(false)
-                    setShortcutsOpen(false)
-                    if (touchMode) setChatOpen(false)
-                  }
-                  return next
-                })
-                sfx.playClick()
-              }}
-              title="FreshBlox Hub (H / Esc)"
-              className={`flex h-8 items-center justify-center gap-1 rounded-xl px-1.5 sm:px-2 transition active:scale-95 cursor-pointer ${
-                hubOpen ? 'bg-sky-500/30 ring-1 ring-sky-300/60' : 'hover:bg-white/10'
-              }`}
-            >
-              <FreshBloxLogo size={23} />
-              {!touchMode && (
-                <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/80">
-                  H
-                </kbd>
-              )}
-            </button>
+        {/* Left glass dock: Menu (H) · Chat (T) · Players (P) */}
+        <div className="pointer-events-auto flex h-10 items-center gap-0.5 rounded-2xl border border-white/15 bg-slate-950/70 p-1 shadow-lg backdrop-blur-xl">
+          <button
+            type="button"
+            onClick={() => {
+              setHubOpen((open) => {
+                const next = !open
+                if (next) {
+                  setHubTab('overview')
+                  setWardrobeOpen(false)
+                  setShortcutsOpen(false)
+                  if (touchMode) setChatOpen(false)
+                }
+                return next
+              })
+              sfx.playClick()
+            }}
+            title="Menu (H / Esc)"
+            aria-label="Menu"
+            className={`relative flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+              hubOpen ? 'bg-sky-500/35 ring-1 ring-sky-300/60' : 'hover:bg-white/10'
+            }`}
+          >
+            <FreshBloxLogo size={22} />
+            {!touchMode && (
+              <span className="pointer-events-none absolute right-0.5 bottom-0.5 font-mono text-[8px] font-black leading-none text-sky-200/80">
+                H
+              </span>
+            )}
+          </button>
 
-            <div className="mx-0.5 h-4 w-[1px] bg-white/15" />
+          <button
+            type="button"
+            onClick={() => {
+              setChatOpen((open) => {
+                const next = !open
+                if (next) {
+                  setUnreadCount(0)
+                  setHubOpen(false)
+                  setShortcutsOpen(false)
+                  if (touchMode) setWardrobeOpen(false)
+                }
+                return next
+              })
+              sfx.playClick()
+            }}
+            title={`${t.chatTitle} (T)`}
+            aria-label={t.chatTitle}
+            className={`relative flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+              chatOpen ? 'bg-sky-500/30 text-white' : 'text-sky-100 hover:bg-white/10'
+            }`}
+          >
+            <MessageSquare className="h-4 w-4 text-sky-300" />
+            {!touchMode && (
+              <span className="pointer-events-none absolute right-0.5 bottom-0.5 font-mono text-[8px] font-black leading-none text-sky-200/75">
+                T
+              </span>
+            )}
+            {unreadCount > 0 && !chatOpen && (
+              <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white">
+                {unreadCount}
+              </span>
+            )}
+          </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setChatOpen((open) => {
-                  const next = !open
-                  if (next) {
-                    setUnreadCount(0)
-                    setHubOpen(false)
-                    setShortcutsOpen(false)
-                    if (touchMode) setWardrobeOpen(false)
-                  }
-                  return next
-                })
-                sfx.playClick()
-              }}
-              title={`${t.chatTitle} (T / /)`}
-              className={`relative flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold transition active:scale-95 cursor-pointer ${
-                chatOpen ? 'bg-sky-500/28 text-white ring-1 ring-sky-300/50' : 'text-sky-100 hover:bg-white/10'
-              }`}
-            >
-              <MessageSquare className="h-4 w-4 text-sky-300" />
-              <span className="hidden lg:inline">{t.chatTitle}</span>
-              {!touchMode && (
-                <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/80">
-                  T
-                </kbd>
-              )}
-              {unreadCount > 0 && !chatOpen && (
-                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white">
-                  {unreadCount}
-                </span>
-              )}
-            </button>
+          <div className="mx-0.5 hidden sm:block h-4 w-[1px] bg-white/15" />
+
+          <button
+            type="button"
+            onClick={() => {
+              setHubTab('players')
+              setHubOpen((o) => (o && hubTab === 'players' ? false : true))
+              setWardrobeOpen(false)
+              setShortcutsOpen(false)
+              sfx.playClick()
+            }}
+            title={`#${roomCode} · ${lang === 'pl' ? 'Gracze' : 'Players'} (P)`}
+            aria-label={lang === 'pl' ? 'Gracze' : 'Players'}
+            className="hidden sm:flex h-8 items-center gap-1 rounded-xl px-2 text-xs font-extrabold text-sky-100 hover:bg-white/10 active:scale-95 transition cursor-pointer"
+          >
+            <Users className="h-3.5 w-3.5 text-sky-300" />
+            <span className="font-mono text-[11px]">{onlineCount}</span>
+            {!touchMode && (
+              <span className="font-mono text-[8px] font-black text-sky-200/65">P</span>
+            )}
+          </button>
+        </div>
+
+        {/* Center: Clean single-row Stage pill with thin integrated progress bar */}
+        <div
+          className="pointer-events-auto relative flex h-10 items-center gap-1 sm:gap-1.5 overflow-hidden rounded-2xl border border-white/15 bg-slate-950/75 px-1.5 sm:px-2 text-white shadow-lg backdrop-blur-xl"
+          title={`${stageTitle} · ${lang === 'pl' ? currentZone.namePl : currentZone.nameEn} (${
+            lang === 'pl' ? currentZone.difficultyPl : currentZone.difficultyEn
+          })`}
+        >
+          <button
+            type="button"
+            disabled={currentStage <= 1}
+            onClick={() => jumpToStage(currentStage - 1)}
+            className="flex h-7 w-7 items-center justify-center rounded-xl hover:bg-white/15 disabled:opacity-25 cursor-pointer transition"
+            title={lang === 'pl' ? 'Poprzedni Stage ([)' : 'Previous Stage ([)'}
+            aria-label="Previous Stage"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+
+          <div className="flex items-center gap-1.5 px-1">
+            <span
+              className="h-2 w-2 shrink-0 rounded-full"
+              style={{ background: currentZone.difficultyColor }}
+            />
+            <Flag className="hidden xs:inline h-3.5 w-3.5 text-sky-400 shrink-0" />
+            <span className="font-mono text-xs sm:text-sm font-black tracking-tight">
+              <span className="text-sky-300">{currentStage}</span>
+              <span className="text-white/45">/100</span>
+            </span>
+            <span className="hidden md:inline font-mono text-[10px] font-bold text-sky-200/75 border-l border-white/15 pl-1.5">
+              {formatTimeMs(elapsedMs)}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            disabled={currentStage >= maxUnlockedStage}
+            onClick={() => jumpToStage(currentStage + 1)}
+            className="flex h-7 w-7 items-center justify-center rounded-xl hover:bg-white/15 disabled:opacity-25 cursor-pointer transition"
+            title={lang === 'pl' ? 'Następny Stage (])' : 'Next Stage (])'}
+            aria-label="Next Stage"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+
+          <div className="mx-0.5 h-4 w-[1px] bg-white/15" />
+
+          <button
+            type="button"
+            onClick={() => {
+              respawnToStageRef.current?.(currentStage)
+              sfx.playClick()
+            }}
+            title="Respawn (R)"
+            aria-label="Respawn"
+            className="relative flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/20 text-sky-200 hover:bg-sky-500/35 active:scale-95 transition cursor-pointer"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            {!touchMode && (
+              <span className="pointer-events-none absolute right-0.5 bottom-0.5 font-mono text-[8px] font-black leading-none text-sky-200/80">
+                R
+              </span>
+            )}
+          </button>
+
+          {/* Thin progress indicator along bottom edge */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[2.5px] bg-white/10">
+            <div
+              className="h-full bg-gradient-to-r from-sky-400 to-emerald-400 transition-all duration-300"
+              style={{ width: `${progressPct}%` }}
+            />
           </div>
         </div>
 
-        {/* Center: Stage 1–100 Progress Pill + Unlocked Stage Jumpers + Respawn */}
-        <div className="pointer-events-auto flex flex-col items-center gap-1">
-          <div className="flex items-center gap-1.5 sm:gap-2 rounded-2xl border border-white/15 bg-slate-950/72 px-2.5 py-1.5 sm:px-3.5 text-white backdrop-blur-xl shadow-lg">
+        {/* Right glass dock: Wardrobe (I) · Mouse Lock (Tab) · Feedback (B) · Shortcuts (K) */}
+        <div className="pointer-events-auto flex h-10 items-center gap-0.5 rounded-2xl border border-white/15 bg-slate-950/70 p-1 shadow-lg backdrop-blur-xl">
+          <button
+            type="button"
+            onClick={() => (wardrobeOpen ? closeLiveWardrobe() : openLiveWardrobe())}
+            title={`${t.quickAvatar} (I)`}
+            aria-label={t.quickAvatar}
+            className={`relative flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+              wardrobeOpen ? 'bg-sky-500/40 text-white ring-1 ring-sky-300/60' : 'text-sky-100 hover:bg-white/10'
+            }`}
+          >
+            <Shirt className="h-4 w-4 text-sky-300" />
+            {!touchMode && (
+              <span className="pointer-events-none absolute right-0.5 bottom-0.5 font-mono text-[8px] font-black leading-none text-sky-200/75">
+                I
+              </span>
+            )}
+          </button>
+
+          {!touchMode && (
             <button
               type="button"
-              disabled={currentStage <= 1}
-              onClick={() => jumpToStage(currentStage - 1)}
-              className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 cursor-pointer"
-              title={lang === 'pl' ? 'Poprzedni Stage ([)' : 'Previous Stage ([)'}
+              onClick={() => toggleShiftLockRef.current?.()}
+              title={
+                shiftLockActive
+                  ? lang === 'pl'
+                    ? 'Zwolnij mysz (Tab / Esc)'
+                    : 'Release mouse (Tab / Esc)'
+                  : lang === 'pl'
+                    ? 'Lock myszy (Tab / M)'
+                    : 'Mouse Lock (Tab / M)'
+              }
+              aria-label="Mouse Lock"
+              className={`relative flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+                shiftLockActive
+                  ? 'bg-sky-400 text-slate-950 shadow'
+                  : 'text-sky-100 hover:bg-white/10'
+              }`}
             >
-              <ChevronLeft className="h-3.5 w-3.5" />
+              <Crosshair className={`h-4 w-4 ${shiftLockActive ? 'text-slate-950' : 'text-sky-300'}`} />
             </button>
+          )}
 
-            <div className="flex flex-col items-center px-1 min-w-[115px] sm:min-w-[190px]">
-              <div className="flex items-center gap-1.5 text-[11px] sm:text-sm font-black tracking-tight">
-                <Flag className="h-3.5 w-3.5 text-sky-400 shrink-0" />
-                <span>
-                  Stage <span className="text-sky-300">{currentStage}</span> / 100
-                </span>
-                <span
-                  className="hidden sm:inline-flex rounded-md border px-1.5 py-0.5 text-[9px] font-extrabold leading-none"
-                  style={{
-                    borderColor: `${currentZone.difficultyColor}66`,
-                    background: `${currentZone.difficultyColor}22`,
-                    color: currentZone.difficultyColor,
-                  }}
-                >
-                  {lang === 'pl' ? currentZone.difficultyPl : currentZone.difficultyEn}
-                </span>
-              </div>
-              <div className="mt-0.5 flex w-full items-center gap-1.5">
-                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/15">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-sky-400 to-emerald-400 transition-all duration-300"
-                    style={{ width: `${progressPct}%` }}
-                  />
-                </div>
-                <span className="font-mono text-[9px] font-bold text-sky-200">{formatTimeMs(elapsedMs)}</span>
-              </div>
-              <div className="max-w-[140px] sm:max-w-[215px] truncate text-[9px] font-bold tracking-wide text-sky-100/90">
-                {stageTitle}
-                <span className="hidden md:inline text-sky-300/75">
-                  {' · '}
-                  {lang === 'pl' ? currentZone.namePl : currentZone.nameEn}
-                </span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              disabled={currentStage >= maxUnlockedStage}
-              onClick={() => jumpToStage(currentStage + 1)}
-              className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 cursor-pointer"
-              title={lang === 'pl' ? 'Następny odblokowany Stage (])' : 'Next unlocked Stage (])'}
-            >
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-
-            <div className="h-5 w-[1px] bg-white/15" />
-
-            <button
-              type="button"
-              onClick={() => {
-                respawnToStageRef.current?.(currentStage)
-                sfx.playClick()
-              }}
-              title="Respawn (R)"
-              className="flex items-center gap-1 rounded-xl bg-sky-500/25 px-2 py-1 text-[11px] font-extrabold text-sky-100 hover:bg-sky-500/40 active:scale-95 transition cursor-pointer"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{t.obbyRespawnBtn}</span>
-              {!touchMode && (
-                <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/85">
-                  R
-                </kbd>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Right: Feedback + Shortcuts + PC Mouse Lock + Live Wardrobe button */}
-        <div className="pointer-events-auto flex items-center gap-1.5">
           {onOpenFeedback && (
             <button
               type="button"
@@ -2852,18 +2911,19 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
                 sfx.playClick()
                 onOpenFeedback(`Test Obby 100 · Stage ${currentStage}`)
               }}
-              title={lang === 'pl' ? 'Zgłoś błąd lub pomysł (B)' : 'Report bug or idea (B)'}
-              className="flex h-9 items-center gap-1 rounded-2xl border border-white/15 bg-slate-950/65 px-2.5 text-xs font-bold text-sky-100 backdrop-blur-xl shadow-lg transition hover:bg-slate-900/80 active:scale-95 cursor-pointer"
+              title={lang === 'pl' ? 'Zgłoś błąd / pomysł (B)' : 'Feedback (B)'}
+              aria-label={lang === 'pl' ? 'Zgłoś' : 'Feedback'}
+              className="relative flex h-8 w-9 items-center justify-center rounded-xl text-sky-100 hover:bg-white/10 active:scale-95 transition cursor-pointer"
             >
               <MessageSquarePlus className="h-4 w-4 text-sky-300" />
-              <span className="hidden xl:inline">{lang === 'pl' ? 'Zgłoś' : 'Feedback'}</span>
               {!touchMode && (
-                <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/80">
+                <span className="pointer-events-none absolute right-0.5 bottom-0.5 font-mono text-[8px] font-black leading-none text-sky-200/75">
                   B
-                </kbd>
+                </span>
               )}
             </button>
           )}
+
           {!touchMode && (
             <button
               type="button"
@@ -2873,67 +2933,18 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
                 setShortcutsOpen((v) => !v)
                 sfx.playClick()
               }}
-              title={lang === 'pl' ? 'Skróty klawiszowe (K / ?)' : 'Keyboard Shortcuts (K / ?)'}
-              className={`hidden sm:flex h-9 items-center gap-1 rounded-2xl border px-2.5 text-xs font-bold backdrop-blur-xl shadow-lg active:scale-95 transition cursor-pointer ${
-                shortcutsOpen
-                  ? 'border-sky-300/80 bg-sky-500/35 text-white'
-                  : 'border-white/15 bg-slate-950/65 text-sky-100 hover:bg-slate-900/80'
+              title={lang === 'pl' ? 'Skróty klawiszowe (K)' : 'Shortcuts (K)'}
+              aria-label="Shortcuts"
+              className={`relative hidden sm:flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+                shortcutsOpen ? 'bg-sky-500/40 text-white' : 'text-sky-100 hover:bg-white/10'
               }`}
             >
               <Keyboard className="h-4 w-4 text-sky-300" />
-              <kbd className="rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/85">
+              <span className="pointer-events-none absolute right-0.5 bottom-0.5 font-mono text-[8px] font-black leading-none text-sky-200/75">
                 K
-              </kbd>
-            </button>
-          )}
-          {!touchMode && (
-            <button
-              type="button"
-              onClick={() => toggleShiftLockRef.current?.()}
-              title={
-                lang === 'pl'
-                  ? 'Lock myszy (Klik / Tab / M — obrót kamery bez przeciągania)'
-                  : 'Mouse Lock (Click / Tab / M — look without dragging)'
-              }
-              className={`flex h-9 items-center gap-1.5 rounded-2xl border px-2.5 text-xs font-extrabold backdrop-blur-xl shadow-lg transition cursor-pointer ${
-                shiftLockActive
-                  ? 'border-sky-300/80 bg-sky-500/40 text-white ring-1 ring-sky-300/40'
-                  : 'border-white/15 bg-slate-950/65 text-sky-100 hover:bg-slate-900/80'
-              }`}
-            >
-              <Crosshair className={`h-3.5 w-3.5 ${shiftLockActive ? 'text-white' : 'text-sky-300'}`} />
-              <span className="hidden lg:inline">
-                {shiftLockActive
-                  ? lang === 'pl'
-                    ? 'Mysz zablok.'
-                    : 'Locked'
-                  : lang === 'pl'
-                    ? 'Lock myszy'
-                    : 'Mouse Lock'}
               </span>
-              <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-100/90">
-                Tab
-              </kbd>
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => (wardrobeOpen ? closeLiveWardrobe() : openLiveWardrobe())}
-            title={`${t.quickAvatar} (I)`}
-            className={`flex h-9 items-center gap-1.5 rounded-2xl border px-2.5 sm:px-3 text-xs font-extrabold backdrop-blur-xl shadow-lg transition active:scale-95 cursor-pointer ${
-              wardrobeOpen
-                ? 'border-sky-300/70 bg-sky-500 text-white'
-                : 'border-white/15 bg-slate-950/65 text-white hover:bg-slate-900/80'
-            }`}
-          >
-            <Shirt className="h-4 w-4 text-sky-300" />
-            <span className="hidden sm:inline">{t.quickAvatar}</span>
-            {!touchMode && (
-              <kbd className="hidden md:inline-flex rounded border border-white/15 bg-black/35 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-200/80">
-                I
-              </kbd>
-            )}
-          </button>
         </div>
       </div>
 
@@ -3201,32 +3212,46 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         </div>
       )}
 
-      {/* === DESKTOP BOTTOM EMOTE & CONTROLS BAR === */}
+      {/* === DESKTOP MINIMALIST ICON EMOTE DOCK === */}
       {!touchMode && !wardrobeOpen && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex flex-col items-center gap-1.5 px-4">
-          <div className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/15 bg-slate-950/65 p-1 backdrop-blur-xl shadow-lg">
-            {(['wave', 'dance', 'cheer', 'sit', 'spin', 'backflip'] as const).map((pose, idx) => (
-              <button
-                key={pose}
-                type="button"
-                onClick={() => triggerEmote(pose)}
-                className="rounded-xl px-2.5 py-1 text-[11px] font-bold text-sky-100 hover:bg-white/15 active:scale-95 transition cursor-pointer"
-              >
-                <span className="mr-1 font-mono text-[10px] text-sky-400">{idx + 1}</span>
-                {t.emotes[pose]}
-              </button>
-            ))}
-          </div>
-          <div className="rounded-full bg-slate-950/70 border border-white/10 px-3 py-1 text-[10px] font-semibold text-sky-100/90 backdrop-blur-md">
-            {shiftLockActive
-              ? lang === 'pl'
-                ? '[R] Respawn · [ [ / ] ] Stage · [T] Czat · [I] Szatnia · [H] Menu · [L] Shift-Lock · [K] Skróty · [ESC/Tab] Kursor'
-                : '[R] Respawn · [ [ / ] ] Stage · [T] Chat · [I] Wardrobe · [H] Menu · [L] Shift-Lock · [K] Shortcuts · [ESC/Tab] Cursor'
-              : mousePrefs.clickToLock
-                ? lang === 'pl'
-                  ? 'Kliknij 3D lub [Tab/M] = Lock myszy · [R] Respawn · [T] Czat · [I] Szatnia · [H] Menu · [K] Wszystkie skróty'
-                  : 'Click 3D or [Tab/M] = Mouse Lock · [R] Respawn · [T] Chat · [I] Wardrobe · [H] Menu · [K] All shortcuts'
-                : t.obbyControlsList}
+        <div className="pointer-events-none absolute bottom-4 right-4 hidden sm:flex items-center z-20">
+          <div className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/15 bg-slate-950/70 p-1.5 backdrop-blur-xl shadow-2xl">
+            {(
+              [
+                { pose: 'wave' as const, key: '1', icon: Hand },
+                { pose: 'dance' as const, key: '2', icon: Music },
+                { pose: 'cheer' as const, key: '3', icon: PartyPopper },
+                { pose: 'sit' as const, key: '4', icon: Armchair },
+                { pose: 'spin' as const, key: '5', icon: RefreshCw },
+                { pose: 'backflip' as const, key: '6', icon: Sparkles },
+              ]
+            ).map((em) => {
+              const Icon = em.icon
+              const isActive = activeEmoteUi === em.pose
+              return (
+                <button
+                  key={em.pose}
+                  type="button"
+                  onClick={() => triggerEmote(em.pose)}
+                  title={`${t.emotes[em.pose]} (${em.key})`}
+                  aria-label={t.emotes[em.pose]}
+                  className={`relative flex h-9 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+                    isActive
+                      ? 'bg-sky-400 text-slate-950 shadow-md'
+                      : 'bg-white/[0.06] text-sky-100 hover:bg-white/15'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span
+                    className={`pointer-events-none absolute top-0.5 left-1 font-mono text-[8px] font-black leading-none ${
+                      isActive ? 'text-slate-950/80' : 'text-sky-300/75'
+                    }`}
+                  >
+                    {em.key}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         </div>
       )}

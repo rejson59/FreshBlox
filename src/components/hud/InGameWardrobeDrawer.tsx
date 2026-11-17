@@ -1,5 +1,21 @@
 import React, { useMemo, useState } from 'react'
-import { Check, Crown, Eye, Lock, Palette, RotateCcw, Shirt, ShoppingBag, Smile, Sparkles, Trophy, X } from 'lucide-react'
+import {
+  Check,
+  Crown,
+  Eye,
+  Hand,
+  Lock,
+  Music,
+  Palette,
+  RefreshCw,
+  RotateCcw,
+  Shirt,
+  ShoppingBag,
+  Smile,
+  Sparkles,
+  Trophy,
+  X,
+} from 'lucide-react'
 import {
   CatalogItem,
   FACE_CATALOG,
@@ -67,45 +83,23 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
     const list: Array<{
       category: 'outfit' | 'hat' | 'face'
       id: string
-      name: string
       price: number
       rewardOnly?: 'obby100'
     }> = []
     if (!unlockedOutfits.includes(previewAvatar.outfitId)) {
       const it = OUTFIT_CATALOG.find((x) => x.id === previewAvatar.outfitId)
-      if (it)
-        list.push({
-          category: 'outfit',
-          id: it.id,
-          name: lang === 'pl' ? it.namePl : it.nameEn,
-          price: it.price,
-          rewardOnly: it.rewardOnly,
-        })
+      if (it) list.push({ category: 'outfit', id: it.id, price: it.price, rewardOnly: it.rewardOnly })
     }
     if (!unlockedHats.includes(previewAvatar.hatId)) {
       const it = HAT_CATALOG.find((x) => x.id === previewAvatar.hatId)
-      if (it)
-        list.push({
-          category: 'hat',
-          id: it.id,
-          name: lang === 'pl' ? it.namePl : it.nameEn,
-          price: it.price,
-          rewardOnly: it.rewardOnly,
-        })
+      if (it) list.push({ category: 'hat', id: it.id, price: it.price, rewardOnly: it.rewardOnly })
     }
     if (!unlockedFaces.includes(previewAvatar.faceId)) {
       const it = FACE_CATALOG.find((x) => x.id === previewAvatar.faceId)
-      if (it)
-        list.push({
-          category: 'face',
-          id: it.id,
-          name: lang === 'pl' ? it.namePl : it.nameEn,
-          price: it.price,
-          rewardOnly: it.rewardOnly,
-        })
+      if (it) list.push({ category: 'face', id: it.id, price: it.price, rewardOnly: it.rewardOnly })
     }
     return list
-  }, [previewAvatar, unlockedOutfits, unlockedHats, unlockedFaces, lang])
+  }, [previewAvatar, unlockedOutfits, unlockedHats, unlockedFaces])
 
   const purchasableTried = useMemo(() => triedUnowned.filter((i) => !i.rewardOnly), [triedUnowned])
   const hasRewardOnlyTried = useMemo(() => triedUnowned.some((i) => Boolean(i.rewardOnly)), [triedUnowned])
@@ -158,6 +152,13 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
     { id: 'skin', label: t.tabs.skin, icon: Palette },
   ]
 
+  const poseButtons: Array<{ pose: PlayerPose; icon: React.ComponentType<{ className?: string }>; label: string }> = [
+    { pose: 'wave', icon: Hand, label: tw.emotes.wave },
+    { pose: 'dance', icon: Music, label: tw.emotes.dance },
+    { pose: 'spin', icon: RefreshCw, label: tw.emotes.spin },
+    { pose: 'backflip', icon: Sparkles, label: tw.emotes.backflip },
+  ]
+
   const renderGrid = <T extends string>(
     category: 'outfit' | 'hat' | 'face',
     items: CatalogItem<T>[],
@@ -179,17 +180,49 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
           <div
             key={item.id}
             onClick={() => handleCardSelect(category, item.id, isOwned)}
-            className={`flex flex-col justify-between rounded-2xl border p-2.5 transition cursor-pointer ${
+            className={`relative flex flex-col justify-between rounded-2xl border p-2.5 transition cursor-pointer ${
               isTryingOn
                 ? 'border-amber-400/80 bg-amber-500/15'
                 : isSelected
                   ? 'border-sky-400 bg-sky-500/18'
-                  : 'border-white/10 bg-white/5 hover:bg-white/10'
+                  : 'border-white/10 bg-white/[0.045] hover:bg-white/10'
             }`}
           >
-            <div className="flex items-start gap-2">
+            {/* Status corner icon */}
+            <div className="absolute top-2 right-2">
+              {isEquipped ? (
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-400 text-slate-950">
+                  <Check className="h-3 w-3 stroke-[3]" />
+                </span>
+              ) : isTryingOn ? (
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-slate-950">
+                  <Eye className="h-3 w-3" />
+                </span>
+              ) : !isOwned && isRewardOnly ? (
+                <span
+                  title={lang === 'pl' ? 'Odblokuj za Stage 100' : 'Unlock at Stage 100'}
+                  className="inline-flex items-center gap-0.5 rounded-md bg-amber-400/20 px-1.5 py-0.5 font-mono text-[9px] font-black text-amber-300"
+                >
+                  <Trophy className="h-2.5 w-2.5" />
+                  100
+                </span>
+              ) : !isOwned ? (
+                <span className="inline-flex items-center gap-0.5 rounded-md bg-white/8 px-1.5 py-0.5 font-mono text-[9px] font-bold text-sky-200/80">
+                  {GEMS_SYSTEM_IN_PROGRESS ? (
+                    <Lock className="h-2.5 w-2.5 text-amber-300" />
+                  ) : (
+                    <>
+                      <FreshGemShard size={10} />
+                      {item.price}
+                    </>
+                  )}
+                </span>
+              ) : null}
+            </div>
+
+            <div className="flex flex-col items-center pt-1 pb-0.5 text-center">
               {sw ? (
-                <div className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-xl border border-white/15 bg-slate-900/70 p-1">
+                <div className="flex h-11 w-11 flex-col items-center justify-center rounded-xl border border-white/15 bg-slate-900/75 p-1">
                   <div className="flex items-center gap-[1.5px]">
                     <span className="h-3.5 w-1.5 rounded-[1.5px]" style={{ background: sw.arms }} />
                     <span className="h-3.5 w-3.5 rounded-[2px] border border-white/25" style={{ background: sw.torso }} />
@@ -202,78 +235,37 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
                 </div>
               ) : (
                 <div
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/20"
-                  style={{ background: `radial-gradient(circle at 30% 30%, ${item.accent}, rgba(15,23,42,0.8))` }}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/20"
+                  style={{ background: `radial-gradient(circle at 30% 30%, ${item.accent}, rgba(15,23,42,0.85))` }}
                 >
                   {category === 'hat' ? (
-                    <Crown className="h-4 w-4 text-white" />
+                    <Crown className="h-4.5 w-4.5 text-white" />
                   ) : (
-                    <Smile className="h-4 w-4 text-white" />
+                    <Smile className="h-4.5 w-4.5 text-white" />
                   )}
                 </div>
               )}
 
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[11px] font-extrabold text-white leading-tight">
-                  {lang === 'pl' ? item.namePl : item.nameEn}
-                </div>
-                <div className="mt-1">
-                  {isEquipped ? (
-                    <span className="inline-flex items-center gap-0.5 rounded-md bg-sky-400 px-1.5 py-0.5 text-[9px] font-black text-slate-950">
-                      <Check className="h-2.5 w-2.5" /> {t.equipped}
-                    </span>
-                  ) : isTryingOn ? (
-                    <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-400 px-1.5 py-0.5 text-[9px] font-black text-slate-950">
-                      <Eye className="h-2.5 w-2.5" /> {t.tryingOn}
-                    </span>
-                  ) : isOwned ? (
-                    <span className="inline-flex items-center rounded-md bg-white/12 px-1.5 py-0.5 text-[9px] font-bold text-sky-100">
-                      {t.equip}
-                    </span>
-                  ) : isRewardOnly ? (
-                    <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-400/20 border border-amber-300/40 px-1.5 py-0.5 text-[9px] font-extrabold text-amber-200">
-                      <Trophy className="h-2.5 w-2.5" />
-                      {lang === 'pl' ? item.rewardLabelPl : item.rewardLabelEn}
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] font-extrabold text-sky-200">
-                      <FreshGemShard size={11} />
-                      {item.price}
-                    </span>
-                  )}
-                </div>
+              <div className="mt-2 w-full truncate text-[11px] font-extrabold text-white">
+                {lang === 'pl' ? item.namePl : item.nameEn}
               </div>
             </div>
 
-            {!isOwned &&
-              (isRewardOnly ? (
-                <div className="mt-2 flex w-full items-center justify-center gap-1 rounded-xl border border-amber-400/35 bg-amber-500/12 py-1 text-[10px] font-extrabold text-amber-200">
-                  <Trophy className="h-2.5 w-2.5 shrink-0" />
-                  <span className="truncate">
-                    {lang === 'pl' ? 'Przejdź Obby 100' : 'Beat Obby 100'}
-                  </span>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  disabled={!canAfford}
-                  onClick={(e) => handleBuySingle(e, category, item.id, item.price)}
-                  className={`mt-2 flex w-full items-center justify-center gap-1 rounded-xl py-1 text-[10px] font-extrabold transition cursor-pointer ${
-                    canAfford
-                      ? 'bg-sky-400 text-slate-950 hover:bg-sky-300 active:scale-95'
-                      : 'bg-amber-500/15 text-amber-200/90 opacity-85 cursor-not-allowed'
-                  }`}
-                >
-                  {!canAfford && <Lock className="h-2.5 w-2.5" />}
-                  <span>
-                    {GEMS_SYSTEM_IN_PROGRESS
-                      ? LOCALES[lang].gemsNotice.shopLocked
-                      : canAfford
-                        ? `${t.buy} • ${item.price}`
-                        : t.notEnough}
-                  </span>
-                </button>
-              ))}
+            {!isOwned && !isRewardOnly && !GEMS_SYSTEM_IN_PROGRESS && (
+              <button
+                type="button"
+                disabled={!canAfford}
+                onClick={(e) => handleBuySingle(e, category, item.id, item.price)}
+                className={`mt-2 flex w-full items-center justify-center gap-1 rounded-xl py-1 text-[10px] font-extrabold transition cursor-pointer ${
+                  canAfford
+                    ? 'bg-sky-400 text-slate-950 hover:bg-sky-300'
+                    : 'bg-white/8 text-sky-200/50 cursor-not-allowed'
+                }`}
+              >
+                <FreshGemShard size={10} />
+                <span>{item.price}</span>
+              </button>
+            )}
           </div>
         )
       })}
@@ -283,35 +275,32 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
   return (
     <aside
       onPointerDown={(e) => e.stopPropagation()}
-      className="pointer-events-auto absolute inset-y-2.5 z-40 flex w-[min(352px,calc(100vw-24px))] flex-col overflow-hidden rounded-3xl border border-white/15 bg-slate-950/90 text-sky-50 shadow-2xl backdrop-blur-2xl"
+      className="pointer-events-auto absolute inset-y-2.5 z-40 flex w-[min(324px,calc(100vw-24px))] flex-col overflow-hidden rounded-3xl border border-white/15 bg-slate-950/90 text-sky-50 shadow-2xl backdrop-blur-2xl"
       style={{ right: 'max(0.65rem, env(safe-area-inset-right))' }}
     >
-      {/* Header */}
+      {/* Compact Header */}
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-3.5 py-2.5">
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 border border-sky-400/25">
-            <Sparkles className="h-4 w-4 text-sky-300" />
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/15 border border-sky-400/25">
+            <Shirt className="h-4 w-4 text-sky-300" />
           </div>
-          <div className="min-w-0">
-            <div className="truncate font-display text-sm font-extrabold text-white leading-tight">
-              {tw.liveWardrobeTitle}
-            </div>
-            <div className="truncate text-[10px] text-sky-200/75">{tw.liveWardrobeSub}</div>
-          </div>
+          <span className="font-display text-sm font-black text-white">
+            {lang === 'pl' ? 'Szatnia R6' : 'Wardrobe'}
+          </span>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
-          {GEMS_SYSTEM_IN_PROGRESS ? (
-            <div className="flex items-center gap-1 rounded-xl bg-amber-500/15 border border-amber-400/30 px-2 py-1 text-[10px] font-extrabold text-amber-200">
-              <FreshGemShard size={12} />
-              <span>{LOCALES[lang].nav.gemsWipPill}</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1 rounded-xl bg-white/8 border border-white/10 px-2 py-1 text-xs font-extrabold text-sky-100">
-              <FreshGemShard size={13} />
-              <span>{freshGems}</span>
-            </div>
-          )}
+        <div className="flex items-center gap-1.5">
+          <div
+            title={GEMS_SYSTEM_IN_PROGRESS ? LOCALES[lang].gemsNotice.short : `${freshGems} FreshGems`}
+            className={`flex items-center gap-1 rounded-xl border px-2 py-1 text-[11px] font-extrabold ${
+              GEMS_SYSTEM_IN_PROGRESS
+                ? 'bg-amber-500/12 border-amber-400/30 text-amber-200'
+                : 'bg-white/8 border-white/10 text-sky-100'
+            }`}
+          >
+            <FreshGemShard size={12} />
+            {GEMS_SYSTEM_IN_PROGRESS ? <Lock className="h-3 w-3" /> : <span>{freshGems}</span>}
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -323,7 +312,7 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
         </div>
       </div>
 
-      {/* Category Tabs */}
+      {/* Icon-Only Category Tabs */}
       <div className="grid shrink-0 grid-cols-4 gap-1 border-b border-white/10 bg-slate-950/50 p-1.5">
         {tabs.map((tb) => {
           const Icon = tb.icon
@@ -332,23 +321,24 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
             <button
               key={tb.id}
               type="button"
+              title={tb.label}
+              aria-label={tb.label}
               onClick={() => {
                 setTab(tb.id)
                 sfx.playClick()
               }}
-              className={`flex items-center justify-center gap-1 rounded-xl py-1.5 text-[11px] font-bold transition cursor-pointer ${
-                active ? 'bg-sky-400 text-slate-950 shadow' : 'text-sky-100/80 hover:bg-white/10'
+              className={`flex h-9 items-center justify-center rounded-xl transition cursor-pointer ${
+                active ? 'bg-sky-400 text-slate-950 shadow' : 'text-sky-100/75 hover:bg-white/10 hover:text-white'
               }`}
             >
-              <Icon className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{tb.label}</span>
+              <Icon className="h-4 w-4" />
             </button>
           )
         })}
       </div>
 
       {/* Scrollable Catalog */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2.5">
+      <div className="flex-1 min-h-0 overflow-y-auto p-3">
         {tab === 'outfits' &&
           renderGrid('outfit', OUTFIT_CATALOG, unlockedOutfits, ownedAvatar.outfitId, previewAvatar.outfitId)}
         {tab === 'hats' &&
@@ -356,32 +346,25 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
         {tab === 'faces' &&
           renderGrid('face', FACE_CATALOG, unlockedFaces, ownedAvatar.faceId, previewAvatar.faceId)}
         {tab === 'skin' && (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             {SKIN_SWATCHES.map((sw) => {
               const active = previewAvatar.skinColor === sw.hex
               return (
                 <button
                   key={sw.hex}
                   type="button"
+                  title={lang === 'pl' ? sw.namePl : sw.nameEn}
                   onClick={() => {
                     onSkinChange(sw.hex)
                     onPreviewChange({ ...previewAvatar, skinColor: sw.hex })
                     sfx.playChatPop()
                   }}
-                  className={`flex items-center gap-2.5 rounded-2xl border p-2.5 text-left transition cursor-pointer ${
-                    active ? 'border-sky-400 bg-sky-500/18' : 'border-white/10 bg-white/5 hover:bg-white/10'
+                  className={`flex h-12 items-center justify-center rounded-2xl border-2 transition cursor-pointer ${
+                    active ? 'border-sky-400 scale-105 shadow-lg' : 'border-white/20 hover:scale-105'
                   }`}
+                  style={{ background: sw.hex }}
                 >
-                  <span
-                    className="h-8 w-8 shrink-0 rounded-xl border-2 border-white/60 shadow-inner"
-                    style={{ background: sw.hex }}
-                  />
-                  <div className="min-w-0">
-                    <div className="truncate text-[11px] font-extrabold text-white">
-                      {lang === 'pl' ? sw.namePl : sw.nameEn}
-                    </div>
-                    <div className="font-mono text-[9px] text-sky-200/65">{sw.hex}</div>
-                  </div>
+                  {active && <Check className="h-4 w-4 text-slate-950 drop-shadow" />}
                 </button>
               )
             })}
@@ -389,80 +372,74 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
         )}
       </div>
 
-      {/* Live Try-On Checkout Banner (whenever trying on 1+ unowned items live in-game!) */}
+      {/* Compact Try-On Strip */}
       {triedUnowned.length > 0 && (
-        <div className="shrink-0 border-t border-amber-400/35 bg-amber-500/12 px-3 py-2 space-y-1.5">
-          <div className="flex items-center justify-between gap-2 text-[11px]">
-            <span className="inline-flex items-center gap-1 font-extrabold text-amber-300">
-              <Eye className="h-3.5 w-3.5" />
-              {t.tryingOn} ({triedUnowned.length})
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                onPreviewChange({ ...ownedAvatar })
-                sfx.playClick()
-              }}
-              className="inline-flex items-center gap-1 rounded-lg bg-white/10 px-2 py-0.5 text-[10px] font-bold text-sky-100 hover:bg-white/20 cursor-pointer"
-            >
-              <RotateCcw className="h-2.5 w-2.5" />
-              {t.resetPreview}
-            </button>
+        <div className="shrink-0 border-t border-amber-400/30 bg-amber-500/12 px-3 py-2 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1.5 text-[11px] font-bold text-amber-200">
+            {hasRewardOnlyTried && purchasableTried.length === 0 ? (
+              <>
+                <Trophy className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+                <span className="truncate">{lang === 'pl' ? 'Nagroda: Obby 100' : 'Reward: Obby 100'}</span>
+              </>
+            ) : GEMS_SYSTEM_IN_PROGRESS ? (
+              <>
+                <Eye className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+                <span className="truncate">{lang === 'pl' ? 'Podgląd (Gems wkrótce)' : 'Preview (Gems soon)'}</span>
+              </>
+            ) : (
+              <button
+                type="button"
+                disabled={freshGems < totalTryOnPrice}
+                onClick={handleBuyBundle}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-sky-400 px-3 py-1 text-xs font-extrabold text-slate-950 disabled:opacity-40 cursor-pointer"
+              >
+                <ShoppingBag className="h-3.5 w-3.5" />
+                <span>{totalTryOnPrice}</span>
+              </button>
+            )}
           </div>
 
-          {hasRewardOnlyTried && purchasableTried.length === 0 ? (
-            <div className="rounded-xl bg-slate-950/60 border border-amber-400/35 px-2.5 py-1.5 text-[10px] font-bold text-amber-200 leading-snug">
-              {lang === 'pl'
-                ? '👑 Ekskluzywna nagroda! Dotrzyj do Stage 100 w Test Obby 100, aby odblokować ją na stałe.'
-                : '👑 Exclusive reward! Reach Stage 100 in Test Obby 100 to unlock permanently.'}
-            </div>
-          ) : GEMS_SYSTEM_IN_PROGRESS ? (
-            <div className="rounded-xl bg-slate-950/60 border border-amber-400/25 px-2.5 py-1.5 text-[10px] font-semibold text-amber-100/90 leading-snug">
-              {LOCALES[lang].gemsNotice.short}
-            </div>
-          ) : (
-            <button
-              type="button"
-              disabled={freshGems < totalTryOnPrice}
-              onClick={handleBuyBundle}
-              className={`flex w-full items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-extrabold transition cursor-pointer ${
-                freshGems >= totalTryOnPrice
-                  ? 'bg-sky-400 text-slate-950 hover:bg-sky-300 active:scale-[0.98]'
-                  : 'bg-rose-500/20 text-rose-300 cursor-not-allowed'
-              }`}
-            >
-              <ShoppingBag className="h-3.5 w-3.5" />
-              <span>
-                {freshGems >= totalTryOnPrice
-                  ? `${t.buySelected} (${totalTryOnPrice} Gems)`
-                  : `${t.notEnough} (${totalTryOnPrice} Gems)`}
-              </span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => {
+              onPreviewChange({ ...ownedAvatar })
+              sfx.playClick()
+            }}
+            title={t.resetPreview}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10 text-sky-100 hover:bg-white/20 cursor-pointer"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
 
-      {/* Footer: Quick Pose Preview + Done button */}
+      {/* Compact Footer: 4 Pose Icons + Done */}
       <div className="shrink-0 border-t border-white/10 bg-slate-950/65 px-3 py-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1 overflow-x-auto">
-          {(['wave', 'dance', 'spin', 'backflip'] as const).map((pose) => (
-            <button
-              key={pose}
-              type="button"
-              onClick={() => onTestEmote(pose)}
-              className="rounded-lg bg-white/8 px-2 py-1 text-[10px] font-bold text-sky-100 hover:bg-white/15 active:scale-95 transition cursor-pointer shrink-0"
-            >
-              {tw.emotes[pose]}
-            </button>
-          ))}
+        <div className="flex items-center gap-1">
+          {poseButtons.map((pb) => {
+            const Icon = pb.icon
+            return (
+              <button
+                key={pb.pose}
+                type="button"
+                onClick={() => onTestEmote(pb.pose)}
+                title={pb.label}
+                aria-label={pb.label}
+                className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/8 text-sky-100 hover:bg-white/16 active:scale-95 transition cursor-pointer"
+              >
+                <Icon className="h-3.5 w-3.5" />
+              </button>
+            )
+          })}
         </div>
 
         <button
           type="button"
           onClick={onClose}
-          className="shrink-0 rounded-xl bg-sky-500 px-3.5 py-1.5 text-xs font-extrabold text-slate-950 hover:bg-sky-400 active:scale-95 transition cursor-pointer"
+          className="inline-flex items-center gap-1 rounded-xl bg-sky-500 px-3.5 py-1.5 text-xs font-extrabold text-slate-950 hover:bg-sky-400 active:scale-95 transition cursor-pointer"
         >
-          {tw.liveWardrobeDone}
+          <Check className="h-3.5 w-3.5 stroke-[2.5]" />
+          <span>{tw.liveWardrobeDone}</span>
         </button>
       </div>
     </aside>
