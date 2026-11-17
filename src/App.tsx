@@ -5,6 +5,7 @@ import {
   Crown,
   FlaskConical,
   Hash,
+  Inbox,
   Loader2,
   LogOut,
   MessageSquarePlus,
@@ -26,9 +27,11 @@ import { TestObbyWorld } from './engine/TestObbyWorld'
 import { AvatarEditorView } from './components/avatar/AvatarEditorView'
 import { SocialProfileView } from './components/social/SocialProfileView'
 import { AdminPanelView } from './components/admin/AdminPanelView'
+import { FeedbackInboxView } from './components/admin/FeedbackInboxView'
 import { TestLabView } from './components/tests/TestLabView'
 import { AuthScreen } from './components/auth/AuthScreen'
 import { FeedbackModal } from './components/feedback/FeedbackModal'
+import { fetchAdminPlatformStats } from './lib/adminApi'
 import { FreshLabFlags, loadLabFlags, saveLabFlags } from './lib/labFlags'
 import { sfx } from './lib/sfx'
 import {
@@ -38,7 +41,7 @@ import {
   isTouchMobileDevice,
 } from './lib/mobileFullscreen'
 
-type AppView = 'home' | 'world' | 'obby' | 'avatar' | 'social' | 'admin' | 'tests'
+type AppView = 'home' | 'world' | 'obby' | 'avatar' | 'social' | 'admin' | 'inbox' | 'tests'
 
 function getInitialLaunchFromUrl(): { view: AppView; roomId: string; hasInvite: boolean } {
   if (typeof window === 'undefined') return { view: 'home', roomId: 'PUBLIC-1', hasInvite: false }
@@ -65,6 +68,7 @@ export function App() {
   const [feedbackContext, setFeedbackContext] = useState<string>('Strona główna')
   const [launcherInput, setLauncherInput] = useState<string>('')
   const [labFlags, setLabFlags] = useState<FreshLabFlags>(() => loadLabFlags())
+  const [newFeedbackCount, setNewFeedbackCount] = useState<number>(0)
 
   const updateLabFlags = (next: FreshLabFlags) => {
     setLabFlags(next)
@@ -117,16 +121,36 @@ export function App() {
     }
   }, [])
 
-  // Presence heartbeat in Supabase while inside a 3D world
+  // Real-time presence heartbeat in Supabase (exact location: lobby / obby / launcher)
   useEffect(() => {
-    if (!authUser || (view !== 'world' && view !== 'obby')) return
-    const wk: WorldKind = view === 'obby' ? 'obby' : 'lobby'
-    updatePresenceLocation(wk, activeRoomId)
+    if (!authUser) return
+    const loc = view === 'obby' ? 'obby' : view === 'world' ? 'lobby' : 'launcher'
+    const room = view === 'world' || view === 'obby' ? activeRoomId : 'LAUNCHER'
+    updatePresenceLocation(loc, room)
     const id = window.setInterval(() => {
-      updatePresenceLocation(wk, activeRoomId)
+      updatePresenceLocation(loc, room)
     }, 60_000)
     return () => window.clearInterval(id)
   }, [view, activeRoomId, updatePresenceLocation, authUser])
+
+  // Fetch unread/new feedback badge count for Owner/Admin rail icon
+  useEffect(() => {
+    if (!authUser || !hasAdminAccess(profile.role)) return
+    let alive = true
+    const sync = () => {
+      void fetchAdminPlatformStats().then((res) => {
+        if (alive && res.data) {
+          setNewFeedbackCount(res.data.new_feedback ?? 0)
+        }
+      })
+    }
+    sync()
+    const id = window.setInterval(sync, 60_000)
+    return () => {
+      alive = false
+      window.clearInterval(id)
+    }
+  }, [authUser, profile.role])
 
   // Lock page scroll while inside 3D gameplay so mobile address bar / overscroll never clips HUD controls
   useEffect(() => {
@@ -261,6 +285,8 @@ export function App() {
       setFeedbackContext(lang === 'pl' ? 'Społeczność / Profil' : 'Social / Profile')
     } else if (view === 'admin') {
       setFeedbackContext(lang === 'pl' ? 'Panel Admina' : 'Admin Panel')
+    } else if (view === 'inbox') {
+      setFeedbackContext(lang === 'pl' ? 'Lista zgłoszeń' : 'Feedback Inbox')
     } else if (view === 'tests') {
       setFeedbackContext(lang === 'pl' ? 'Testy' : 'Test Lab')
     } else {
@@ -283,6 +309,7 @@ export function App() {
     label: string
     icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>
     accent?: string
+    badge?: number
   }> = [
     { id: 'home', label: lang === 'pl' ? 'Odkrywaj' : 'Discover', icon: Compass },
     { id: 'avatar', label: lang === 'pl' ? 'Szatnia R6' : 'Wardrobe', icon: Shirt },
@@ -294,9 +321,17 @@ export function App() {
     label: string
     icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>
     accent: string
+    badge?: number
   }> = isStaff
     ? [
         { id: 'admin', label: lang === 'pl' ? 'Panel Admina' : 'Admin Panel', icon: ShieldCheck, accent: '#F59E0B' },
+        {
+          id: 'inbox',
+          label: lang === 'pl' ? 'Lista zgłoszeń' : 'Feedback Inbox',
+          icon: Inbox,
+          accent: '#38BDF8',
+          badge: newFeedbackCount,
+        },
         { id: 'tests', label: lang === 'pl' ? 'Testy' : 'Test Lab', icon: FlaskConical, accent: '#34D399' },
       ]
     : []
@@ -471,7 +506,7 @@ export function App() {
                       <button
                         type="button"
                         onClick={() => navigateView(item.id)}
-                        className="flex h-11 w-11 items-center justify-center rounded-xl border transition-all hover:scale-105 cursor-pointer"
+                        className="relative flex h-11 w-11 items-center justify-center rounded-xl border transition-all hover:scale-105 cursor-pointer"
                         style={{
                           background: active ? `${accent}24` : `${accent}0D`,
                           borderColor: active ? `${accent}58` : `${accent}28`,
@@ -481,6 +516,11 @@ export function App() {
                         aria-label={item.label}
                       >
                         <Icon className="h-[19px] w-[19px]" />
+                        {typeof item.badge === 'number' && item.badge > 0 && (
+                          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 font-mono text-[9px] font-black text-white shadow">
+                            {item.badge > 99 ? '99+' : item.badge}
+                          </span>
+                        )}
                       </button>
                     </div>
                   )
@@ -756,6 +796,15 @@ export function App() {
             />
           )}
 
+          {view === 'inbox' && isStaff && (
+            <FeedbackInboxView
+              profile={profile}
+              mode={mode}
+              lang={lang}
+              onNewCountChange={setNewFeedbackCount}
+            />
+          )}
+
           {view === 'tests' && isStaff && (
             <TestLabView
               profile={profile}
@@ -788,10 +837,9 @@ export function App() {
               key={item.id}
               type="button"
               onClick={() => {
-                sfx.playClick()
                 navigateView(item.id)
               }}
-              className="relative flex flex-col items-center gap-0.5 px-3 py-1.5 cursor-pointer"
+              className="relative flex flex-col items-center gap-0.5 px-2.5 py-1.5 cursor-pointer"
               style={{ color: active ? accent : tokens.textSecondary }}
               aria-label={item.label}
             >
@@ -802,6 +850,11 @@ export function App() {
                 />
               )}
               <Icon className="h-[19px] w-[19px]" />
+              {typeof item.badge === 'number' && item.badge > 0 && (
+                <span className="absolute right-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-rose-500 px-1 font-mono text-[8px] font-black text-white">
+                  {item.badge > 9 ? '9+' : item.badge}
+                </span>
+              )}
             </button>
           )
         })}

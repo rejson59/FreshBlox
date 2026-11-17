@@ -128,3 +128,28 @@ export async function deleteAdminFeedback(feedbackId: string): Promise<{ ok: boo
   if (error) return { ok: false, error: error.message }
   return { ok: true }
 }
+
+export interface WorldLiveStats {
+  lobby_online: number
+  obby_online: number
+  platform_online: number
+  total_players: number
+  obby_100_clears: number
+  obby_total_completions: number
+}
+
+export async function fetchWorldLiveStats(): Promise<WorldLiveStats | null> {
+  if (!supabase) return null
+  const { data, error } = await supabase.rpc('get_world_live_stats')
+  if (error || !data) return null
+  const raw = data as Partial<WorldLiveStats>
+  return {
+    lobby_online: Number(raw.lobby_online ?? 0),
+    obby_online: Number(raw.obby_online ?? 0),
+    platform_online: Number(raw.platform_online ?? 0),
+    total_players: Number(raw.total_players ?? 0),
+    obby_100_clears: Number(raw.obby_100_clears ?? 0),
+    obby_total_completions: Number(raw.obby_total_completions ?? 0),
+  }
+}
+

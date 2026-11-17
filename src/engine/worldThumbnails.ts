@@ -123,9 +123,9 @@ function renderLobbyThumbnail(renderer: THREE.WebGLRenderer, width: number, heig
   const tr = createTracker()
   setupArcticLighting(scene, [34, 48, 28], 46)
 
-  const camera = new THREE.PerspectiveCamera(37, width / height, 0.5, 280)
-  camera.position.set(35, 27.5, 35)
-  camera.lookAt(0, 2.2, -3.5)
+  const camera = new THREE.PerspectiveCamera(38, width / height, 0.5, 280)
+  camera.position.set(39, 31, 39)
+  camera.lookAt(0, 1.8, -6.5)
 
   // Outer plaza base (74x74 terrazzo)
   const plaza = new THREE.Mesh(
@@ -459,12 +459,11 @@ function renderObbyThumbnail(renderer: THREE.WebGLRenderer, width: number, heigh
   const maxStage = 18
   const visibleBlocks = course.blocks.filter((b) => b.stage <= maxStage)
   const cpStart = course.checkpoints[0]
-  const cpFocus = course.checkpoints[Math.min(2, course.checkpoints.length - 1)]
   const cpFar = course.checkpoints[Math.min(10, course.checkpoints.length - 1)]
 
   setupArcticLighting(scene, [cpStart.x + 36, cpStart.y + 56, cpStart.z + 24], 88, 155, 360)
 
-  // Compute an elevated bird's-eye angle sweeping diagonally down the rising Obby course
+  // Compute a bold hero bird's-eye angle starting right beside the Zone 1 entry archway
   const dx = cpFar.x - cpStart.x
   const dz = cpFar.z - cpStart.z
   const len = Math.hypot(dx, dz) || 1
@@ -473,13 +472,13 @@ function renderObbyThumbnail(renderer: THREE.WebGLRenderer, width: number, heigh
   const sideX = -dirZ
   const sideZ = dirX
 
-  const camera = new THREE.PerspectiveCamera(42, width / height, 0.5, 420)
+  const camera = new THREE.PerspectiveCamera(40, width / height, 0.5, 420)
   camera.position.set(
-    cpStart.x - dirX * 15 + sideX * 23,
-    cpStart.y + 21,
-    cpStart.z - dirZ * 15 + sideZ * 23,
+    cpStart.x - dirX * 9 + sideX * 15.5,
+    cpStart.y + 13.5,
+    cpStart.z - dirZ * 9 + sideZ * 15.5,
   )
-  camera.lookAt(cpFocus.x + dirX * 16, cpFocus.y + 1.5, cpFocus.z + dirZ * 16)
+  camera.lookAt(cpStart.x + dirX * 26, cpStart.y + 2.0, cpStart.z + dirZ * 26)
 
   const boxGeoCache = new Map<string, THREE.BufferGeometry>()
   const getBoxGeo = (w: number, h: number, d: number) => {

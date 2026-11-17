@@ -546,4 +546,24 @@ GRANT EXECUTE ON FUNCTION public.admin_list_feedback(int) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_update_feedback_status(uuid, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_delete_feedback(uuid) TO authenticated;
 
+-- Public authenticated live stats for worlds & launcher (100% real data, no fake numbers)
+CREATE OR REPLACE FUNCTION public.get_world_live_stats()
+RETURNS jsonb
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT jsonb_build_object(
+    'total_players', (SELECT COUNT(*)::int FROM public.fb_profiles),
+    'platform_online', (SELECT COUNT(*)::int FROM public.fb_profiles WHERE last_seen > now() - interval '3 minutes'),
+    'lobby_online', (SELECT COUNT(*)::int FROM public.fb_profiles WHERE last_world = 'lobby' AND last_seen > now() - interval '3 minutes'),
+    'obby_online', (SELECT COUNT(*)::int FROM public.fb_profiles WHERE last_world = 'obby' AND last_seen > now() - interval '3 minutes'),
+    'obby_100_clears', (SELECT COUNT(*)::int FROM public.fb_profiles WHERE COALESCE(obby_completions, 0) > 0),
+    'obby_total_completions', (SELECT COALESCE(SUM(obby_completions), 0)::int FROM public.fb_profiles)
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_world_live_stats() TO authenticated;
+
+
 

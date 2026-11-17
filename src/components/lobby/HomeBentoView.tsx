@@ -9,10 +9,8 @@ import {
   Play,
   RefreshCw,
   Shirt,
-  Sparkles,
   Trophy,
   Users,
-  Wifi,
   Zap,
 } from 'lucide-react'
 import { ARCTIC_SKY, getThemeTokens, ThemeMode } from '../../data/brandTheme'
@@ -21,7 +19,7 @@ import { DAILY_QUESTS, getRankForXp, QuestDef, WorldKind } from '../../data/cata
 import { FreshGemShard } from '../brand/FreshBloxBrand'
 import { CloudPlayerSummary, getAccountRoleMeta, PlayerProfile } from '../../store/usePlayerStore'
 import { useWorldThumbnails, WorldPreviewKey } from '../../engine/worldThumbnails'
-import { sfx } from '../../lib/sfx'
+import { fetchWorldLiveStats, WorldLiveStats } from '../../lib/adminApi'
 
 interface HomeBentoViewProps {
   profile: PlayerProfile
@@ -109,6 +107,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
   const [featured, setFeatured] = useState<'lobby' | 'obby'>('lobby')
   const [leaderboard, setLeaderboard] = useState<CloudPlayerSummary[]>([])
   const [loadingBoard, setLoadingBoard] = useState(false)
+  const [liveStats, setLiveStats] = useState<WorldLiveStats | null>(null)
 
   const thumbs = useWorldThumbnails()
   const tokens = getThemeTokens(mode)
@@ -116,7 +115,6 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
   const rank = getRankForXp(profile.xp)
   const roleMeta = getAccountRoleMeta(profile.role, lang)
 
-  // Deep launcher palette surfaces (tight borders, native app contrast)
   const panelSurface = isDark ? '#0B1323' : '#FFFFFF'
   const panelBorder = isDark ? 'rgba(148, 163, 184, 0.14)' : 'rgba(14, 165, 233, 0.18)'
   const sidebarSurface = isDark ? '#080F1D' : '#F4F9FF'
@@ -132,9 +130,19 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
     }
   }, [onFetchLeaderboard])
 
+  const loadLiveStats = useCallback(async () => {
+    const res = await fetchWorldLiveStats()
+    if (res) setLiveStats(res)
+  }, [])
+
   useEffect(() => {
     void loadLeaderboard()
-  }, [loadLeaderboard])
+    void loadLiveStats()
+    const timer = window.setInterval(() => {
+      void loadLiveStats()
+    }, 30_000)
+    return () => window.clearInterval(timer)
+  }, [loadLeaderboard, loadLiveStats])
 
   const filteredWorlds = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
@@ -156,46 +164,50 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
     Math.round(((profile.xp - rank.minXp) / Math.max(1, rank.nextXp - rank.minXp)) * 100),
   )
 
+  const lobbyOnline = liveStats?.lobby_online ?? 0
+  const obbyOnline = liveStats?.obby_online ?? 0
+  const obbyClears = liveStats?.obby_100_clears ?? 0
+  const totalPlayers = liveStats?.total_players ?? 0
+
   const isFeaturedObby = featured === 'obby'
   const featuredThumb = thumbs[featured]
 
   const launchWorld = (world: WorldKind, roomId: string) => {
-    sfx.playClick()
     onEnterWorld(world, roomId)
   }
 
   return (
     <div className="flex min-h-full w-full flex-col xl:flex-row">
       {/* ============================================================
-          CENTER WORKSPACE — SPOTLIGHT HERO + REAL 3D MAP LIBRARY
+          CENTER WORKSPACE — SPOTLIGHT HERO + COMPACT LAUNCHER LIBRARY
       ============================================================ */}
       <div className="min-w-0 flex-1 space-y-5 p-4 sm:p-5 lg:p-6">
-        {/* === SPOTLIGHT HERO BANNER (REAL 3D BIRD'S-EYE RENDER) === */}
+        {/* === SPOTLIGHT HERO BANNER (COMPACT HEIGHT + REAL 3D RENDER) === */}
         <section
           className="group relative overflow-hidden rounded-2xl border select-none"
           style={{
-            borderColor: isFeaturedObby ? 'rgba(245, 158, 11, 0.42)' : 'rgba(56, 189, 248, 0.38)',
+            borderColor: isFeaturedObby ? 'rgba(245, 158, 11, 0.38)' : 'rgba(56, 189, 248, 0.36)',
             background: isFeaturedObby
               ? 'linear-gradient(135deg, #271605 0%, #92400E 100%)'
               : 'linear-gradient(135deg, #07192E 0%, #0369A1 100%)',
           }}
         >
-          <div className="relative aspect-[16/9] sm:aspect-[21/9] min-h-[220px] max-h-[340px] w-full overflow-hidden">
+          <div className="relative h-[215px] sm:h-[240px] lg:h-[260px] w-full overflow-hidden">
             {featuredThumb && (
               <img
                 src={featuredThumb}
                 alt={isFeaturedObby ? 'Test Obby 100' : 'Lobby Główne'}
-                className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.03]"
+                className="h-full w-full object-cover object-center transition-transform duration-700 ease-out group-hover:scale-[1.025]"
                 draggable={false}
               />
             )}
 
-            {/* Cinematic bottom + left gradient scrim for crisp foreground legibility */}
+            {/* Cinematic bottom scrim for razor-sharp text & button contrast */}
             <div
               className="pointer-events-none absolute inset-0"
               style={{
                 background:
-                  'linear-gradient(to top, rgba(5, 10, 20, 0.94) 0%, rgba(5, 10, 20, 0.48) 46%, rgba(5, 10, 20, 0.14) 100%)',
+                  'linear-gradient(to top, rgba(5, 10, 20, 0.94) 0%, rgba(5, 10, 20, 0.44) 48%, rgba(5, 10, 20, 0.1) 100%)',
               }}
             />
 
@@ -224,10 +236,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
               <div className="flex items-center gap-1 rounded-xl bg-slate-950/75 p-1 backdrop-blur-md border border-white/10">
                 <button
                   type="button"
-                  onClick={() => {
-                    sfx.playClick()
-                    setFeatured('lobby')
-                  }}
+                  onClick={() => setFeatured('lobby')}
                   className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition cursor-pointer"
                   style={{
                     background: featured === 'lobby' ? '#0EA5E9' : 'transparent',
@@ -239,10 +248,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    sfx.playClick()
-                    setFeatured('obby')
-                  }}
+                  onClick={() => setFeatured('obby')}
                   className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition cursor-pointer"
                   style={{
                     background: featured === 'obby' ? '#F59E0B' : 'transparent',
@@ -255,42 +261,54 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
               </div>
             </div>
 
-            {/* Bottom bar on Hero: Title + concise icon metrics left, bold PLAY button right */}
-            <div className="absolute inset-x-3.5 bottom-3.5 sm:inset-x-5 sm:bottom-5 flex flex-wrap items-end justify-between gap-3">
+            {/* Bottom bar on Hero: Title + 100% REAL stats left, bold PLAY button right */}
+            <div className="absolute inset-x-3.5 bottom-3.5 sm:inset-x-5 sm:bottom-4 flex flex-wrap items-end justify-between gap-3">
               <div className="min-w-0">
                 <h1 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-white drop-shadow">
                   {isFeaturedObby ? 'Test Obby 100' : lang === 'pl' ? 'Lobby Główne' : 'Main Lobby'}
                 </h1>
 
                 {isFeaturedObby ? (
-                  <div className="mt-2 flex items-center gap-3">
-                    <div className="h-2 w-32 sm:w-44 overflow-hidden rounded-full bg-white/15 backdrop-blur-sm">
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{
-                          width: `${obbyPct}%`,
-                          background: 'linear-gradient(90deg, #F59E0B 0%, #FDE047 100%)',
-                        }}
+                  <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs font-bold text-amber-100/90">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${obbyOnline > 0 ? 'bg-emerald-400' : 'bg-slate-400'}`}
                       />
-                    </div>
-                    <span className="font-mono text-xs font-extrabold text-amber-300">
-                      ★ {profile.obbyBestStage}/100
+                      {obbyOnline} online
                     </span>
+                    <span className="inline-flex items-center gap-1 text-amber-300">
+                      <Trophy className="h-3.5 w-3.5" />
+                      {obbyClears} {lang === 'pl' ? 'ukończyło' : 'cleared'}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 w-24 sm:w-32 overflow-hidden rounded-full bg-white/15">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${obbyPct}%`,
+                            background: 'linear-gradient(90deg, #F59E0B 0%, #FDE047 100%)',
+                          }}
+                        />
+                      </div>
+                      <span className="font-mono text-[11px] font-extrabold text-amber-300">
+                        {profile.obbyBestStage}/100
+                      </span>
+                    </div>
                   </div>
                 ) : (
-                  <div className="mt-1.5 flex items-center gap-3 text-xs font-bold text-sky-100/90">
-                    <span className="inline-flex items-center gap-1">
-                      <Users className="h-3.5 w-3.5 text-sky-300" />
-                      16
+                  <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs font-bold text-sky-100/90">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${lobbyOnline > 0 ? 'bg-emerald-400' : 'bg-slate-400'}`}
+                      />
+                      {lobbyOnline} online
                     </span>
-                    <span className="inline-flex items-center gap-1">
-                      <Wifi className="h-3.5 w-3.5 text-emerald-400" />
-                      22ms
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <Sparkles className="h-3.5 w-3.5 text-cyan-300" />
-                      3D
-                    </span>
+                    {totalPlayers > 0 && (
+                      <span className="inline-flex items-center gap-1 text-sky-200/80">
+                        <Users className="h-3.5 w-3.5 text-sky-300" />
+                        {totalPlayers} {lang === 'pl' ? 'kont' : 'players'}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -298,7 +316,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
               <button
                 type="button"
                 onClick={() => launchWorld(isFeaturedObby ? 'obby' : 'lobby', isFeaturedObby ? 'OBBY-1' : 'PUBLIC-1')}
-                className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 sm:px-6 sm:py-3 text-sm font-extrabold shadow-xl transition hover:brightness-110 active:scale-[0.98] cursor-pointer"
+                className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-extrabold shadow-xl transition hover:brightness-110 active:scale-[0.98] cursor-pointer"
                 style={{
                   background: isFeaturedObby
                     ? 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)'
@@ -313,7 +331,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
           </div>
         </section>
 
-        {/* === WORLDS LIBRARY GRID (REAL 3D BIRD'S-EYE COVERS) === */}
+        {/* === COMPACT WORLDS LIBRARY (4-COL DESKTOP LAUNCHER GRID) === */}
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -328,13 +346,22 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                 {filteredWorlds.length}
               </span>
             </div>
+
+            {liveStats && (
+              <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-bold" style={{ color: tokens.textSecondary }}>
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                {liveStats.platform_online} online
+              </span>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             {filteredWorlds.map((world) => {
               const thumb = thumbs[world.id]
               const title = lang === 'pl' ? world.titlePl : world.titleEn
               const tag = lang === 'pl' ? world.tagPl : world.tagEn
+              const worldOnlineCount =
+                world.id === 'lobby' ? lobbyOnline : world.id === 'obby' ? obbyOnline : 0
 
               return (
                 <div
@@ -352,17 +379,19 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                       launchWorld(world.worldKind, world.roomId)
                     }
                   }}
-                  className={`group relative overflow-hidden rounded-xl border transition-all ${
-                    world.live ? 'cursor-pointer hover:-translate-y-0.5' : 'opacity-75'
+                  className={`group relative flex flex-col overflow-hidden rounded-xl border transition-all duration-200 ${
+                    world.live
+                      ? 'cursor-pointer hover:-translate-y-1 hover:shadow-[0_12px_28px_-12px_rgba(14,165,233,0.45)]'
+                      : 'opacity-70'
                   }`}
                   style={{
                     background: panelSurface,
                     borderColor: panelBorder,
                   }}
                 >
-                  {/* 16:9 Real 3D Bird's-eye Render */}
+                  {/* Crisp 16:10 Real 3D Bird's-eye Cover */}
                   <div
-                    className="relative aspect-[16/9] w-full overflow-hidden"
+                    className="relative aspect-[16/10] w-full overflow-hidden"
                     style={{ background: world.fallbackBg }}
                   >
                     {thumb && (
@@ -370,25 +399,25 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                         src={thumb}
                         alt={title}
                         className={`h-full w-full object-cover transition-transform duration-500 ${
-                          world.live ? 'group-hover:scale-105' : 'grayscale-[30%] brightness-90'
+                          world.live ? 'group-hover:scale-105' : 'grayscale-[35%] brightness-90'
                         }`}
                         draggable={false}
                       />
                     )}
 
-                    {/* Subtle vignette on cover */}
+                    {/* Soft bottom edge gradient */}
                     <div
                       className="pointer-events-none absolute inset-0"
                       style={{
                         background:
-                          'linear-gradient(to top, rgba(5, 10, 20, 0.65) 0%, rgba(5, 10, 20, 0.05) 55%, rgba(5, 10, 20, 0.25) 100%)',
+                          'linear-gradient(to top, rgba(5, 10, 20, 0.58) 0%, rgba(5, 10, 20, 0.04) 55%, rgba(5, 10, 20, 0.16) 100%)',
                       }}
                     />
 
-                    {/* Top-left badge */}
-                    <div className="absolute left-2.5 top-2.5 flex items-center gap-1.5">
+                    {/* Subtle top-left status pill */}
+                    <div className="absolute left-2.5 top-2.5">
                       {world.live ? (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-slate-950/75 px-2 py-0.5 text-[10px] font-extrabold text-emerald-300 backdrop-blur-md border border-emerald-400/25">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-slate-950/70 px-2 py-0.5 text-[10px] font-extrabold text-emerald-300 backdrop-blur-md border border-emerald-400/25">
                           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                           LIVE
                         </span>
@@ -400,9 +429,10 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                       )}
                     </div>
 
-                    {/* Hover Play Pill on live cards */}
+                    {/* Clean hover Play action button */}
                     {world.live && (
-                      <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-extrabold shadow-lg transition-all duration-200 sm:translate-y-1 sm:opacity-90 group-hover:translate-y-0 group-hover:opacity-100"
+                      <div
+                        className="absolute bottom-2.5 right-2.5 inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-extrabold shadow-lg transition-all duration-200 sm:opacity-0 sm:translate-y-1 group-hover:opacity-100 group-hover:translate-y-0"
                         style={{
                           background: world.id === 'obby' ? '#F59E0B' : '#0EA5E9',
                           color: world.id === 'obby' ? '#0F172A' : '#FFFFFF',
@@ -414,34 +444,67 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                     )}
                   </div>
 
-                  {/* Ultra-clean 1-line launcher footer */}
-                  <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
-                    <div className="min-w-0 flex items-center gap-2">
+                  {/* Polished 2-line Launcher Card Footer with 100% REAL stats */}
+                  <div className="flex flex-1 flex-col justify-between gap-1.5 p-3">
+                    <div className="flex items-center justify-between gap-2">
                       <span
-                        className="h-2 w-2 shrink-0 rounded-full"
-                        style={{ background: world.accent }}
-                      />
-                      <span
-                        className="truncate text-sm font-extrabold"
+                        className="truncate text-sm font-extrabold tracking-tight"
                         style={{ color: tokens.textPrimary }}
                       >
                         {title}
                       </span>
+                      <span
+                        className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold"
+                        style={{ background: subtleSurface, color: tokens.textSecondary }}
+                      >
+                        {tag}
+                      </span>
                     </div>
 
-                    <div className="flex shrink-0 items-center gap-1.5 font-mono text-[11px] font-bold" style={{ color: tokens.textSecondary }}>
-                      {world.id === 'obby' ? (
-                        <span className="inline-flex items-center gap-1 text-amber-400">
-                          <Flag className="h-3 w-3" />
-                          {profile.obbyBestStage}/100
-                        </span>
-                      ) : world.id === 'lobby' ? (
-                        <span className="inline-flex items-center gap-1">
-                          <Users className="h-3 w-3 text-sky-400" />
-                          16
-                        </span>
+                    {/* Real live stats row */}
+                    <div className="flex items-center justify-between gap-2 font-mono text-[11px] font-bold" style={{ color: tokens.textSecondary }}>
+                      {world.live ? (
+                        <>
+                          <span className="inline-flex items-center gap-1.5">
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                worldOnlineCount > 0 ? 'bg-emerald-400' : 'bg-slate-500/70'
+                              }`}
+                            />
+                            <span style={{ color: worldOnlineCount > 0 ? tokens.textPrimary : tokens.textSecondary }}>
+                              {worldOnlineCount}
+                            </span>
+                            <span className="text-[10px] opacity-80">online</span>
+                          </span>
+
+                          {world.id === 'obby' ? (
+                            <span className="inline-flex items-center gap-2">
+                              <span
+                                className="inline-flex items-center gap-0.5 text-amber-400"
+                                title={lang === 'pl' ? 'Twój rekord' : 'Your best stage'}
+                              >
+                                <Flag className="h-3 w-3" />
+                                {profile.obbyBestStage}/100
+                              </span>
+                              <span
+                                className="inline-flex items-center gap-0.5 text-sky-400"
+                                title={lang === 'pl' ? 'Ukończenia 100/100 na serwerze' : 'Server 100/100 clears'}
+                              >
+                                <Trophy className="h-3 w-3" />
+                                {obbyClears}
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] opacity-80">
+                              <Users className="h-3 w-3 text-sky-400" />
+                              {totalPlayers}
+                            </span>
+                          )}
+                        </>
                       ) : (
-                        <span>{tag}</span>
+                        <span className="text-[10px] opacity-75">
+                          {lang === 'pl' ? 'W przygotowaniu' : 'In development'}
+                        </span>
                       )}
                     </div>
                   </div>
@@ -456,7 +519,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
           RIGHT ACTIVITY SIDEBAR (PLAYER + LEADERBOARD + QUESTS)
       ============================================================ */}
       <aside
-        className="w-full shrink-0 border-t xl:w-[296px] xl:border-t-0 xl:border-l p-4 space-y-4"
+        className="w-full shrink-0 border-t xl:w-[292px] xl:border-t-0 xl:border-l p-4 space-y-4"
         style={{ background: sidebarSurface, borderColor: panelBorder }}
       >
         {/* 1. Compact Player Card + R6 Wardrobe Jump */}
@@ -526,10 +589,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
           {/* Quick R6 Wardrobe Button */}
           <button
             type="button"
-            onClick={() => {
-              sfx.playClick()
-              onOpenAvatar()
-            }}
+            onClick={onOpenAvatar}
             className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border py-2 text-xs font-extrabold transition hover:brightness-110 cursor-pointer"
             style={{
               borderColor: `${ARCTIC_SKY.skyMain}45`,
@@ -556,10 +616,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
             </div>
             <button
               type="button"
-              onClick={() => {
-                sfx.playClick()
-                void loadLeaderboard()
-              }}
+              onClick={() => void loadLeaderboard()}
               className="flex h-6 w-6 items-center justify-center rounded-md border transition hover:scale-105 cursor-pointer"
               style={{ borderColor: panelBorder, background: subtleSurface, color: tokens.textSecondary }}
               title={lang === 'pl' ? 'Odśwież' : 'Refresh'}
@@ -647,10 +704,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                     ) : ready ? (
                       <button
                         type="button"
-                        onClick={() => {
-                          sfx.playGemCollect()
-                          onClaimQuest(q.id)
-                        }}
+                        onClick={() => onClaimQuest(q.id)}
                         className="shrink-0 rounded-md px-2 py-0.5 font-mono text-[10px] font-extrabold text-slate-950 transition hover:brightness-110 cursor-pointer"
                         style={{ background: '#FACC15' }}
                       >

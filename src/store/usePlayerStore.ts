@@ -706,7 +706,7 @@ async function postRegisterApi(
     }
   }, [])
 
-  const updatePresenceLocation = useCallback((world: WorldKind, roomCode: string) => {
+  const updatePresenceLocation = useCallback((world: WorldKind | 'launcher', roomCode: string) => {
     if (!supabase || !authUserRef.current) return
     void supabase
       .from('fb_profiles')
