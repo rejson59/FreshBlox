@@ -188,7 +188,7 @@ export const PartyBarModal: React.FC<PartyBarModalProps> = ({
                       ? 'Uruchom grę — cała drużyna wejdzie razem do tego samego pokoju:'
                       : 'Launch a world — everyone in your party joins together:'}
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -220,7 +220,18 @@ export const PartyBarModal: React.FC<PartyBarModalProps> = ({
                       className="flex items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-cyan-400 to-orange-400 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-110 cursor-pointer"
                     >
                       <Play className="h-3.5 w-3.5 fill-slate-950" />
-                      Arena
+                      Portal Arena
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onLaunchWorld('frisbee')
+                        onClose()
+                      }}
+                      className="flex items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-orange-500 to-amber-300 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-110 cursor-pointer"
+                    >
+                      <Play className="h-3.5 w-3.5 fill-slate-950" />
+                      Frisbee King
                     </button>
                   </div>
                 </div>

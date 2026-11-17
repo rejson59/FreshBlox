@@ -102,7 +102,7 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
       category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet'
       id: string
       price: number
-      rewardOnly?: 'obby100' | 'arenaWin' | 'arenaMeteor'
+      rewardOnly?: 'obby100' | 'arenaWin' | 'arenaMeteor' | 'frisbeeWin'
     }> = []
     if (!unlockedOutfits.includes(previewAvatar.outfitId)) {
       const it = OUTFIT_CATALOG.find((x) => x.id === previewAvatar.outfitId)

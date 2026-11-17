@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Clock,
   Crown,
+  Disc,
   Flame,
   Flag,
   Gamepad2,
@@ -82,13 +83,25 @@ const WORLD_CARDS: WorldCardSpec[] = [
     id: 'arena',
     worldKind: 'arena',
     roomId: 'ARENA-1',
-    titlePl: 'Portal Arena',
-    titleEn: 'Portal Arena',
-    tagPl: 'Portale & Fizyka',
-    tagEn: 'Portals & Physics',
+    titlePl: 'Portal Arena 2.0',
+    titleEn: 'Portal Arena 2.0',
+    tagPl: 'Portale Live + Solo',
+    tagEn: 'Live Portals + Solo',
     live: true,
     accent: '#22D3EE',
     fallbackBg: 'linear-gradient(135deg, #06182A 0%, #0E7490 50%, #F97316 100%)',
+  },
+  {
+    id: 'frisbee',
+    worldKind: 'frisbee',
+    roomId: 'FRISBEE-1',
+    titlePl: 'Frisbee King',
+    titleEn: 'Frisbee King',
+    tagPl: '3 Rundy · Ogniste Cięcie',
+    tagEn: '3 Rounds · Blazing Slice',
+    live: true,
+    accent: '#F97316',
+    fallbackBg: 'linear-gradient(135deg, #1E1B4B 0%, #C2410C 55%, #FACC15 100%)',
   },
 ]
 
@@ -107,7 +120,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
   onClaimQuest,
   onFetchLeaderboard,
 }) => {
-  const [featured, setFeatured] = useState<'lobby' | 'obby' | 'arena'>('arena')
+  const [featured, setFeatured] = useState<'lobby' | 'obby' | 'arena' | 'frisbee'>('frisbee')
   const [leaderboard, setLeaderboard] = useState<CloudPlayerSummary[]>([])
   const [loadingBoard, setLoadingBoard] = useState(false)
   const [liveStats, setLiveStats] = useState<WorldLiveStats | null>(null)
@@ -171,11 +184,14 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
   const obbyOnline = liveStats?.obby_online ?? 0
   const arenaOnline = liveStats?.arena_online ?? 0
   const arenaTotalElims = liveStats?.arena_total_elims ?? 0
+  const frisbeeOnline = liveStats?.frisbee_online ?? 0
+  const frisbeeTotalSlices = liveStats?.frisbee_total_slices ?? 0
   const obbyClears = liveStats?.obby_100_clears ?? 0
   const totalPlayers = liveStats?.total_players ?? 0
 
   const isFeaturedObby = featured === 'obby'
   const isFeaturedArena = featured === 'arena'
+  const isFeaturedFrisbee = featured === 'frisbee'
   const featuredThumb = thumbs[featured]
 
   const launchWorld = (world: WorldKind, roomId: string) => {
@@ -192,23 +208,27 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
         <section
           className="group relative overflow-hidden rounded-2xl border select-none"
           style={{
-            borderColor: isFeaturedArena
-              ? 'rgba(34, 211, 238, 0.45)'
-              : isFeaturedObby
-                ? 'rgba(245, 158, 11, 0.38)'
-                : 'rgba(56, 189, 248, 0.36)',
-            background: isFeaturedArena
-              ? 'linear-gradient(135deg, #051326 0%, #0E7490 55%, #C2410C 100%)'
-              : isFeaturedObby
-                ? 'linear-gradient(135deg, #271605 0%, #92400E 100%)'
-                : 'linear-gradient(135deg, #07192E 0%, #0369A1 100%)',
+            borderColor: isFeaturedFrisbee
+              ? 'rgba(249, 115, 22, 0.5)'
+              : isFeaturedArena
+                ? 'rgba(34, 211, 238, 0.45)'
+                : isFeaturedObby
+                  ? 'rgba(245, 158, 11, 0.38)'
+                  : 'rgba(56, 189, 248, 0.36)',
+            background: isFeaturedFrisbee
+              ? 'linear-gradient(135deg, #1E1B4B 0%, #9A3412 52%, #EA580C 100%)'
+              : isFeaturedArena
+                ? 'linear-gradient(135deg, #051326 0%, #0E7490 55%, #C2410C 100%)'
+                : isFeaturedObby
+                  ? 'linear-gradient(135deg, #271605 0%, #92400E 100%)'
+                  : 'linear-gradient(135deg, #07192E 0%, #0369A1 100%)',
           }}
         >
           <div className="relative h-[215px] sm:h-[240px] lg:h-[260px] w-full overflow-hidden">
             {featuredThumb && (
               <img
                 src={featuredThumb}
-                alt={isFeaturedArena ? 'Portal Arena' : isFeaturedObby ? 'Test Obby 100' : 'Lobby Główne'}
+                alt={isFeaturedFrisbee ? 'Frisbee King' : isFeaturedArena ? 'Portal Arena' : isFeaturedObby ? 'Test Obby 100' : 'Lobby Główne'}
                 className="h-full w-full object-cover object-center transition-transform duration-700 ease-out group-hover:scale-[1.025]"
                 draggable={false}
               />
@@ -228,10 +248,16 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
               <div className="flex items-center gap-1.5">
                 <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950/75 px-2.5 py-1 text-[11px] font-extrabold text-emerald-300 backdrop-blur-md border border-emerald-400/25">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  {isFeaturedArena ? 'NOWA GRA · LIVE' : 'LIVE'}
+                  {isFeaturedFrisbee ? 'NOWA GRA · LIVE' : isFeaturedArena ? 'UPDATE 2.0 · LIVE' : 'LIVE'}
                 </span>
                 <span className="inline-flex items-center gap-1 rounded-lg bg-slate-950/70 px-2.5 py-1 font-mono text-[11px] font-bold text-slate-200 backdrop-blur-md border border-white/10">
-                  {isFeaturedArena ? '#ARENA-1' : isFeaturedObby ? `${profile.obbyStage}/100` : '#PUBLIC-1'}
+                  {isFeaturedFrisbee
+                    ? '#FRISBEE-1'
+                    : isFeaturedArena
+                      ? '#ARENA-1'
+                      : isFeaturedObby
+                        ? `${profile.obbyStage}/100`
+                        : '#PUBLIC-1'}
                 </span>
                 {isFeaturedObby && (
                   <span
@@ -246,6 +272,18 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
 
               {/* Switch Spotlight preview between real 3D worlds */}
               <div className="flex items-center gap-1 rounded-xl bg-slate-950/75 p-1 backdrop-blur-md border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setFeatured('frisbee')}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition cursor-pointer"
+                  style={{
+                    background: featured === 'frisbee' ? 'linear-gradient(135deg, #F97316, #FACC15)' : 'transparent',
+                    color: featured === 'frisbee' ? '#09111F' : '#94A3B8',
+                  }}
+                >
+                  <Disc className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Frisbee King</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setFeatured('arena')}
@@ -289,16 +327,36 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
             <div className="absolute inset-x-3.5 bottom-3.5 sm:inset-x-5 sm:bottom-4 flex flex-wrap items-end justify-between gap-3">
               <div className="min-w-0">
                 <h1 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-white drop-shadow">
-                  {isFeaturedArena
-                    ? 'Portal Arena'
-                    : isFeaturedObby
-                      ? 'Test Obby 100'
-                      : lang === 'pl'
-                        ? 'Lobby Główne'
-                        : 'Main Lobby'}
+                  {isFeaturedFrisbee
+                    ? 'Frisbee King'
+                    : isFeaturedArena
+                      ? 'Portal Arena 2.0'
+                      : isFeaturedObby
+                        ? 'Test Obby 100'
+                        : lang === 'pl'
+                          ? 'Lobby Główne'
+                          : 'Main Lobby'}
                 </h1>
 
-                {isFeaturedArena ? (
+                {isFeaturedFrisbee ? (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs font-bold text-orange-100/95">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${frisbeeOnline > 0 ? 'bg-emerald-400' : 'bg-slate-400'}`}
+                      />
+                      {frisbeeOnline} online
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-amber-300">
+                      <Flame className="h-3.5 w-3.5" />
+                      {frisbeeTotalSlices} {lang === 'pl' ? 'przecięć' : 'slices'}
+                    </span>
+                    <span className="hidden sm:inline text-orange-200/90 font-semibold">
+                      {lang === 'pl'
+                        ? '3 Rundy · Kręta hala z rampami · Ogniste cięcie · Łapanie [PPM/E]'
+                        : '3 Rounds · Winding ramp box · Fiery slice · Mid-air Catch [RMB/E]'}
+                    </span>
+                  </div>
+                ) : isFeaturedArena ? (
                   <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs font-bold text-cyan-100/95">
                     <span className="inline-flex items-center gap-1.5">
                       <span
@@ -312,8 +370,8 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                     </span>
                     <span className="hidden sm:inline text-cyan-200/85 font-semibold">
                       {lang === 'pl'
-                        ? 'Zero karabinów · Meteoryt 95+ km/h · Rykoszet [Q] · Laser'
-                        : 'Zero guns · 95+ km/h Meteor · Ricochet [Q] · Portal Laser'}
+                        ? 'Zamknięta komora (0 przepaści!) · Tafle portali na żywo · Trening Solo'
+                        : 'Sealed box (0 pits!) · Live see-through portal panes · Solo Training'}
                     </span>
                   </div>
                 ) : isFeaturedObby ? (
@@ -365,18 +423,20 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                 type="button"
                 onClick={() =>
                   launchWorld(
-                    isFeaturedArena ? 'arena' : isFeaturedObby ? 'obby' : 'lobby',
-                    isFeaturedArena ? 'ARENA-1' : isFeaturedObby ? 'OBBY-1' : 'PUBLIC-1',
+                    isFeaturedFrisbee ? 'frisbee' : isFeaturedArena ? 'arena' : isFeaturedObby ? 'obby' : 'lobby',
+                    isFeaturedFrisbee ? 'FRISBEE-1' : isFeaturedArena ? 'ARENA-1' : isFeaturedObby ? 'OBBY-1' : 'PUBLIC-1',
                   )
                 }
                 className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-extrabold shadow-xl transition hover:brightness-110 active:scale-[0.98] cursor-pointer"
                 style={{
-                  background: isFeaturedArena
-                    ? 'linear-gradient(135deg, #22D3EE 0%, #F97316 100%)'
-                    : isFeaturedObby
-                      ? 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)'
-                      : 'linear-gradient(135deg, #0EA5E9 0%, #0284C7 100%)',
-                  color: isFeaturedArena || isFeaturedObby ? '#0F172A' : '#FFFFFF',
+                  background: isFeaturedFrisbee
+                    ? 'linear-gradient(135deg, #F97316 0%, #FACC15 100%)'
+                    : isFeaturedArena
+                      ? 'linear-gradient(135deg, #22D3EE 0%, #F97316 100%)'
+                      : isFeaturedObby
+                        ? 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)'
+                        : 'linear-gradient(135deg, #0EA5E9 0%, #0284C7 100%)',
+                  color: isFeaturedFrisbee || isFeaturedArena || isFeaturedObby ? '#0F172A' : '#FFFFFF',
                 }}
               >
                 <Play className="h-4 w-4 fill-current" />
@@ -462,7 +522,9 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                     ? obbyOnline
                     : world.id === 'arena'
                       ? arenaOnline
-                      : 0
+                      : world.id === 'frisbee'
+                        ? frisbeeOnline
+                        : 0
 
               return (
                 <div
@@ -529,12 +591,14 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                         className="absolute bottom-2.5 right-2.5 inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-extrabold shadow-lg transition-all duration-200 sm:opacity-0 sm:translate-y-1 group-hover:opacity-100 group-hover:translate-y-0"
                         style={{
                           background:
-                            world.id === 'arena'
-                              ? 'linear-gradient(135deg, #22D3EE, #F97316)'
-                              : world.id === 'obby'
-                                ? '#F59E0B'
-                                : '#0EA5E9',
-                          color: world.id === 'obby' || world.id === 'arena' ? '#0F172A' : '#FFFFFF',
+                            world.id === 'frisbee'
+                              ? 'linear-gradient(135deg, #F97316, #FACC15)'
+                              : world.id === 'arena'
+                                ? 'linear-gradient(135deg, #22D3EE, #F97316)'
+                                : world.id === 'obby'
+                                  ? '#F59E0B'
+                                  : '#0EA5E9',
+                          color: world.id === 'obby' || world.id === 'arena' || world.id === 'frisbee' ? '#0F172A' : '#FFFFFF',
                         }}
                       >
                         <Play className="h-3 w-3 fill-current" />
@@ -608,6 +672,23 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                               >
                                 <Trophy className="h-3 w-3" />
                                 {profile.arenaWins}
+                              </span>
+                            </span>
+                          ) : world.id === 'frisbee' ? (
+                            <span className="inline-flex items-center gap-2">
+                              <span
+                                className="inline-flex items-center gap-0.5 text-orange-400"
+                                title={lang === 'pl' ? 'Twoje przecięcia' : 'Your slices'}
+                              >
+                                <Flame className="h-3 w-3" />
+                                {profile.frisbeeSlices}
+                              </span>
+                              <span
+                                className="inline-flex items-center gap-0.5 text-amber-300"
+                                title={lang === 'pl' ? 'Wygrane mecze Frisbee King' : 'Frisbee King wins'}
+                              >
+                                <Crown className="h-3 w-3" />
+                                {profile.frisbeeWins}
                               </span>
                             </span>
                           ) : (

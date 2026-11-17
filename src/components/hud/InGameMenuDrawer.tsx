@@ -53,7 +53,7 @@ export interface InGameMenuDrawerProps {
   activeTab?: MenuDrawerTab
   onTabChange?: (tab: MenuDrawerTab) => void
   onOpenShortcuts?: () => void
-  worldKind: 'lobby' | 'obby' | 'arena'
+  worldKind: 'lobby' | 'obby' | 'arena' | 'frisbee'
   lang: Lang
   roomCode: string
   username: string
@@ -99,6 +99,7 @@ export interface InGameMenuDrawerProps {
   onResetPosition: () => void
   onSwitchWorld: () => void
   onSwitchToArena?: () => void
+  onSwitchToFrisbee?: () => void
   onLeaveToHome: () => void
   onOpenFeedback: () => void
   onTeleportToMember?: (memberId: string) => void
@@ -112,6 +113,7 @@ const COPY = {
     lobby: 'Lobby Główne',
     obby: 'Test Obby 100',
     arena: 'Portal Arena',
+    frisbee: 'Frisbee King',
     resume: 'Wznów',
     wardrobe: 'Szatnia',
     report: 'Zgłoś',
@@ -149,6 +151,7 @@ const COPY = {
     lobby: 'Main Lobby',
     obby: 'Test Obby 100',
     arena: 'Portal Arena',
+    frisbee: 'Frisbee King',
     resume: 'Resume',
     wardrobe: 'Wardrobe',
     report: 'Feedback',
@@ -230,6 +233,7 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
   onResetPosition,
   onSwitchWorld,
   onSwitchToArena,
+  onSwitchToFrisbee,
   onLeaveToHome,
   onOpenFeedback,
   onTeleportToMember,
@@ -271,7 +275,7 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
               </div>
               <div className="min-w-0">
                 <div className="truncate font-display text-sm font-black text-white">
-                  {worldKind === 'obby' ? t.obby : worldKind === 'arena' ? t.arena : t.lobby}
+                  {worldKind === 'obby' ? t.obby : worldKind === 'arena' ? t.arena : worldKind === 'frisbee' ? t.frisbee : t.lobby}
                 </div>
                 <div className="mt-0.5 flex items-center gap-1.5 text-[11px] font-semibold text-sky-200/75">
                   <span className="truncate max-w-[100px] text-white">{username}</span>
@@ -510,6 +514,21 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
                 >
                   <Sparkles className="h-4 w-4" />
                   <span>Portal Arena</span>
+                </button>
+              )}
+
+              {worldKind !== 'frisbee' && onSwitchToFrisbee && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    sfx.playClick()
+                    onClose()
+                    onSwitchToFrisbee()
+                  }}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-orange-300/45 bg-gradient-to-r from-orange-500 to-amber-400 py-3 px-4 text-xs font-black text-slate-950 shadow-md hover:brightness-110 active:scale-[0.98] transition cursor-pointer"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  <span>Frisbee King</span>
                 </button>
               )}
 

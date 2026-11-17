@@ -127,6 +127,7 @@ interface TestObbyWorldProps {
   onBackHome: () => void
   onSwitchToLobby: () => void
   onSwitchToArena?: () => void
+  onSwitchToFrisbee?: () => void
   onBuyAndEquip: (category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet', itemId: string, price: number) => boolean
   onBuyBundle: (items: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; price: number }>) => boolean
   onSkinChange: (hex: string) => void
@@ -284,6 +285,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   onBackHome,
   onSwitchToLobby,
   onSwitchToArena,
+  onSwitchToFrisbee,
   onBuyAndEquip,
   onBuyBundle,
   onSkinChange,
@@ -3234,6 +3236,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         onResetPosition={() => respawnToStageRef.current?.(currentStage)}
         onSwitchWorld={onSwitchToLobby}
         onSwitchToArena={onSwitchToArena}
+        onSwitchToFrisbee={onSwitchToFrisbee}
         onLeaveToHome={onBackHome}
         onOpenFeedback={() => onOpenFeedback?.(`Test Obby 100 · Stage ${currentStage}`)}
       />

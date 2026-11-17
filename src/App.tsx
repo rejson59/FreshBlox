@@ -33,6 +33,7 @@ import { HomeBentoView } from './components/lobby/HomeBentoView'
 import { MainLobbyWorld } from './engine/MainLobbyWorld'
 import { TestObbyWorld } from './engine/TestObbyWorld'
 import { PortalArenaWorld } from './engine/PortalArenaWorld'
+import { FrisbeeKingWorld } from './engine/FrisbeeKingWorld'
 import { AvatarEditorView } from './components/avatar/AvatarEditorView'
 import { SocialProfileView } from './components/social/SocialProfileView'
 import { AdminPanelView } from './components/admin/AdminPanelView'
@@ -58,13 +59,16 @@ import {
   isTouchMobileDevice,
 } from './lib/mobileFullscreen'
 
-type AppView = 'home' | 'world' | 'obby' | 'arena' | 'avatar' | 'social' | 'admin' | 'inbox' | 'tests'
+type AppView = 'home' | 'world' | 'obby' | 'arena' | 'frisbee' | 'avatar' | 'social' | 'admin' | 'inbox' | 'tests'
 
 function getInitialLaunchFromUrl(): { view: AppView; roomId: string; hasInvite: boolean } {
   if (typeof window === 'undefined') return { view: 'home', roomId: 'PUBLIC-1', hasInvite: false }
   const params = new URLSearchParams(window.location.search)
   const worldParam = params.get('world')?.toLowerCase()
   const room = params.get('room')?.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 12)
+  if (worldParam === 'frisbee') {
+    return { view: 'frisbee', roomId: room || 'FRISBEE-1', hasInvite: true }
+  }
   if (worldParam === 'arena') {
     return { view: 'arena', roomId: room || 'ARENA-1', hasInvite: true }
   }
@@ -157,6 +161,7 @@ export function App() {
     recordObbyStage,
     setObbyCurrentStage,
     recordArenaProgress,
+    recordFrisbeeProgress,
     setClanInfo,
     buyAndEquip,
     buyBundle,
@@ -211,12 +216,21 @@ export function App() {
     }
   }, [])
 
-  // Real-time presence heartbeat in Supabase (exact location: lobby / obby / arena / launcher)
+  // Real-time presence heartbeat in Supabase (exact location: lobby / obby / arena / frisbee / launcher)
   useEffect(() => {
     if (!authUser) return
     const loc =
-      view === 'arena' ? 'arena' : view === 'obby' ? 'obby' : view === 'world' ? 'lobby' : 'launcher'
-    const room = view === 'world' || view === 'obby' || view === 'arena' ? activeRoomId : 'LAUNCHER'
+      view === 'frisbee'
+        ? 'frisbee'
+        : view === 'arena'
+          ? 'arena'
+          : view === 'obby'
+            ? 'obby'
+            : view === 'world'
+              ? 'lobby'
+              : 'launcher'
+    const room =
+      view === 'world' || view === 'obby' || view === 'arena' || view === 'frisbee' ? activeRoomId : 'LAUNCHER'
     updatePresenceLocation(loc, room)
     const id = window.setInterval(() => {
       updatePresenceLocation(loc, room)
@@ -245,21 +259,24 @@ export function App() {
 
   // Smooth 3D world loading overlay combining L-02 + W-01 + W-02 + W-03 with real player count
   useEffect(() => {
-    if (!authUser || (view !== 'world' && view !== 'obby' && view !== 'arena')) {
+    if (!authUser || (view !== 'world' && view !== 'obby' && view !== 'arena' && view !== 'frisbee')) {
       setWorldTransition(null)
       return
     }
-    const worldKind: WorldKind = view === 'arena' ? 'arena' : view === 'obby' ? 'obby' : 'lobby'
+    const worldKind: WorldKind =
+      view === 'frisbee' ? 'frisbee' : view === 'arena' ? 'arena' : view === 'obby' ? 'obby' : 'lobby'
     let alive = true
     setWorldTransition({ world: worldKind, room: activeRoomId, fading: false, onlineCount: null })
     void fetchWorldLiveStats().then((stats) => {
       if (!alive || !stats) return
       const cnt =
-        worldKind === 'arena'
-          ? Math.max(1, stats.arena_online)
-          : worldKind === 'obby'
-            ? Math.max(1, stats.obby_online)
-            : Math.max(1, stats.lobby_online)
+        worldKind === 'frisbee'
+          ? Math.max(1, stats.frisbee_online ?? 1)
+          : worldKind === 'arena'
+            ? Math.max(1, stats.arena_online)
+            : worldKind === 'obby'
+              ? Math.max(1, stats.obby_online)
+              : Math.max(1, stats.lobby_online)
       setWorldTransition((prev) => (prev ? { ...prev, onlineCount: cnt } : null))
     })
     const tFade = window.setTimeout(() => {
@@ -354,15 +371,19 @@ export function App() {
     )
   }
 
-  const isIn3DGame = view === 'world' || view === 'obby' || view === 'arena'
+  const isIn3DGame = view === 'world' || view === 'obby' || view === 'arena' || view === 'frisbee'
 
   const navigateView = (nextView: AppView, roomId?: string) => {
-    const nextIs3D = nextView === 'world' || nextView === 'obby' || nextView === 'arena'
+    const nextIs3D = nextView === 'world' || nextView === 'obby' || nextView === 'arena' || nextView === 'frisbee'
     if (nextIs3D) {
       if (roomId) setActiveRoomId(roomId)
+      else if (nextView === 'frisbee' && !activeRoomId.startsWith('FRISBEE')) setActiveRoomId('FRISBEE-1')
       else if (nextView === 'arena' && !activeRoomId.startsWith('ARENA')) setActiveRoomId('ARENA-1')
       else if (nextView === 'obby' && !activeRoomId.startsWith('OBBY')) setActiveRoomId('OBBY-1')
-      else if (nextView === 'world' && (activeRoomId.startsWith('OBBY') || activeRoomId.startsWith('ARENA')))
+      else if (
+        nextView === 'world' &&
+        (activeRoomId.startsWith('OBBY') || activeRoomId.startsWith('ARENA') || activeRoomId.startsWith('FRISBEE'))
+      )
         setActiveRoomId('PUBLIC-1')
 
       if (isTouchMobileDevice()) {
@@ -375,7 +396,10 @@ export function App() {
   }
 
   const handleEnterWorld = (world: WorldKind, roomId: string) => {
-    navigateView(world === 'arena' ? 'arena' : world === 'obby' ? 'obby' : 'world', roomId)
+    navigateView(
+      world === 'frisbee' ? 'frisbee' : world === 'arena' ? 'arena' : world === 'obby' ? 'obby' : 'world',
+      roomId,
+    )
   }
 
   // U-02: Party / Squad realtime session handlers
@@ -418,11 +442,13 @@ export function App() {
   const handlePartyLaunchWorld = (world: WorldKind) => {
     const room = partyCode
       ? `PTY-${partyCode.replace(/[^A-Z0-9]/g, '').slice(-4)}`
-      : world === 'arena'
-        ? 'ARENA-1'
-        : world === 'obby'
-          ? 'OBBY-1'
-          : 'PUBLIC-1'
+      : world === 'frisbee'
+        ? 'FRISBEE-1'
+        : world === 'arena'
+          ? 'ARENA-1'
+          : world === 'obby'
+            ? 'OBBY-1'
+            : 'PUBLIC-1'
     if (partyClientRef.current && partyIsLeader) {
       partyClientRef.current.broadcastLaunch(world, room)
     }
@@ -439,7 +465,9 @@ export function App() {
       .slice(0, 12)
     if (!clean) return
     sfx.playClick()
-    if (clean.startsWith('ARENA')) {
+    if (clean.startsWith('FRISBEE')) {
+      handleEnterWorld('frisbee', clean)
+    } else if (clean.startsWith('ARENA')) {
       handleEnterWorld('arena', clean)
     } else if (clean.startsWith('OBBY')) {
       handleEnterWorld('obby', clean)
@@ -548,6 +576,7 @@ export function App() {
             onBackHome={() => navigateView('home')}
             onEnterObby={() => handleEnterWorld('obby', 'OBBY-1')}
             onEnterArena={() => handleEnterWorld('arena', 'ARENA-1')}
+            onEnterFrisbee={() => handleEnterWorld('frisbee', 'FRISBEE-1')}
             onBuyAndEquip={buyAndEquip}
             onBuyBundle={buyBundle}
             onSkinChange={(hex) => updateAvatar({ skinColor: hex })}
@@ -588,6 +617,7 @@ export function App() {
             onBackHome={() => navigateView('home')}
             onSwitchToLobby={() => handleEnterWorld('lobby', 'PUBLIC-1')}
             onSwitchToArena={() => handleEnterWorld('arena', 'ARENA-1')}
+            onSwitchToFrisbee={() => handleEnterWorld('frisbee', 'FRISBEE-1')}
             onBuyAndEquip={buyAndEquip}
             onBuyBundle={buyBundle}
             onSkinChange={(hex) => updateAvatar({ skinColor: hex })}
@@ -629,7 +659,35 @@ export function App() {
             onLeave={() => navigateView('home')}
             onSwitchToLobby={() => handleEnterWorld('lobby', 'PUBLIC-1')}
             onSwitchToObby={() => handleEnterWorld('obby', 'OBBY-1')}
+            onSwitchToFrisbee={() => handleEnterWorld('frisbee', 'FRISBEE-1')}
             onOpenFeedback={() => openFeedback(`Portal Arena (${activeRoomId})`)}
+          />
+        )}
+
+        {view === 'frisbee' && (
+          <FrisbeeKingWorld
+            roomCode={activeRoomId}
+            playerId={profile.playerId}
+            username={profile.username}
+            clanTag={profile.clanTag}
+            rankName={rank.name}
+            freshGems={profile.freshGems}
+            avatar={profile.avatar}
+            unlockedOutfits={profile.unlockedOutfits}
+            unlockedHats={profile.unlockedHats}
+            unlockedFaces={profile.unlockedFaces}
+            unlockedTrails={profile.unlockedTrails}
+            unlockedBacks={profile.unlockedBacks}
+            unlockedPets={profile.unlockedPets}
+            lang={lang}
+            onBuyAndEquip={buyAndEquip}
+            onBuyBundle={buyBundle}
+            onSkinChange={(hex) => updateAvatar({ skinColor: hex })}
+            onFrisbeeProgress={recordFrisbeeProgress}
+            onLeave={() => navigateView('home')}
+            onSwitchToLobby={() => handleEnterWorld('lobby', 'PUBLIC-1')}
+            onSwitchToArena={() => handleEnterWorld('arena', 'ARENA-1')}
+            onOpenFeedback={() => openFeedback(`Frisbee King (${activeRoomId})`)}
           />
         )}
 

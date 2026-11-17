@@ -32,11 +32,18 @@ const TIPS_PL: Record<WorldKind, string[]> = {
     'Jedno kliknięcie ESC otwiera mini-menu gry z ustawieniami FOV i czułości.',
   ],
   arena: [
-    'Zero karabinów! LPM stawia portal Cyan, PPM portal Orange — zachowujesz pęd!',
-    'Przekrocz 95 km/h przez Działo Pętlowe, aby stać się Ludzkim Meteorytem!',
-    'Rzuć Dysk Energetyczny [Q] przez portale — każde przejście to +25% prędkości i OVERDRIVE!',
-    'Postaw portal pod centralnym Laserem, aby przekierować zabójczą wiązkę na rywali!',
-    'Spadasz w Otchłań? Strzel portalem w lewitującą skałę ratunkową, aby wrócić jak pocisk!',
+    'Zamknięta komora 3D — zero przepaści! LPM = Portal Cyan, PPM = Portal Orange!',
+    'Przez tafle portali widzisz na żywo drugą stronę komory — celuj i planuj ataki!',
+    'Rozpędź się ponad 95 km/h przez portale, aby zamienić się w Ludzki Meteoryt!',
+    'Włącz tryb Trening Solo u góry ekranu, aby ćwiczyć portale bez botów!',
+    'Postaw portal pod centralnym Laserem, aby przekierować wiązkę w poprzek hali!',
+  ],
+  frisbee: [
+    'Mecz trwa 3 rundy — na początku każdej losowy gracz otrzymuje Frisbee!',
+    'Odbijaj Frisbee od ukośnych ścian 45° i ramp, aby rozpędzić je w OGNISTY TRYB!',
+    'Zanim Frisbee zapłonie (niebieskie), możesz je ZŁAPAĆ (PPM lub E) i odrzucić z mocą!',
+    'Użyj Q lub E podczas trzymania dysku, aby wykonać podkręcony rzut (Curve Trick)!',
+    'Ogniste Frisbee dosłownie przecina rywali — chowaj się za krętymi ścianami i na rampach!',
   ],
 }
 
@@ -56,11 +63,18 @@ const TIPS_EN: Record<WorldKind, string[]> = {
     'Adjust camera FOV (60°–100°) anytime in Settings (O).',
   ],
   arena: [
-    'Zero guns! LMB places Cyan Portal, RMB places Orange Portal — speed is your weapon!',
+    '100% enclosed 3D box chamber — zero pits! LMB Cyan Portal, RMB Orange Portal!',
+    'Look right through live see-through portal panes to line up lethal plays!',
     'Exceed 95 km/h through portal loops to ignite as a Human Meteor!',
-    'Throw Energy Disc [Q] through portals — +25% speed per pass up to Red Overdrive!',
-    'Place a portal under the Central Laser to redirect the deadly beam across the arena!',
-    'Press V anytime to toggle between 1st-Person (FPP) and 3rd-Person (TPP) camera!',
+    'Switch to Solo Training at the top to practice portals and targets with zero bots!',
+    'Place a portal under the Central Laser to redirect the deadly beam across the box!',
+  ],
+  frisbee: [
+    'Each match lasts 3 rounds — one random player receives the Frisbee at round start!',
+    'Bank the Frisbee off 45° corner walls & ramps to accelerate it into BLAZING FIRE!',
+    'Catch a cool blue Frisbee mid-air (RMB or E) before it ignites for a boosted counter-throw!',
+    'Use Q or E while holding the disc to throw a curved trick shot around winding walls!',
+    'Once blazing, the Frisbee literally slices rivals in half — use ramps & cover to dodge!',
   ],
 }
 
@@ -77,9 +91,24 @@ export const WorldTransitionOverlay: React.FC<WorldTransitionOverlayProps> = ({
   const [progress, setProgress] = useState(18)
 
   const isPl = lang === 'pl'
-  const bgThumb = world === 'obby' ? thumbs.obby : world === 'arena' ? thumbs.arena : thumbs.lobby
+  const bgThumb =
+    world === 'obby'
+      ? thumbs.obby
+      : world === 'arena'
+        ? thumbs.arena
+        : world === 'frisbee'
+          ? thumbs.frisbee
+          : thumbs.lobby
   const worldTitle =
-    world === 'obby' ? 'Test Obby 100' : world === 'arena' ? 'Portal Arena' : isPl ? 'Lobby Główne' : 'Main Lobby'
+    world === 'obby'
+      ? 'Test Obby 100'
+      : world === 'arena'
+        ? 'Portal Arena'
+        : world === 'frisbee'
+          ? 'Frisbee King'
+          : isPl
+            ? 'Lobby Główne'
+            : 'Main Lobby'
 
   const tip = useMemo(() => {
     const list = isPl ? TIPS_PL[world] : TIPS_EN[world]

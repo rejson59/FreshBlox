@@ -942,6 +942,8 @@ function getTrailColors(trailId: TrailId): TrailColors | null {
       return { primary: '#10B981', secondary: '#6EE7B7' }
     case 'golden-meteor':
       return { primary: '#FACC15', secondary: '#FB923C' }
+    case 'blaze-disc':
+      return { primary: '#EF4444', secondary: '#FACC15' }
     default:
       return null
   }

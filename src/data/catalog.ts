@@ -26,6 +26,7 @@ export type TrailId =
   | 'neon-comet'
   | 'emerald-pulse'
   | 'golden-meteor'
+  | 'blaze-disc'
 
 export type BackId =
   | 'none'
@@ -42,7 +43,7 @@ export type PetId =
   | 'star-owl'
   | 'plasma-orb'
 
-export type WorldKind = 'lobby' | 'obby' | 'arena'
+export type WorldKind = 'lobby' | 'obby' | 'arena' | 'frisbee'
 
 export interface R6AvatarConfig {
   outfitId: OutfitId
@@ -63,7 +64,7 @@ export interface CatalogItem<T extends string> {
   price: number
   accent: string
   /** Optional milestone-only unlock (cannot be purchased with FreshGems) */
-  rewardOnly?: 'obby100' | 'arenaWin' | 'arenaMeteor'
+  rewardOnly?: 'obby100' | 'arenaWin' | 'arenaMeteor' | 'frisbeeWin'
   rewardLabelPl?: string
   rewardLabelEn?: string
 }
@@ -309,6 +310,18 @@ export const TRAIL_CATALOG: CatalogItem<TrailId>[] = [
     rewardLabelPl: 'Nagroda: Meteoryt 100 km/h',
     rewardLabelEn: 'Reward: 100 km/h Meteor',
   },
+  {
+    id: 'blaze-disc',
+    namePl: 'Ogniste Frisbee',
+    nameEn: 'Blaze Frisbee',
+    descPl: 'Płonący czerwono-złoty ślad ognia za zwycięstwo w 3-rundowym meczu Frisbee King!',
+    descEn: 'Blazing fire trail unlocked by winning a 3-round Frisbee King match!',
+    price: 0,
+    accent: '#EF4444',
+    rewardOnly: 'frisbeeWin',
+    rewardLabelPl: 'Nagroda: Król Frisbee',
+    rewardLabelEn: 'Reward: Frisbee King',
+  },
 ]
 
 export const BACK_CATALOG: CatalogItem<BackId>[] = [
@@ -545,6 +558,22 @@ export const BADGE_CATALOG: BadgeDef[] = [
     descEn: 'Won a match in Portal Arena using pure portals and physics!',
     icon: '🌀',
   },
+  {
+    id: 'frisbee_king',
+    namePl: 'Król Frisbee',
+    nameEn: 'Frisbee King',
+    descPl: 'Zwyciężono 3-rundowy mecz w Frisbee King!',
+    descEn: 'Won a 3-round match in Frisbee King!',
+    icon: '🥏',
+  },
+  {
+    id: 'frisbee_trick',
+    namePl: 'Mistrz Rykoszetu',
+    nameEn: 'Trick Shot Master',
+    descPl: 'Przecięto rywala ognistym frisbee po rykoszecie lub złapano dysk w locie!',
+    descEn: 'Sliced a rival with a blazing trick-shot frisbee or caught it mid-flight!',
+    icon: '🔥',
+  },
 ]
 
 export interface SeasonRank {
@@ -635,15 +664,30 @@ export const LOBBY_ROOMS: LobbyRoomCard[] = [
     id: 'ARENA-1',
     code: 'ARENA-1',
     world: 'arena',
-    titlePl: 'Portal Arena — Fizyka & Portale',
-    titleEn: 'Portal Arena — Physics & Portals',
-    tagPl: 'PvP • Portale • Zero Broni',
-    tagEn: 'PvP • Portals • Zero Guns',
+    titlePl: 'Portal Arena — Zamknięta Komnata',
+    titleEn: 'Portal Arena — Sealed Chamber',
+    tagPl: 'Portale 3D • Fizyka • Trening',
+    tagEn: '3D Portals • Physics • Solo Drill',
     players: 0,
     maxPlayers: 16,
-    rating: 'NEW',
+    rating: 'LIVE',
     pingMs: 11,
     status: 'live',
     gradient: 'linear-gradient(135deg, #0E7490 0%, #22D3EE 48%, #F97316 100%)',
+  },
+  {
+    id: 'FRISBEE-1',
+    code: 'FRISBEE-1',
+    world: 'frisbee',
+    titlePl: 'Frisbee King — 3 Rundy Trików',
+    titleEn: 'Frisbee King — 3-Round Trick Arena',
+    tagPl: 'Ogniste Frisbee • Łapanie • Rampy',
+    tagEn: 'Blazing Frisbee • Catch • Ramps',
+    players: 0,
+    maxPlayers: 12,
+    rating: 'NEW',
+    pingMs: 11,
+    status: 'live',
+    gradient: 'linear-gradient(135deg, #991B1B 0%, #F97316 52%, #FACC15 100%)',
   },
 ]

@@ -3,6 +3,7 @@ import {
   Check,
   Copy,
   Crown,
+  Disc,
   Flame,
   LogOut,
   Medal,
@@ -484,11 +485,12 @@ export const ClansAndSeasonsSection: React.FC<ClansAndSeasonsSectionProps> = ({
         </div>
 
         {/* Category Pills */}
-        <div className="grid grid-cols-4 gap-1.5 rounded-2xl border p-1" style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg }}>
+        <div className="grid grid-cols-5 gap-1 rounded-2xl border p-1" style={{ borderColor: tokens.cardBorder, background: tokens.mutedBg }}>
           {(
             [
-              { id: 'arena', label: 'Portal Arena', icon: Flame },
-              { id: 'obby', label: 'Obby 100', icon: Trophy },
+              { id: 'frisbee', label: 'Frisbee', icon: Disc },
+              { id: 'arena', label: 'Arena', icon: Flame },
+              { id: 'obby', label: 'Obby', icon: Trophy },
               { id: 'clans', label: isPl ? 'Klany' : 'Clans', icon: Shield },
               { id: 'xp', label: 'XP', icon: Zap },
             ] as const
@@ -608,6 +610,11 @@ export const ClansAndSeasonsSection: React.FC<ClansAndSeasonsSectionProps> = ({
                   </div>
 
                   <div className="shrink-0 font-mono text-[11px] font-extrabold">
+                    {lbCategory === 'frisbee' && (
+                      <span className="text-amber-300">
+                        👑 {p.frisbee_wins ?? 0} · 🔥 {p.frisbee_slices ?? 0} · 🧤 {p.frisbee_catches ?? 0}
+                      </span>
+                    )}
                     {lbCategory === 'arena' && (
                       <span className="text-orange-300">
                         🏆 {p.arena_wins} · 🔥 {p.arena_eliminations} · ⚡ {p.arena_best_speed} km/h

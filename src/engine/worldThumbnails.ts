@@ -4,7 +4,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { cloneFreshTexturesWithRepeat, FreshSurfaceKind } from './freshTextures'
 import { generateTestObbyCourse, OBBY_ZONES } from './obbyCourse'
 
-export type WorldPreviewKey = 'lobby' | 'obby' | 'arena'
+export type WorldPreviewKey = 'lobby' | 'obby' | 'arena' | 'frisbee'
 
 export type WorldThumbnailMap = Partial<Record<WorldPreviewKey, string>>
 
@@ -597,35 +597,51 @@ function renderObbyThumbnail(renderer: THREE.WebGLRenderer, width: number, heigh
 }
 
 /**
- * 3. PORTAL ARENA — Authentic 3D dramatic aerial shot of Portal Arena (Cyan/Orange Portals, Central Laser, Abyss!)
+ * 3. PORTAL ARENA 2.0 — Sealed Multi-Level Box Chamber (ZERO pits!) with glowing Cyan/Orange see-through Portals & Central Plasma Laser!
  */
 function renderArenaThumbnail(renderer: THREE.WebGLRenderer, width: number, height: number): string {
   const scene = new THREE.Scene()
   const tr = createTracker()
-  scene.background = new THREE.Color('#060D1E')
-  scene.fog = new THREE.FogExp2('#060D1E', 0.011)
+  scene.background = new THREE.Color('#0B1426')
 
-  const hemi = new THREE.HemisphereLight('#7DD3FC', '#0F172A', 1.25)
+  const hemi = new THREE.HemisphereLight('#E0F2FE', '#1E293B', 1.2)
   scene.add(hemi)
-  const sun = new THREE.DirectionalLight('#E0F2FE', 1.65)
-  sun.position.set(22, 38, 22)
+  const sun = new THREE.DirectionalLight('#FFFFFF', 1.45)
+  sun.position.set(14, 21, 14)
   sun.castShadow = true
   sun.shadow.mapSize.set(1024, 1024)
   scene.add(sun)
 
-  const cyanLight = new THREE.PointLight('#22D3EE', 3.5, 45)
-  cyanLight.position.set(-14, 10, -8)
+  const cyanLight = new THREE.PointLight('#22D3EE', 3.4, 38)
+  cyanLight.position.set(-12, 10, -14)
   scene.add(cyanLight)
-  const orangeLight = new THREE.PointLight('#F97316', 3.5, 45)
-  orangeLight.position.set(14, 10, 8)
+  const orangeLight = new THREE.PointLight('#F97316', 3.4, 38)
+  orangeLight.position.set(14, 10, -4)
   scene.add(orangeLight)
 
-  const camera = new THREE.PerspectiveCamera(42, width / height, 0.5, 220)
-  camera.position.set(27, 22, 31)
-  camera.lookAt(0, 4.5, -2)
+  const camera = new THREE.PerspectiveCamera(48, width / height, 0.4, 150)
+  camera.position.set(17, 13.5, 20.5)
+  camera.lookAt(-2, 5.5, -8)
 
-  const whiteMat = tr.getSurfaceMat('marble', '#F1F8FF', 3, 3, 0.24, 0.08)
-  const addBox = (x: number, y: number, z: number, w: number, h: number, d: number, mat = whiteMat) => {
+  const floorMat = tr.getSurfaceMat('facetTile', '#E2E8F0', 8, 8, 0.34, 0.08)
+  const wallMat = tr.getSurfaceMat('marble', '#EBF4FF', 6, 3, 0.28, 0.06)
+  const darkMat = tr.getSurfaceMat('fluted', '#1E293B', 4, 2, 0.35, 0.25)
+
+  // Enclosed Box Floor, Ceiling & Back/Side Walls
+  const addPlane = (w: number, h: number, pos: [number, number, number], rot: [number, number, number], mat: THREE.Material) => {
+    const m = new THREE.Mesh(tr.trackGeo(new THREE.PlaneGeometry(w, h)), mat)
+    m.position.set(pos[0], pos[1], pos[2])
+    m.rotation.set(rot[0], rot[1], rot[2])
+    m.receiveShadow = true
+    scene.add(m)
+  }
+  addPlane(48, 48, [0, 0, 0], [-Math.PI / 2, 0, 0], floorMat)
+  addPlane(48, 48, [0, 24, 0], [Math.PI / 2, 0, 0], darkMat)
+  addPlane(48, 24, [0, 12, -24], [0, 0, 0], wallMat)
+  addPlane(48, 24, [-24, 12, 0], [0, Math.PI / 2, 0], wallMat)
+  addPlane(48, 24, [24, 12, 0], [0, -Math.PI / 2, 0], wallMat)
+
+  const addBox = (x: number, y: number, z: number, w: number, h: number, d: number, mat = wallMat) => {
     const m = new THREE.Mesh(tr.trackGeo(new RoundedBoxGeometry(w, h, d, 2, 0.12)), mat)
     m.position.set(x, y, z)
     m.castShadow = true
@@ -633,69 +649,180 @@ function renderArenaThumbnail(renderer: THREE.WebGLRenderer, width: number, heig
     scene.add(m)
   }
 
-  // Main floating island + central pedestal
-  addBox(0, -1, -13, 32, 2, 16)
-  addBox(0, -1, 13, 32, 2, 16)
-  addBox(-13, -1, 0, 16, 2, 10)
-  addBox(13, -1, 0, 16, 2, 10)
-  addBox(0, -0.5, 0, 4.8, 1.2, 4.8)
+  // Color-coded Sector Neon Stripes
+  const addStrip = (x: number, y: number, z: number, w: number, h: number, d: number, col: string) => {
+    const m = new THREE.Mesh(tr.trackGeo(new THREE.BoxGeometry(w, h, d)), tr.trackMat(new THREE.MeshBasicMaterial({ color: col })))
+    m.position.set(x, y, z)
+    scene.add(m)
+  }
+  addStrip(0, 15.5, -23.8, 44, 0.4, 0.16, '#22D3EE')
+  addStrip(-23.8, 15.5, 0, 0.16, 0.4, 44, '#A855F7')
+  addStrip(23.8, 15.5, 0, 0.16, 0.4, 44, '#10B981')
 
-  // Tall portalable back wall + side towers
-  addBox(0, 10, -21, 20, 20, 1.8)
-  addBox(-15, 8, -14, 6.5, 16, 6.5)
-  addBox(15, 8, -14, 6.5, 16, 6.5)
-  addBox(-15, 8, 14, 6.5, 16, 6.5)
-  addBox(0, 9.5, -16, 22, 1.4, 4.5)
+  // Multi-level Balconies, Pillars & Central Pedestal
+  addBox(0, 0.5, 0, 5.2, 1.0, 5.2, darkMat)
+  addBox(-19.5, 6.2, 0, 8.5, 1.1, 24, wallMat)
+  addBox(19.5, 6.2, 0, 8.5, 1.1, 24, wallMat)
+  addBox(-10, 7, -10, 3.6, 14, 3.6, wallMat)
+  addBox(10, 7, -10, 3.6, 14, 3.6, wallMat)
+  addBox(-10, 7, 10, 3.6, 14, 3.6, wallMat)
 
-  // Floating Abyss Rescue Rocks
-  const rockMat = tr.trackMat(new THREE.MeshStandardMaterial({ color: '#BAE6FD', emissive: '#0284C7', emissiveIntensity: 0.22 }))
-  addBox(-25, -5, 4, 5.5, 6, 5.5, rockMat)
-  addBox(25, -6, -6, 5.5, 6, 5.5, rockMat)
-
-  // Glowing Cyan & Orange Portals!
-  const addPortalRing = (x: number, y: number, z: number, rotY: number, hex: string, innerHex: string) => {
+  // Live See-Through Styled Cyan & Orange Portals!
+  const addPortalPane = (x: number, y: number, z: number, rotY: number, hex: string, viewCol: string) => {
     const g = new THREE.Group()
     g.position.set(x, y, z)
     g.rotation.y = rotY
     const ring = new THREE.Mesh(
-      tr.trackGeo(new THREE.TorusGeometry(2.6, 0.26, 12, 32)),
+      tr.trackGeo(new THREE.TorusGeometry(2.5, 0.28, 12, 32)),
       tr.trackMat(new THREE.MeshBasicMaterial({ color: hex })),
     )
     ring.scale.set(0.84, 1.32, 1)
-    const core = new THREE.Mesh(
-      tr.trackGeo(new THREE.CircleGeometry(2.45, 28)),
-      tr.trackMat(new THREE.MeshBasicMaterial({ color: innerHex, side: THREE.DoubleSide })),
+    const pane = new THREE.Mesh(
+      tr.trackGeo(new THREE.CircleGeometry(2.38, 28)),
+      tr.trackMat(new THREE.MeshBasicMaterial({ color: viewCol, side: THREE.DoubleSide })),
     )
-    core.scale.set(0.84, 1.32, 1)
-    g.add(ring, core)
+    pane.scale.set(0.84, 1.32, 1)
+    g.add(ring, pane)
     scene.add(g)
   }
-  addPortalRing(-4.8, 8.2, -19.8, 0, '#22D3EE', '#083344')
-  addPortalRing(11.6, 7.6, -14, -Math.PI / 2, '#F97316', '#431407')
+  addPortalPane(-5.2, 6.8, -23.5, 0, '#22D3EE', '#F97316')
+  addPortalPane(8.1, 6.4, -10, -Math.PI / 2, '#F97316', '#22D3EE')
 
-  // Central Vertical Plasma Laser Beam + Redirected Beam
-  const laserMat = tr.trackMat(new THREE.MeshBasicMaterial({ color: '#FF2A5F' }))
-  const vLaser = new THREE.Mesh(tr.trackGeo(new THREE.CylinderGeometry(0.32, 0.32, 30, 12)), laserMat)
-  vLaser.position.set(0, 15, 0)
+  // Central Vertical Plasma Laser Beam + Energy Disc
+  const vLaser = new THREE.Mesh(
+    tr.trackGeo(new THREE.CylinderGeometry(0.32, 0.32, 24, 12)),
+    tr.trackMat(new THREE.MeshBasicMaterial({ color: '#FF2A5F' })),
+  )
+  vLaser.position.set(0, 12, 0)
   scene.add(vLaser)
 
-  // Glowing Energy Disc mid-flight!
   const disc = new THREE.Mesh(
     tr.trackGeo(new THREE.TorusGeometry(1.15, 0.2, 8, 22)),
     tr.trackMat(new THREE.MeshBasicMaterial({ color: '#FACC15' })),
   )
   disc.rotation.x = Math.PI / 2.2
-  disc.position.set(2.5, 7.5, 4.5)
+  disc.position.set(1.8, 7.2, 3.5)
   scene.add(disc)
 
-  // Abyss accretion ring below
-  const abyssRing = new THREE.Mesh(
-    tr.trackGeo(new THREE.RingGeometry(12, 22, 40)),
-    tr.trackMat(new THREE.MeshBasicMaterial({ color: '#0EA5E9', transparent: true, opacity: 0.32, side: THREE.DoubleSide })),
+  renderer.render(scene, camera)
+  const url = renderer.domElement.toDataURL('image/webp', 0.9)
+  tr.disposeAll()
+  return url
+}
+
+/**
+ * 4. FRISBEE KING — Enclosed Winding Labyrinth Box with 45° Bank Walls, Ramps & Blazing Fiery Frisbee!
+ */
+function renderFrisbeeThumbnail(renderer: THREE.WebGLRenderer, width: number, height: number): string {
+  const scene = new THREE.Scene()
+  const tr = createTracker()
+  scene.background = new THREE.Color('#0B1221')
+
+  const hemi = new THREE.HemisphereLight('#FFF7ED', '#1E1B4B', 1.15)
+  scene.add(hemi)
+  const sun = new THREE.DirectionalLight('#FFFFFF', 1.35)
+  sun.position.set(14, 19, 12)
+  sun.castShadow = true
+  scene.add(sun)
+
+  const fireGlow = new THREE.PointLight('#F97316', 4.5, 36)
+  fireGlow.position.set(0, 6.2, 2)
+  scene.add(fireGlow)
+  const coolGlow = new THREE.PointLight('#22D3EE', 2.8, 36)
+  coolGlow.position.set(-14, 10, -14)
+  scene.add(coolGlow)
+
+  const camera = new THREE.PerspectiveCamera(48, width / height, 0.4, 160)
+  camera.position.set(19, 14.5, 22)
+  camera.lookAt(-1, 4.2, -3)
+
+  const floorMat = tr.getSurfaceMat('facetTile', '#1E293B', 8, 8, 0.36, 0.16)
+  const outerMat = tr.getSurfaceMat('fluted', '#17253B', 6, 3, 0.35, 0.25)
+  const innerMat = tr.getSurfaceMat('fluted', '#334155', 4, 2, 0.3, 0.38)
+  const bankMat = tr.trackMat(
+    new THREE.MeshStandardMaterial({ color: '#0F766E', emissive: '#14B8A6', emissiveIntensity: 0.32, roughness: 0.24, metalness: 0.45 }),
   )
-  abyssRing.rotation.x = -Math.PI / 2
-  abyssRing.position.y = -15
-  scene.add(abyssRing)
+
+  const addPlane = (w: number, h: number, pos: [number, number, number], rot: [number, number, number], mat: THREE.Material) => {
+    const m = new THREE.Mesh(tr.trackGeo(new THREE.PlaneGeometry(w, h)), mat)
+    m.position.set(pos[0], pos[1], pos[2])
+    m.rotation.set(rot[0], rot[1], rot[2])
+    m.receiveShadow = true
+    scene.add(m)
+  }
+  addPlane(52, 52, [0, 0, 0], [-Math.PI / 2, 0, 0], floorMat)
+  addPlane(52, 20, [0, 10, -26], [0, 0, 0], outerMat)
+  addPlane(52, 20, [-26, 10, 0], [0, Math.PI / 2, 0], outerMat)
+
+  const addBox = (x: number, y: number, z: number, w: number, h: number, d: number, accent?: string) => {
+    const m = new THREE.Mesh(tr.trackGeo(new RoundedBoxGeometry(w, h, d, 2, 0.14)), innerMat)
+    m.position.set(x, y, z)
+    m.castShadow = true
+    m.receiveShadow = true
+    scene.add(m)
+    if (accent) {
+      const t = new THREE.Mesh(
+        tr.trackGeo(new THREE.BoxGeometry(w + 0.08, 0.2, d + 0.08)),
+        tr.trackMat(new THREE.MeshBasicMaterial({ color: accent })),
+      )
+      t.position.set(x, y + h / 2 - 0.12, z)
+      scene.add(t)
+    }
+  }
+
+  // 45° Corner Bank-Shot Wall
+  const cornerWall = new THREE.Mesh(tr.trackGeo(new RoundedBoxGeometry(13, 18, 1.1, 2, 0.14)), bankMat)
+  cornerWall.position.set(-20.5, 9, -20.5)
+  cornerWall.rotation.y = Math.PI / 4
+  scene.add(cornerWall)
+
+  // Winding Labyrinth Walls + Central Skybridge Deck + Ramps
+  addBox(-11.5, 3.6, -12, 1.4, 7.2, 11, '#F97316')
+  addBox(12, 3.6, -11.5, 11, 7.2, 1.4, '#FACC15')
+  addBox(-12, 3.6, 11.5, 11, 7.2, 1.4, '#F43F5E')
+  addBox(0, 5.5, 0, 11.2, 0.9, 11.2, '#FACC15')
+  addBox(-4.5, 2.8, -4.5, 2.2, 5.6, 2.2, '#38BDF8')
+  addBox(4.5, 2.8, -4.5, 2.2, 5.6, 2.2, '#F97316')
+  addBox(-4.5, 2.8, 4.5, 2.2, 5.6, 2.2, '#F97316')
+
+  // Sloped Ramp leading to center skybridge
+  const ramp = new THREE.Mesh(tr.trackGeo(new THREE.BoxGeometry(5.2, 0.5, 11.5)), innerMat)
+  ramp.position.set(0, 2.8, 10.6)
+  ramp.rotation.x = 0.52
+  scene.add(ramp)
+
+  // HERO BLAZING FIERY FRISBEE slicing across the frame with orange-gold trail!
+  const discGroup = new THREE.Group()
+  discGroup.position.set(2.5, 7.8, 5.5)
+  discGroup.rotation.z = 0.25
+  const discBody = new THREE.Mesh(
+    tr.trackGeo(new THREE.CylinderGeometry(1.75, 1.9, 0.32, 32)),
+    tr.trackMat(new THREE.MeshStandardMaterial({ color: '#EF4444', emissive: '#F97316', emissiveIntensity: 2.2 })),
+  )
+  const discRim = new THREE.Mesh(
+    tr.trackGeo(new THREE.TorusGeometry(1.85, 0.22, 10, 32)),
+    tr.trackMat(new THREE.MeshBasicMaterial({ color: '#FEF08A' })),
+  )
+  discRim.rotation.x = Math.PI / 2
+  const flameRing = new THREE.Mesh(
+    tr.trackGeo(new THREE.RingGeometry(1.85, 3.4, 32)),
+    tr.trackMat(new THREE.MeshBasicMaterial({ color: '#F97316', transparent: true, opacity: 0.72, side: THREE.DoubleSide })),
+  )
+  flameRing.rotation.x = Math.PI / 2
+  discGroup.add(discBody, discRim, flameRing)
+  scene.add(discGroup)
+
+  // Glowing Ricochet Trail Line
+  const trailPts = [
+    new THREE.Vector3(-19, 8.2, -19),
+    new THREE.Vector3(-10, 7.6, -2),
+    new THREE.Vector3(2.5, 7.8, 5.5),
+  ]
+  const trail = new THREE.Line(
+    tr.trackGeo(new THREE.BufferGeometry().setFromPoints(trailPts)),
+    tr.trackMat(new THREE.LineBasicMaterial({ color: '#FACC15' })),
+  )
+  scene.add(trail)
 
   renderer.render(scene, camera)
   const url = renderer.domElement.toDataURL('image/webp', 0.9)
@@ -735,6 +862,7 @@ export function generateWorldThumbnails(): Promise<WorldThumbnailMap> {
           lobby: renderLobbyThumbnail(renderer, width, height),
           obby: renderObbyThumbnail(renderer, width, height),
           arena: renderArenaThumbnail(renderer, width, height),
+          frisbee: renderFrisbeeThumbnail(renderer, width, height),
         }
 
         renderer.dispose()

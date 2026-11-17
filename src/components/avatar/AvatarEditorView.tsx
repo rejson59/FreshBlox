@@ -124,7 +124,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
       id: string
       name: string
       price: number
-      rewardOnly?: 'obby100' | 'arenaWin' | 'arenaMeteor'
+      rewardOnly?: 'obby100' | 'arenaWin' | 'arenaMeteor' | 'frisbeeWin'
     }> = []
 
     if (!profile.unlockedOutfits.includes(previewAvatar.outfitId)) {

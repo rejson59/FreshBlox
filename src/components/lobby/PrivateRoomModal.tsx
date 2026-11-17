@@ -204,8 +204,8 @@ export const PrivateRoomModal: React.FC<PrivateRoomModalProps> = ({
                   <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-sky-200/70">
                     {isPl ? 'Świat 3D' : '3D World'}
                   </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['lobby', 'obby', 'arena'] as WorldKind[]).map((w) => (
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['lobby', 'obby', 'arena', 'frisbee'] as WorldKind[]).map((w) => (
                       <button
                         key={w}
                         type="button"
@@ -216,7 +216,13 @@ export const PrivateRoomModal: React.FC<PrivateRoomModalProps> = ({
                             : 'border-white/10 bg-white/5 text-slate-300'
                         }`}
                       >
-                        {w === 'lobby' ? (isPl ? 'Lobby' : 'Lobby') : w === 'obby' ? 'Obby 100' : 'Portal Arena'}
+                        {w === 'lobby'
+                          ? 'Lobby'
+                          : w === 'obby'
+                            ? 'Obby 100'
+                            : w === 'arena'
+                              ? 'Portal Arena'
+                              : 'Frisbee King'}
                       </button>
                     ))}
                   </div>

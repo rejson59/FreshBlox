@@ -19,7 +19,7 @@ interface GameChatBoxProps {
   onSendQuickText: (text: string) => void
   onClose: () => void
   onOpen: () => void
-  worldKind: 'lobby' | 'obby' | 'arena'
+  worldKind: 'lobby' | 'obby' | 'arena' | 'frisbee'
 }
 
 const NAME_PALETTE = [
@@ -74,17 +74,21 @@ export const GameChatBox: React.FC<GameChatBoxProps> = ({
 
   const quickPhrases = useMemo(
     () =>
-      worldKind === 'arena'
+      worldKind === 'frisbee'
         ? isPl
-          ? ['GG!', 'Co za portal!', 'Meteoryt!', 'Rykoszet!', 'Jeszcze raz!']
-          : ['GG!', 'Sick portal!', 'Meteor hit!', 'Ricochet!', 'Rematch!']
-        : worldKind === 'obby'
+          ? ['GG!', 'Co za chwyt!', 'Ognisty rzut!', 'Trik od ściany!', 'Jeszcze 3 rundy!']
+          : ['GG!', 'Insane catch!', 'Blazing slice!', 'Bank shot!', 'Rematch!']
+        : worldKind === 'arena'
           ? isPl
-            ? ['Hej!', 'GG!', 'Ładny skok!', 'Czekaj na mnie!', 'Zaraz 100!']
-            : ['Hey!', 'GG!', 'Nice jump!', 'Wait for me!', 'Almost 100!']
-          : isPl
-            ? ['Hej!', 'GG!', 'Kto na Arenę?', 'Chodź tu!', 'Fajny styl!']
-            : ['Hey!', 'GG!', 'Who wants Arena?', 'Come here!', 'Cool look!'],
+            ? ['GG!', 'Co za portal!', 'Meteoryt!', 'Rykoszet!', 'Jeszcze raz!']
+            : ['GG!', 'Sick portal!', 'Meteor hit!', 'Ricochet!', 'Rematch!']
+          : worldKind === 'obby'
+            ? isPl
+              ? ['Hej!', 'GG!', 'Ładny skok!', 'Czekaj na mnie!', 'Zaraz 100!']
+              : ['Hey!', 'GG!', 'Nice jump!', 'Wait for me!', 'Almost 100!']
+            : isPl
+              ? ['Hej!', 'GG!', 'Kto na Frisbee?', 'Chodź na Arenę!', 'Fajny styl!']
+              : ['Hey!', 'GG!', 'Who wants Frisbee?', 'Join Arena!', 'Cool look!'],
     [worldKind, isPl],
   )
 

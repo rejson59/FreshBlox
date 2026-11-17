@@ -54,6 +54,10 @@ export interface ArenaCustomPacket {
     | 'elim_notice'
     | 'round_sync'
     | 'meteor_hit'
+    | 'frisbee_throw'
+    | 'frisbee_catch'
+    | 'frisbee_slice'
+    | 'frisbee_round'
   payload: Record<string, unknown>
 }
 

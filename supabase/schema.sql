@@ -647,6 +647,18 @@ ALTER TABLE public.fb_clan_messages ENABLE ROW LEVEL SECURITY;
 -- get_my_clan(), send_clan_message(text),
 -- get_seasonal_leaderboard(text, int), get_world_live_stats() (incl. arena_online/arena_total_wins/arena_total_elims)
 
+-- ==================== FRISBEE KING + PORTAL ARENA 2.0 (Applied Live) ====================
+ALTER TABLE public.fb_profiles
+  ADD COLUMN IF NOT EXISTS frisbee_wins int NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS frisbee_slices int NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS frisbee_catches int NOT NULL DEFAULT 0;
+
+-- Applied live migration `upgrade_frisbee_king_world`:
+-- Updated CHECK constraints on fb_private_rooms.world_kind & fb_direct_messages.room_invite_world to allow 'frisbee'.
+-- Updated RPCs: create_private_room, get_world_live_stats (frisbee_online/frisbee_total_slices/frisbee_total_wins),
+-- and get_seasonal_leaderboard (adds 'frisbee' category + frisbee stats on all rows + clan score bonus).
+
+
 
 
 

@@ -37,7 +37,7 @@ export interface MyClanBundle {
   messages: ClanMessageRow[]
 }
 
-export type SeasonLeaderboardCategory = 'obby' | 'arena' | 'xp' | 'clans'
+export type SeasonLeaderboardCategory = 'obby' | 'arena' | 'frisbee' | 'xp' | 'clans'
 
 export interface SeasonalPlayerRow {
   id: string
@@ -50,6 +50,9 @@ export interface SeasonalPlayerRow {
   arena_eliminations: number
   arena_wins: number
   arena_best_speed: number
+  frisbee_wins: number
+  frisbee_slices: number
+  frisbee_catches: number
   obby_best_stage: number
   obby_best_time_ms: number | null
   is_online: boolean
@@ -131,7 +134,7 @@ export async function sendClanMessage(
 }
 
 export async function fetchSeasonalLeaderboard(
-  category: 'obby' | 'arena' | 'xp',
+  category: 'obby' | 'arena' | 'frisbee' | 'xp',
   limit?: number,
 ): Promise<SeasonalPlayerRow[]>
 export async function fetchSeasonalLeaderboard(

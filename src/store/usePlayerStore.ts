@@ -122,6 +122,9 @@ export interface PlayerProfile {
   arenaEliminations: number
   arenaWins: number
   arenaBestSpeed: number
+  frisbeeWins: number
+  frisbeeSlices: number
+  frisbeeCatches: number
 }
 
 export interface AuthUserInfo {
@@ -210,6 +213,9 @@ function createDefaultProfile(): PlayerProfile {
     arenaEliminations: 0,
     arenaWins: 0,
     arenaBestSpeed: 0,
+    frisbeeWins: 0,
+    frisbeeSlices: 0,
+    frisbeeCatches: 0,
   }
 }
 
@@ -224,6 +230,7 @@ function normalizeUnlocked(
   obbyCompleted = false,
   arenaWins = 0,
   arenaBestSpeed = 0,
+  frisbeeWins = 0,
 ) {
   const set = new Set((items ?? []).map((x) => (x === 'midnight-neon' ? 'midnight-slate' : x)))
   const outfits = OUTFIT_CATALOG.filter((o) => (!o.rewardOnly && o.price === 0) || set.has(o.id)).map((o) => o.id)
@@ -238,7 +245,8 @@ function normalizeUnlocked(
     (t) =>
       (!t.rewardOnly && t.price === 0) ||
       set.has(t.id) ||
-      (t.rewardOnly === 'arenaMeteor' && (arenaBestSpeed >= 95 || arenaWins >= 1)),
+      (t.rewardOnly === 'arenaMeteor' && (arenaBestSpeed >= 95 || arenaWins >= 1)) ||
+      (t.rewardOnly === 'frisbeeWin' && frisbeeWins >= 1),
   ).map((t) => t.id)
   const backs = BACK_CATALOG.filter(
     (b) =>
@@ -261,6 +269,9 @@ function loadLocalProfile(): PlayerProfile {
     const arenaWins = Math.max(0, Number(parsed.arenaWins) || 0)
     const arenaBestSpeed = Math.max(0, Number(parsed.arenaBestSpeed) || 0)
     const arenaEliminations = Math.max(0, Number(parsed.arenaEliminations) || 0)
+    const frisbeeWins = Math.max(0, Number(parsed.frisbeeWins) || 0)
+    const frisbeeSlices = Math.max(0, Number(parsed.frisbeeSlices) || 0)
+    const frisbeeCatches = Math.max(0, Number(parsed.frisbeeCatches) || 0)
     const unlockedOutfits = Array.isArray(parsed.unlockedOutfits)
       ? Array.from(new Set(['fresh-creator', 'classic-remaster', ...parsed.unlockedOutfits.map((id) => migrateOutfitId(id))]))
       : def.unlockedOutfits
@@ -279,6 +290,7 @@ function loadLocalProfile(): PlayerProfile {
         ...def.unlockedTrails,
         ...(Array.isArray(parsed.unlockedTrails) ? parsed.unlockedTrails : []),
         ...(arenaBestSpeed >= 95 || arenaWins >= 1 ? (['golden-meteor'] as TrailId[]) : []),
+        ...(frisbeeWins >= 1 ? (['blaze-disc'] as TrailId[]) : []),
       ]),
     ) as TrailId[]
     const unlockedBacks = Array.from(
@@ -329,6 +341,9 @@ function loadLocalProfile(): PlayerProfile {
       arenaEliminations,
       arenaWins,
       arenaBestSpeed,
+      frisbeeWins,
+      frisbeeSlices,
+      frisbeeCatches,
     }
   } catch {
     return createDefaultProfile()
@@ -357,6 +372,9 @@ interface DbProfileRow {
   arena_eliminations?: number | null
   arena_wins?: number | null
   arena_best_speed?: number | null
+  frisbee_wins?: number | null
+  frisbee_slices?: number | null
+  frisbee_catches?: number | null
   last_world?: string | null
   last_room?: string | null
   last_seen?: string | null
@@ -475,7 +493,16 @@ export function usePlayerStore() {
           const arenaWins = Math.max(0, data.arena_wins ?? 0)
           const arenaBestSpeed = Math.max(0, data.arena_best_speed ?? 0)
           const arenaEliminations = Math.max(0, data.arena_eliminations ?? 0)
-          const unlocked = normalizeUnlocked(data.unlocked_items ?? undefined, obbyCompleted, arenaWins, arenaBestSpeed)
+          const frisbeeWins = Math.max(0, data.frisbee_wins ?? 0)
+          const frisbeeSlices = Math.max(0, data.frisbee_slices ?? 0)
+          const frisbeeCatches = Math.max(0, data.frisbee_catches ?? 0)
+          const unlocked = normalizeUnlocked(
+            data.unlocked_items ?? undefined,
+            obbyCompleted,
+            arenaWins,
+            arenaBestSpeed,
+            frisbeeWins,
+          )
           const friends = await loadFriendsFromCloud(userId)
 
           hydratedFromCloudRef.current = true
@@ -518,6 +545,9 @@ export function usePlayerStore() {
             arenaEliminations,
             arenaWins,
             arenaBestSpeed,
+            frisbeeWins,
+            frisbeeSlices,
+            frisbeeCatches,
           })
           setCloudStatus('synced')
         }
@@ -613,6 +643,9 @@ export function usePlayerStore() {
           arena_eliminations: profile.arenaEliminations,
           arena_wins: profile.arenaWins,
           arena_best_speed: profile.arenaBestSpeed,
+          frisbee_wins: profile.frisbeeWins,
+          frisbee_slices: profile.frisbeeSlices,
+          frisbee_catches: profile.frisbeeCatches,
           last_seen: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
@@ -646,6 +679,9 @@ export function usePlayerStore() {
     profile.arenaEliminations,
     profile.arenaWins,
     profile.arenaBestSpeed,
+    profile.frisbeeWins,
+    profile.frisbeeSlices,
+    profile.frisbeeCatches,
   ])
 
 const REGISTER_API_PATH = '/api/register-account'
@@ -1302,6 +1338,40 @@ async function postRegisterApi(
     [],
   )
 
+  const recordFrisbeeProgress = useCallback(
+    (opts: { slicesDelta?: number; catchesDelta?: number; matchWin?: boolean; trickSlice?: boolean }) => {
+      const slicesDelta = Math.max(0, Math.floor(opts.slicesDelta ?? 0))
+      const catchesDelta = Math.max(0, Math.floor(opts.catchesDelta ?? 0))
+      setProfile((p) => {
+        const nextSlices = p.frisbeeSlices + slicesDelta
+        const nextCatches = p.frisbeeCatches + catchesDelta
+        const nextWins = p.frisbeeWins + (opts.matchWin ? 1 : 0)
+        const badges = new Set(p.badges)
+        const unlockedTrails = new Set(p.unlockedTrails)
+
+        if (opts.matchWin) {
+          badges.add('frisbee_king')
+          unlockedTrails.add('blaze-disc')
+        }
+        if (opts.trickSlice || nextCatches >= 3) {
+          badges.add('frisbee_trick')
+        }
+
+        const bonusXp = slicesDelta * 30 + catchesDelta * 12 + (opts.matchWin ? 160 : 0)
+        return {
+          ...p,
+          frisbeeSlices: nextSlices,
+          frisbeeCatches: nextCatches,
+          frisbeeWins: nextWins,
+          xp: p.xp + bonusXp,
+          badges: Array.from(badges),
+          unlockedTrails: Array.from(unlockedTrails) as TrailId[],
+        }
+      })
+    },
+    [],
+  )
+
   const setClanInfo = useCallback((clanId: string | null, clanTag: string | null) => {
     setProfile((p) => ({ ...p, clanId, clanTag }))
   }, [])
@@ -1332,6 +1402,7 @@ async function postRegisterApi(
     deleteOutfitSlot,
     recordObbySpeedrun,
     recordArenaProgress,
+    recordFrisbeeProgress,
     setClanInfo,
     incrementQuest,
     claimQuest,

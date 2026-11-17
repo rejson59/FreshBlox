@@ -121,6 +121,7 @@ interface MainLobbyWorldProps {
   onBackHome: () => void
   onEnterObby: () => void
   onEnterArena?: () => void
+  onEnterFrisbee?: () => void
   onBuyAndEquip: (category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet', itemId: string, price: number) => boolean
   onBuyBundle: (items: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; price: number }>) => boolean
   onSkinChange: (hex: string) => void
@@ -168,6 +169,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   onBackHome,
   onEnterObby,
   onEnterArena,
+  onEnterFrisbee,
   onBuyAndEquip,
   onBuyBundle,
   onSkinChange,
@@ -337,8 +339,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
 
   const authUserIdRef = useRef(authUserId)
   authUserIdRef.current = authUserId
-  const nearPortalRef = useRef<{ name: string; action?: 'obby' | 'arena' } | null>(null)
-  const [nearPortalInfo, setNearPortalInfo] = useState<{ name: string; action?: 'obby' | 'arena' } | null>(null)
+  const nearPortalRef = useRef<{ name: string; action?: 'obby' | 'arena' | 'frisbee' } | null>(null)
+  const [nearPortalInfo, setNearPortalInfo] = useState<{ name: string; action?: 'obby' | 'arena' | 'frisbee' } | null>(null)
 
   const callbacksRef = useRef({
     onChatSent,
@@ -347,6 +349,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     onReachTerrace,
     onEnterObby,
     onEnterArena,
+    onEnterFrisbee,
     onOpenFeedback,
   })
   callbacksRef.current = {
@@ -356,6 +359,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     onReachTerrace,
     onEnterObby,
     onEnterArena,
+    onEnterFrisbee,
     onOpenFeedback,
   }
 
@@ -987,9 +991,10 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     danceFloor.receiveShadow = true
     scene.add(danceFloor)
 
-    // Game Mode Portals (North side) — Test Obby 100 & Portal Arena are LIVE!
-    const portalZones: Array<{ name: string; x: number; z: number; action?: 'obby' | 'arena' }> = [
+    // Game Mode Portals (North side) — Test Obby 100, Frisbee King & Portal Arena are ALL LIVE!
+    const portalZones: Array<{ name: string; x: number; z: number; action?: 'obby' | 'arena' | 'frisbee' }> = [
       { name: 'Test Obby 100', x: -11, z: -26, action: 'obby' },
+      { name: 'Frisbee King', x: 0, z: -28, action: 'frisbee' },
       { name: 'Portal Arena', x: 11, z: -26, action: 'arena' },
     ]
 
@@ -1041,8 +1046,8 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     }
 
     createPortalArch(-11, -26, 'TEST OBBY 100', lang === 'pl' ? '100 LEVELI • GRAJ' : '100 STAGES • PLAY', '#F59E0B')
-    createPortalArch(0, -28, 'LOBBY GŁÓWNE', roomCode, '#0EA5E9')
-    createPortalArch(11, -26, 'PORTAL ARENA', lang === 'pl' ? 'PORTALE • GRAJ!' : 'PORTALS • PLAY!', '#22D3EE')
+    createPortalArch(0, -28, 'FRISBEE KING', lang === 'pl' ? '3 RUNDY • OGNISTY DYSK' : '3 ROUNDS • BLAZING DISC', '#F97316')
+    createPortalArch(11, -26, 'PORTAL ARENA', lang === 'pl' ? 'PORTALE 2.0 • GRAJ!' : 'PORTALS 2.0 • PLAY!', '#22D3EE')
 
     // === U-13: 3D CHAMPIONS PODIUM (REAL SUPABASE TOP 3 OBBY 100) ===
     const podiumGroup = new THREE.Group()
@@ -1791,6 +1796,9 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         } else if (nearPortalRef.current?.action === 'arena') {
           audioEngine.playPortalWarp()
           callbacksRef.current.onEnterArena?.()
+        } else if (nearPortalRef.current?.action === 'frisbee') {
+          audioEngine.playFrisbeeThrow(0.6)
+          callbacksRef.current.onEnterFrisbee?.()
         } else if (seatedBenchRef.current || nearBenchRef.current) {
           toggleSitActionRef.current()
         }
@@ -2321,7 +2329,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           setNearBench(closestBench)
         }
 
-        let foundPortal: { name: string; action?: 'obby' | 'arena' } | null = null
+        let foundPortal: { name: string; action?: 'obby' | 'arena' | 'frisbee' } | null = null
         for (const pz of portalZones) {
           const dSq = (player.x - pz.x) ** 2 + (player.z - pz.z) ** 2
           if (dSq < 4.4 * 4.4) {
@@ -2882,6 +2890,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         onResetPosition={() => resetSpawnActionRef.current()}
         onSwitchWorld={onEnterObby}
         onSwitchToArena={onEnterArena}
+        onSwitchToFrisbee={onEnterFrisbee}
         onLeaveToHome={onBackHome}
         onOpenFeedback={() => onOpenFeedback?.(`Lobby Główne (${roomCode})`)}
         onTeleportToMember={(memberId) => teleportToMemberRef.current(memberId)}
@@ -3006,6 +3015,22 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
             >
               <Orbit className="h-4 w-4" />
               <span>{lang === 'pl' ? 'Wejdź do Portal Arena' : 'Enter Portal Arena'}</span>
+              <span className="hidden sm:inline rounded-md bg-slate-950/20 border border-slate-950/30 px-1.5 py-0.5 font-mono text-[10px] text-slate-950">
+                E
+              </span>
+            </button>
+          ) : nearPortalInfo?.action === 'frisbee' ? (
+            <button
+              type="button"
+              onClick={() => {
+                audioEngine.playFrisbeeThrow(0.6)
+                onEnterFrisbee?.()
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="flex items-center gap-2 rounded-full border border-orange-300/80 bg-gradient-to-r from-orange-500 to-amber-300 px-5 py-2.5 text-xs sm:text-sm font-black text-slate-950 shadow-xl backdrop-blur-xl transition hover:brightness-110 active:scale-95 cursor-pointer"
+            >
+              <Sparkles className="h-4 w-4" />
+              <span>{lang === 'pl' ? 'Wejdź do Frisbee King' : 'Enter Frisbee King'}</span>
               <span className="hidden sm:inline rounded-md bg-slate-950/20 border border-slate-950/30 px-1.5 py-0.5 font-mono text-[10px] text-slate-950">
                 E
               </span>

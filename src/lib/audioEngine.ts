@@ -5,7 +5,7 @@
 // - Procedural per-world ambient/synth music (Lobby / Obby / Portal Arena)
 // - 3D Spatial PannerNode SFX + distance ambient loops (fountain, portals, laser) + surface footsteps
 
-export type AudioMusicWorld = 'none' | 'launcher' | 'lobby' | 'obby' | 'arena'
+export type AudioMusicWorld = 'none' | 'launcher' | 'lobby' | 'obby' | 'arena' | 'frisbee'
 export type FootstepSurface = 'stone' | 'wood' | 'grass' | 'metal' | 'ice' | 'neon' | 'plastic'
 
 export interface AudioPrefs {
@@ -249,7 +249,7 @@ class FreshAudioEngine {
   }
 
   private playNoise(opts: {
-    channel: 'sfx' | 'ui'
+    channel: 'sfx' | 'ui' | 'music'
     duration: number
     gain: number
     filterType?: BiquadFilterType
@@ -261,7 +261,8 @@ class FreshAudioEngine {
     if (!this.canPlay(opts.channel)) return
     const ctx = this.ensureContext()
     if (!ctx || !this.noiseBuffer) return
-    const dest = opts.panner ?? (opts.channel === 'sfx' ? this.sfxGain : this.uiGain)
+    const dest =
+      opts.panner ?? (opts.channel === 'sfx' ? this.sfxGain : opts.channel === 'music' ? this.musicGain : this.uiGain)
     if (!dest) return
 
     const t0 = ctx.currentTime + (opts.delay ?? 0)
@@ -356,6 +357,10 @@ class FreshAudioEngine {
     this.playTone({ channel: 'sfx', type: 'sine', freq: base * 0.7, endFreq: base * 1.9, duration: 0.22, gain: 0.24, panner })
     this.playTone({ channel: 'sfx', type: 'triangle', freq: base * 2.2, endFreq: base * 1.3, duration: 0.18, delay: 0.03, gain: 0.13, filterFreq: 2400, panner })
     this.playNoise({ channel: 'sfx', duration: 0.16, gain: 0.11, filterType: 'bandpass', filterFreq: color === 'cyan' ? 1600 : 1100, q: 2.2, panner })
+  }
+
+  playPortalFail() {
+    this.playTone({ channel: 'sfx', type: 'sawtooth', freq: 185, endFreq: 110, duration: 0.14, gain: 0.13, filterFreq: 520 })
   }
 
   playPortalWarp(speedKmh = 45) {
@@ -709,7 +714,121 @@ class FreshAudioEngine {
       }
       tick()
       this.musicTimer = window.setInterval(tick, 238)
+      return
     }
+
+    if (world === 'frisbee') {
+      // High-energy Frisbee King trick-shot synth funk/breakbeat (132 BPM -> 227ms)
+      const bassLine = [146.83, 146.83, 174.61, 130.81, 146.83, 196.0, 174.61, 164.81] // D3 groove
+      const leadSeq = [587.33, 440.0, 523.25, 659.25, 587.33, 523.25, 440.0, 392.0]
+      const tick = () => {
+        if (!this.canPlay('music')) return
+        const s = this.musicStep % 16
+        if (s % 2 === 0) {
+          const bf = bassLine[Math.floor(s / 2) % bassLine.length]
+          this.playTone({
+            channel: 'music',
+            type: 'sawtooth',
+            freq: bf,
+            endFreq: bf * 0.94,
+            duration: 0.18,
+            attack: 0.008,
+            gain: 0.085,
+            filterFreq: 680,
+          })
+        }
+        if (s % 4 === 1 || s % 4 === 3) {
+          this.playTone({
+            channel: 'music',
+            type: 'triangle',
+            freq: leadSeq[s % leadSeq.length],
+            duration: 0.14,
+            attack: 0.008,
+            gain: 0.055,
+            filterFreq: 2200,
+          })
+        }
+        if (s % 4 === 0) {
+          this.playTone({ channel: 'music', type: 'sine', freq: 110, endFreq: 46, duration: 0.11, gain: 0.13 })
+        } else if (s % 4 === 2) {
+          this.playNoise({ channel: 'music', duration: 0.055, gain: 0.045, filterType: 'highpass', filterFreq: 3200 })
+        }
+        this.musicStep++
+      }
+      tick()
+      this.musicTimer = window.setInterval(tick, 227)
+    }
+  }
+
+  // ==================== FRISBEE KING SFX ====================
+
+  playFrisbeeThrow(charge01 = 0) {
+    if (!this.canPlay('sfx')) return
+    const boost = 1 + charge01 * 0.45
+    this.playTone({
+      channel: 'sfx',
+      type: 'triangle',
+      freq: 260 * boost,
+      endFreq: 760 * boost,
+      duration: 0.19,
+      attack: 0.008,
+      gain: 0.22,
+    })
+    this.playNoise({
+      channel: 'sfx',
+      duration: 0.16,
+      gain: 0.16,
+      filterType: 'bandpass',
+      filterFreq: 1800 * boost,
+      q: 1.4,
+    })
+  }
+
+  playFrisbeeBounce(bounces = 1, blazing = false) {
+    if (!this.canPlay('sfx')) return
+    const pitch = Math.min(2.1, 1 + bounces * 0.16)
+    this.playTone({
+      channel: 'sfx',
+      type: blazing ? 'sawtooth' : 'sine',
+      freq: 380 * pitch,
+      endFreq: 640 * pitch,
+      duration: 0.13,
+      attack: 0.004,
+      gain: blazing ? 0.22 : 0.17,
+      filterFreq: blazing ? 2400 : 1800,
+    })
+    if (blazing) {
+      this.playNoise({ channel: 'sfx', duration: 0.09, gain: 0.14, filterType: 'bandpass', filterFreq: 2600, q: 1.1 })
+    }
+  }
+
+  playFrisbeeCatch() {
+    if (!this.canPlay('sfx')) return
+    this.playTone({ channel: 'sfx', type: 'sine', freq: 523.25, endFreq: 783.99, duration: 0.12, gain: 0.22 })
+    this.playTone({ channel: 'sfx', type: 'triangle', freq: 1046.5, duration: 0.16, delay: 0.045, gain: 0.16 })
+  }
+
+  playFrisbeeIgnite() {
+    if (!this.canPlay('sfx')) return
+    this.playTone({
+      channel: 'sfx',
+      type: 'sawtooth',
+      freq: 140,
+      endFreq: 880,
+      duration: 0.34,
+      attack: 0.015,
+      gain: 0.25,
+      filterFreq: 2600,
+    })
+    this.playNoise({ channel: 'sfx', duration: 0.32, gain: 0.24, filterType: 'bandpass', filterFreq: 1350, q: 0.9 })
+  }
+
+  playFrisbeeSlice() {
+    if (!this.canPlay('sfx')) return
+    // Sharp laser/flame blade slice + deep impact boom
+    this.playTone({ channel: 'sfx', type: 'sawtooth', freq: 1480, endFreq: 220, duration: 0.28, attack: 0.004, gain: 0.28, filterFreq: 3400 })
+    this.playTone({ channel: 'sfx', type: 'sine', freq: 135, endFreq: 38, duration: 0.34, attack: 0.005, gain: 0.3 })
+    this.playNoise({ channel: 'sfx', duration: 0.24, gain: 0.24, filterType: 'highpass', filterFreq: 1900 })
   }
 }
 
