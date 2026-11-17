@@ -271,3 +271,279 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.toggle_feedback_upvote(uuid) TO authenticated;
 
+-- ============================================================
+-- ACCOUNT ROLES (player / moderator / admin / owner) & ADMIN RPCs
+-- ============================================================
+ALTER TABLE public.fb_profiles
+ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'player';
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'fb_profiles_role_check' AND conrelid = 'public.fb_profiles'::regclass
+  ) THEN
+    ALTER TABLE public.fb_profiles
+    ADD CONSTRAINT fb_profiles_role_check
+    CHECK (role IN ('player', 'moderator', 'admin', 'owner'));
+  END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.fb_protect_profile_role()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.role IS DISTINCT FROM OLD.role THEN
+    IF auth.uid() IS NOT NULL AND current_setting('freshblox.allow_role_write', true) IS DISTINCT FROM '1' THEN
+      NEW.role := OLD.role;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_fb_protect_profile_role ON public.fb_profiles;
+CREATE TRIGGER trg_fb_protect_profile_role
+BEFORE UPDATE ON public.fb_profiles
+FOR EACH ROW
+EXECUTE FUNCTION public.fb_protect_profile_role();
+
+CREATE OR REPLACE FUNCTION public.fb_caller_role()
+RETURNS text
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COALESCE((SELECT role FROM public.fb_profiles WHERE id = auth.uid()), 'player');
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_platform_stats()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  caller_role text;
+  res jsonb;
+BEGIN
+  caller_role := public.fb_caller_role();
+  IF caller_role NOT IN ('owner', 'admin') THEN
+    RAISE EXCEPTION 'FORBIDDEN';
+  END IF;
+
+  SELECT jsonb_build_object(
+    'total_players', (SELECT count(*) FROM public.fb_profiles),
+    'online_players', (SELECT count(*) FROM public.fb_profiles WHERE last_seen >= now() - interval '3 minutes'),
+    'total_feedback', (SELECT count(*) FROM public.fb_feedback),
+    'new_feedback', (SELECT count(*) FROM public.fb_feedback WHERE status = 'new'),
+    'obby_100_clears', (SELECT count(*) FROM public.fb_profiles WHERE obby_best_stage >= 100),
+    'device_locks', (SELECT count(*) FROM public.fb_device_registrations)
+  ) INTO res;
+
+  RETURN res;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_list_players(p_search text DEFAULT '', p_limit int DEFAULT 60)
+RETURNS TABLE (
+  id uuid,
+  username text,
+  fresh_tag text,
+  role text,
+  xp int,
+  obby_stage int,
+  obby_best_stage int,
+  obby_completions int,
+  last_world text,
+  last_room text,
+  last_seen timestamptz,
+  updated_at timestamptz
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  caller_role text;
+  clean_q text;
+BEGIN
+  caller_role := public.fb_caller_role();
+  IF caller_role NOT IN ('owner', 'admin') THEN
+    RAISE EXCEPTION 'FORBIDDEN';
+  END IF;
+
+  clean_q := trim(COALESCE(p_search, ''));
+
+  RETURN QUERY
+  SELECT
+    p.id, p.username, p.fresh_tag, p.role, p.xp,
+    p.obby_stage, p.obby_best_stage, p.obby_completions,
+    p.last_world, p.last_room, p.last_seen, p.updated_at
+  FROM public.fb_profiles p
+  WHERE clean_q = ''
+     OR p.username ILIKE '%' || clean_q || '%'
+     OR p.fresh_tag ILIKE '%' || clean_q || '%'
+  ORDER BY
+    CASE p.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'moderator' THEN 2 ELSE 3 END,
+    p.last_seen DESC NULLS LAST
+  LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 60), 200));
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_update_player_role(p_target_id uuid, p_new_role text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  caller_role text;
+BEGIN
+  caller_role := public.fb_caller_role();
+  IF caller_role <> 'owner' THEN
+    RAISE EXCEPTION 'OWNER_ONLY';
+  END IF;
+
+  IF p_new_role NOT IN ('player', 'moderator', 'admin', 'owner') THEN
+    RAISE EXCEPTION 'INVALID_ROLE';
+  END IF;
+
+  IF p_target_id = auth.uid() AND p_new_role <> 'owner' THEN
+    RAISE EXCEPTION 'CANNOT_DEMOTE_SELF';
+  END IF;
+
+  PERFORM set_config('freshblox.allow_role_write', '1', true);
+
+  UPDATE public.fb_profiles
+  SET role = p_new_role, updated_at = now()
+  WHERE id = p_target_id;
+
+  RETURN jsonb_build_object('ok', true, 'role', p_new_role);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_adjust_player(
+  p_target_id uuid,
+  p_xp int DEFAULT NULL,
+  p_obby_stage int DEFAULT NULL,
+  p_obby_best_stage int DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  caller_role text;
+BEGIN
+  caller_role := public.fb_caller_role();
+  IF caller_role NOT IN ('owner', 'admin') THEN
+    RAISE EXCEPTION 'FORBIDDEN';
+  END IF;
+
+  UPDATE public.fb_profiles
+  SET
+    xp = COALESCE(GREATEST(0, p_xp), xp),
+    obby_stage = COALESCE(GREATEST(1, LEAST(100, p_obby_stage)), obby_stage),
+    obby_best_stage = COALESCE(GREATEST(1, LEAST(100, p_obby_best_stage)), obby_best_stage),
+    updated_at = now()
+  WHERE id = p_target_id;
+
+  RETURN jsonb_build_object('ok', true);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_list_feedback(p_limit int DEFAULT 100)
+RETURNS TABLE (
+  id uuid,
+  user_id uuid,
+  username text,
+  kind text,
+  title text,
+  description text,
+  context text,
+  device_info text,
+  status text,
+  upvotes int,
+  created_at timestamptz
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  caller_role text;
+BEGIN
+  caller_role := public.fb_caller_role();
+  IF caller_role NOT IN ('owner', 'admin') THEN
+    RAISE EXCEPTION 'FORBIDDEN';
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    f.id, f.user_id, f.username, f.kind, f.title, f.description,
+    f.context, f.device_info, f.status, f.upvotes, f.created_at
+  FROM public.fb_feedback f
+  ORDER BY f.created_at DESC
+  LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 100), 250));
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_update_feedback_status(p_feedback_id uuid, p_status text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  caller_role text;
+BEGIN
+  caller_role := public.fb_caller_role();
+  IF caller_role NOT IN ('owner', 'admin') THEN
+    RAISE EXCEPTION 'FORBIDDEN';
+  END IF;
+
+  IF p_status NOT IN ('new', 'reviewing', 'planned', 'done') THEN
+    RAISE EXCEPTION 'INVALID_STATUS';
+  END IF;
+
+  UPDATE public.fb_feedback
+  SET status = p_status
+  WHERE id = p_feedback_id;
+
+  RETURN jsonb_build_object('ok', true, 'status', p_status);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_delete_feedback(p_feedback_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  caller_role text;
+BEGIN
+  caller_role := public.fb_caller_role();
+  IF caller_role NOT IN ('owner', 'admin') THEN
+    RAISE EXCEPTION 'FORBIDDEN';
+  END IF;
+
+  DELETE FROM public.fb_feedback WHERE id = p_feedback_id;
+  RETURN jsonb_build_object('ok', true);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.fb_caller_role() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_platform_stats() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_list_players(text, int) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_update_player_role(uuid, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_adjust_player(uuid, int, int, int) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_list_feedback(int) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_update_feedback_status(uuid, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_delete_feedback(uuid) TO authenticated;
+
+

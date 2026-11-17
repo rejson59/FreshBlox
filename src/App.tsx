@@ -2,12 +2,15 @@ import React, { useEffect, useState } from 'react'
 import {
   ArrowRight,
   Compass,
+  Crown,
+  FlaskConical,
   Hash,
   Loader2,
   LogOut,
   MessageSquarePlus,
   Moon,
   Plus,
+  ShieldCheck,
   Shirt,
   Sun,
   Users,
@@ -16,14 +19,17 @@ import { ARCTIC_SKY, getThemeTokens, ThemeMode } from './data/brandTheme'
 import { Lang, LOCALES } from './data/locales'
 import { getRankForXp, WorldKind } from './data/catalog'
 import { FreshBloxLogo, FreshBloxWordmark } from './components/brand/FreshBloxBrand'
-import { usePlayerStore } from './store/usePlayerStore'
+import { getAccountRoleMeta, hasAdminAccess, usePlayerStore } from './store/usePlayerStore'
 import { HomeBentoView } from './components/lobby/HomeBentoView'
 import { MainLobbyWorld } from './engine/MainLobbyWorld'
 import { TestObbyWorld } from './engine/TestObbyWorld'
 import { AvatarEditorView } from './components/avatar/AvatarEditorView'
 import { SocialProfileView } from './components/social/SocialProfileView'
+import { AdminPanelView } from './components/admin/AdminPanelView'
+import { TestLabView } from './components/tests/TestLabView'
 import { AuthScreen } from './components/auth/AuthScreen'
 import { FeedbackModal } from './components/feedback/FeedbackModal'
+import { FreshLabFlags, loadLabFlags, saveLabFlags } from './lib/labFlags'
 import { sfx } from './lib/sfx'
 import {
   enterGameFullscreenLandscape,
@@ -32,7 +38,7 @@ import {
   isTouchMobileDevice,
 } from './lib/mobileFullscreen'
 
-type AppView = 'home' | 'world' | 'obby' | 'avatar' | 'social'
+type AppView = 'home' | 'world' | 'obby' | 'avatar' | 'social' | 'admin' | 'tests'
 
 function getInitialLaunchFromUrl(): { view: AppView; roomId: string; hasInvite: boolean } {
   if (typeof window === 'undefined') return { view: 'home', roomId: 'PUBLIC-1', hasInvite: false }
@@ -58,6 +64,12 @@ export function App() {
   const [feedbackOpen, setFeedbackOpen] = useState<boolean>(false)
   const [feedbackContext, setFeedbackContext] = useState<string>('Strona główna')
   const [launcherInput, setLauncherInput] = useState<string>('')
+  const [labFlags, setLabFlags] = useState<FreshLabFlags>(() => loadLabFlags())
+
+  const updateLabFlags = (next: FreshLabFlags) => {
+    setLabFlags(next)
+    saveLabFlags(next)
+  }
 
   const {
     profile,
@@ -68,6 +80,7 @@ export function App() {
     signUp,
     signIn,
     signOut,
+    refreshProfile,
     updatePresenceLocation,
     setUsername,
     updateAvatar,
@@ -246,10 +259,23 @@ export function App() {
       setFeedbackContext(lang === 'pl' ? 'Szatnia R6' : 'Avatar Wardrobe')
     } else if (view === 'social') {
       setFeedbackContext(lang === 'pl' ? 'Społeczność / Profil' : 'Social / Profile')
+    } else if (view === 'admin') {
+      setFeedbackContext(lang === 'pl' ? 'Panel Admina' : 'Admin Panel')
+    } else if (view === 'tests') {
+      setFeedbackContext(lang === 'pl' ? 'Testy' : 'Test Lab')
     } else {
       setFeedbackContext(lang === 'pl' ? 'Odkrywaj' : 'Discover')
     }
     setFeedbackOpen(true)
+  }
+
+  const isStaff = hasAdminAccess(profile.role)
+  const roleMeta = getAccountRoleMeta(profile.role, lang)
+
+  const handleLaunchObbyStage = (stage: number) => {
+    const clamped = Math.max(1, Math.min(100, stage))
+    setObbyCurrentStage(clamped)
+    handleEnterWorld('obby', 'OBBY-DEV')
   }
 
   const navItems: Array<{
@@ -262,6 +288,20 @@ export function App() {
     { id: 'avatar', label: lang === 'pl' ? 'Szatnia R6' : 'Wardrobe', icon: Shirt },
     { id: 'social', label: lang === 'pl' ? 'Profil i Znajomi' : 'Profile', icon: Users },
   ]
+
+  const staffNavItems: Array<{
+    id: AppView
+    label: string
+    icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>
+    accent: string
+  }> = isStaff
+    ? [
+        { id: 'admin', label: lang === 'pl' ? 'Panel Admina' : 'Admin Panel', icon: ShieldCheck, accent: '#F59E0B' },
+        { id: 'tests', label: lang === 'pl' ? 'Testy' : 'Test Lab', icon: FlaskConical, accent: '#34D399' },
+      ]
+    : []
+
+  const allNavItems = [...navItems, ...staffNavItems]
 
   // Fullscreen 3D World Mode (zero shell chrome — 100% gameplay viewport)
   if (isIn3DGame) {
@@ -312,7 +352,7 @@ export function App() {
             unlockedHats={profile.unlockedHats}
             unlockedFaces={profile.unlockedFaces}
             initialStage={profile.obbyStage}
-            bestStage={profile.obbyBestStage}
+            bestStage={isStaff && labFlags.unlockAllObbyStages ? 100 : profile.obbyBestStage}
             completions={profile.obbyCompletions}
             isFullscreen={isFullscreen}
             onBackHome={() => navigateView('home')}
@@ -410,6 +450,44 @@ export function App() {
               )
             })}
           </nav>
+
+          {/* Owner / Admin Exclusive Rail Section (Admin Panel + Test Lab) */}
+          {staffNavItems.length > 0 && (
+            <>
+              <div className="h-px w-8" style={{ background: shellBorder }} />
+              <nav className="flex w-full flex-col items-center gap-1.5">
+                {staffNavItems.map((item) => {
+                  const Icon = item.icon
+                  const active = view === item.id
+                  const accent = item.accent
+                  return (
+                    <div key={item.id} className="relative flex w-full items-center justify-center">
+                      {active && (
+                        <span
+                          className="absolute left-0 h-6 w-[3px] rounded-r-full"
+                          style={{ background: accent }}
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => navigateView(item.id)}
+                        className="flex h-11 w-11 items-center justify-center rounded-xl border transition-all hover:scale-105 cursor-pointer"
+                        style={{
+                          background: active ? `${accent}24` : `${accent}0D`,
+                          borderColor: active ? `${accent}58` : `${accent}28`,
+                          color: accent,
+                        }}
+                        title={item.label}
+                        aria-label={item.label}
+                      >
+                        <Icon className="h-[19px] w-[19px]" />
+                      </button>
+                    </div>
+                  )
+                })}
+              </nav>
+            </>
+          )}
         </div>
 
         {/* Bottom Utility Dock (Feedback, Theme, Lang, Sign Out) */}
@@ -572,19 +650,39 @@ export function App() {
             <button
               type="button"
               onClick={() => {
-                sfx.playClick()
                 navigateView('social')
               }}
               className="flex h-8 items-center gap-2 rounded-xl border px-2.5 text-xs font-extrabold transition hover:brightness-110 cursor-pointer"
               style={{
-                borderColor: view === 'social' ? `${ARCTIC_SKY.skyMain}55` : shellBorder,
+                borderColor:
+                  profile.role === 'owner'
+                    ? roleMeta.border
+                    : view === 'social'
+                      ? `${ARCTIC_SKY.skyMain}55`
+                      : shellBorder,
                 background: inputBg,
                 color: tokens.textPrimary,
               }}
-              title={`${profile.username} · ${rank.name}`}
+              title={`${profile.username} · ${roleMeta.label} · ${rank.name}`}
             >
-              <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+              {profile.role === 'owner' ? (
+                <Crown className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+              ) : (
+                <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+              )}
               <span className="max-w-[84px] sm:max-w-[120px] truncate">{profile.username}</span>
+              {profile.role !== 'player' && (
+                <span
+                  className="hidden md:inline-flex items-center rounded-md border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider"
+                  style={{
+                    background: roleMeta.bg,
+                    borderColor: roleMeta.border,
+                    color: roleMeta.color,
+                  }}
+                >
+                  {roleMeta.label}
+                </span>
+              )}
               <span
                 className="hidden sm:inline-flex rounded-md px-1.5 py-0.5 font-mono text-[10px] font-extrabold text-sky-400"
                 style={{ background: `${ARCTIC_SKY.skyMain}18` }}
@@ -648,6 +746,27 @@ export function App() {
               onSignOut={handleSignOut}
             />
           )}
+
+          {view === 'admin' && isStaff && (
+            <AdminPanelView
+              profile={profile}
+              mode={mode}
+              lang={lang}
+              onRefreshSelf={refreshProfile}
+            />
+          )}
+
+          {view === 'tests' && isStaff && (
+            <TestLabView
+              profile={profile}
+              mode={mode}
+              lang={lang}
+              flags={labFlags}
+              onChangeFlags={updateLabFlags}
+              onLaunchObbyStage={handleLaunchObbyStage}
+              onEnterWorld={handleEnterWorld}
+            />
+          )}
         </main>
       </div>
 
@@ -660,7 +779,7 @@ export function App() {
           paddingBottom: 'max(0.45rem, env(safe-area-inset-bottom))',
         }}
       >
-        {navItems.map((item) => {
+        {allNavItems.map((item) => {
           const Icon = item.icon
           const active = view === item.id
           const accent = item.accent ?? ARCTIC_SKY.skyMain

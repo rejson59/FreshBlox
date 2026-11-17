@@ -830,6 +830,12 @@ export function generateWorldThumbnails(): Promise<WorldThumbnailMap> {
   return pendingPromise
 }
 
+export function regenerateWorldThumbnails(): Promise<WorldThumbnailMap> {
+  cachedThumbnails = null
+  pendingPromise = null
+  return generateWorldThumbnails()
+}
+
 export function useWorldThumbnails(): WorldThumbnailMap {
   const [thumbs, setThumbs] = useState<WorldThumbnailMap>(() => cachedThumbnails ?? {})
 

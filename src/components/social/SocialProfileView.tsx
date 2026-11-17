@@ -3,6 +3,7 @@ import {
   Award,
   Check,
   Cloud,
+  Crown,
   Flag,
   LogOut,
   Play,
@@ -16,7 +17,7 @@ import {
 import { ARCTIC_SKY, getThemeTokens, ThemeMode } from '../../data/brandTheme'
 import { Lang, LOCALES } from '../../data/locales'
 import { BADGE_CATALOG, getRankForXp, WorldKind } from '../../data/catalog'
-import { CloudPlayerSummary, PlayerProfile } from '../../store/usePlayerStore'
+import { CloudPlayerSummary, getAccountRoleMeta, PlayerProfile } from '../../store/usePlayerStore'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { sfx } from '../../lib/sfx'
 
@@ -74,6 +75,7 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
   const ta = LOCALES[lang].auth
   const tokens = getThemeTokens(mode)
   const rank = getRankForXp(profile.xp)
+  const roleMeta = getAccountRoleMeta(profile.role, lang)
 
   const handleSaveNick = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -110,6 +112,19 @@ export const SocialProfileView: React.FC<SocialProfileViewProps> = ({
           <h1 className="font-display text-lg font-extrabold sm:text-xl" style={{ color: tokens.textPrimary }}>
             {t.title}
           </h1>
+          {profile.role !== 'player' && (
+            <span
+              className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider"
+              style={{
+                background: roleMeta.bg,
+                borderColor: roleMeta.border,
+                color: roleMeta.color,
+              }}
+            >
+              {profile.role === 'owner' && <Crown className="h-3 w-3" />}
+              {roleMeta.label}
+            </span>
+          )}
         </div>
 
         <button

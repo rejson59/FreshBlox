@@ -64,7 +64,6 @@ export const ShortcutsOverlayModal: React.FC<ShortcutsOverlayModalProps> = ({
   const quickToggleRows: ShortcutRow[] = [
     { keys: ['L'], label: isPl ? 'Przełącz Shift-Lock (obrót z kamerą)' : 'Toggle Shift-Lock alignment' },
     { keys: ['N'], label: isPl ? 'Przełącz Dzień / Noc' : 'Toggle Day / Night' },
-    { keys: ['V'], label: isPl ? 'Wycisz / Włącz dźwięki SFX' : 'Mute / Unmute SFX audio' },
     { keys: ['F'], label: isPl ? 'Pełny ekran (Fullscreen)' : 'Toggle Fullscreen' },
   ]
 

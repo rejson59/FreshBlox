@@ -34,10 +34,58 @@ export interface QuestProgressState {
   claimed: Record<QuestDef['id'], boolean>
 }
 
+export type AccountRole = 'player' | 'moderator' | 'admin' | 'owner'
+
+export function normalizeAccountRole(raw?: string | null): AccountRole {
+  if (raw === 'owner' || raw === 'admin' || raw === 'moderator') return raw
+  return 'player'
+}
+
+export function hasAdminAccess(role?: AccountRole | null): boolean {
+  return role === 'owner' || role === 'admin'
+}
+
+export function getAccountRoleMeta(
+  role: AccountRole,
+  lang: 'pl' | 'en',
+): { label: string; color: string; bg: string; border: string } {
+  switch (role) {
+    case 'owner':
+      return {
+        label: lang === 'pl' ? 'Właściciel' : 'Owner',
+        color: '#FDE047',
+        bg: 'rgba(245, 158, 11, 0.2)',
+        border: 'rgba(250, 204, 21, 0.5)',
+      }
+    case 'admin':
+      return {
+        label: 'Admin',
+        color: '#F472B6',
+        bg: 'rgba(236, 72, 153, 0.18)',
+        border: 'rgba(244, 114, 182, 0.45)',
+      }
+    case 'moderator':
+      return {
+        label: lang === 'pl' ? 'Moderator' : 'Mod',
+        color: '#34D399',
+        bg: 'rgba(16, 185, 129, 0.18)',
+        border: 'rgba(52, 211, 153, 0.42)',
+      }
+    default:
+      return {
+        label: lang === 'pl' ? 'Gracz' : 'Player',
+        color: '#94A3B8',
+        bg: 'rgba(148, 163, 184, 0.12)',
+        border: 'rgba(148, 163, 184, 0.25)',
+      }
+  }
+}
+
 export interface PlayerProfile {
   playerId: string
   username: string
   freshTag: string
+  role: AccountRole
   freshGems: number
   xp: number
   avatar: R6AvatarConfig
@@ -104,6 +152,7 @@ function createDefaultProfile(): PlayerProfile {
     playerId: `fb_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
     username: `FreshPlayer${rnd.toString().slice(0, 2)}`,
     freshTag: `#FB-${rnd}`,
+    role: 'player',
     freshGems: 0,
     xp: 0,
     avatar: {
@@ -172,6 +221,7 @@ function loadLocalProfile(): PlayerProfile {
     return {
       ...def,
       ...parsed,
+      role: normalizeAccountRole(parsed.role),
       freshGems: GEMS_SYSTEM_IN_PROGRESS ? 0 : (parsed.freshGems ?? 0),
       unlockedOutfits: unlockedOutfits as OutfitId[],
       unlockedHats,
@@ -202,6 +252,7 @@ interface DbProfileRow {
   id: string
   username: string
   fresh_tag: string
+  role?: string | null
   fresh_gems: number
   xp: number
   avatar_config: Partial<R6AvatarConfig> | null
@@ -330,6 +381,7 @@ export function usePlayerStore() {
             playerId: data.id,
             username: data.username,
             freshTag: data.fresh_tag,
+            role: normalizeAccountRole(data.role),
             freshGems: GEMS_SYSTEM_IN_PROGRESS ? 0 : (data.fresh_gems ?? 0),
             xp: data.xp ?? 0,
             avatar: {
@@ -1021,6 +1073,12 @@ async function postRegisterApi(
     }))
   }, [])
 
+  const refreshProfile = useCallback(async () => {
+    const user = authUserRef.current
+    if (!user) return
+    await hydrateCloudProfile(user.id, user.email)
+  }, [hydrateCloudProfile])
+
   return {
     profile,
     authUser,
@@ -1030,6 +1088,7 @@ async function postRegisterApi(
     signUp,
     signIn,
     signOut,
+    refreshProfile,
     updatePresenceLocation,
     setUsername,
     updateAvatar,

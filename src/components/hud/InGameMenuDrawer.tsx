@@ -23,8 +23,6 @@ import {
   Smartphone,
   Sun,
   Users,
-  Volume2,
-  VolumeX,
   Wifi,
   X,
 } from 'lucide-react'
@@ -72,13 +70,11 @@ export interface InGameMenuDrawerProps {
   onChangeShiftLockAlign: (enabled: boolean) => void
   onChangeMouseSensitivity: (sens: number) => void
   worldTime: MenuWorldTime
-  soundEnabled: boolean
   quality: MenuQuality
   isFullscreen: boolean
   supabaseConnected: boolean
   copiedInvite: boolean
   onChangeWorldTime: (time: MenuWorldTime) => void
-  onToggleSound: () => void
   onChangeQuality: (q: MenuQuality) => void
   onToggleTouchMode: () => void
   onToggleFullscreen: () => void
@@ -107,7 +103,8 @@ const COPY = {
     copied: 'Skopiowano',
     spawn: 'Spawn',
     respawn: 'Respawn',
-    sound: 'Dźwięk',
+    day: 'Dzień',
+    night: 'Noc',
     shortcuts: 'Skróty',
     fullscreen: 'Ekran',
     toObby: 'Test Obby 100',
@@ -142,7 +139,8 @@ const COPY = {
     copied: 'Copied',
     spawn: 'Spawn',
     respawn: 'Respawn',
-    sound: 'Audio',
+    day: 'Day',
+    night: 'Night',
     shortcuts: 'Keys',
     fullscreen: 'Screen',
     toObby: 'Test Obby 100',
@@ -192,13 +190,11 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
   onChangeShiftLockAlign,
   onChangeMouseSensitivity,
   worldTime,
-  soundEnabled,
   quality,
   isFullscreen,
   supabaseConnected,
   copiedInvite,
   onChangeWorldTime,
-  onToggleSound,
   onChangeQuality,
   onToggleTouchMode,
   onToggleFullscreen,
@@ -414,19 +410,18 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    sfx.playClick()
-                    onToggleSound()
+                    onToggleFullscreen()
                   }}
                   className="relative flex flex-col items-center justify-center gap-1.5 rounded-2xl border border-white/10 bg-white/[0.05] py-3.5 px-2 text-[11px] font-extrabold text-white hover:bg-white/12 active:scale-95 transition cursor-pointer"
                 >
-                  {soundEnabled ? (
-                    <Volume2 className="h-5 w-5 text-emerald-300" />
+                  {isFullscreen ? (
+                    <Minimize2 className="h-5 w-5 text-sky-300" />
                   ) : (
-                    <VolumeX className="h-5 w-5 text-slate-400" />
+                    <Maximize2 className="h-5 w-5 text-sky-300" />
                   )}
-                  <span className="truncate">{t.sound}</span>
+                  <span className="truncate">{t.fullscreen}</span>
                   {!touchMode && (
-                    <span className="absolute top-1.5 right-2 font-mono text-[9px] text-sky-200/60">V</span>
+                    <span className="absolute top-1.5 right-2 font-mono text-[9px] text-sky-200/60">F</span>
                   )}
                 </button>
 
@@ -434,7 +429,6 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      sfx.playClick()
                       onClose()
                       onOpenShortcuts()
                     }}
@@ -447,18 +441,15 @@ export const InGameMenuDrawer: React.FC<InGameMenuDrawerProps> = ({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => {
-                      sfx.playClick()
-                      onToggleFullscreen()
-                    }}
+                    onClick={() => onChangeWorldTime(worldTime === 'day' ? 'night' : 'day')}
                     className="relative flex flex-col items-center justify-center gap-1.5 rounded-2xl border border-white/10 bg-white/[0.05] py-3.5 px-2 text-[11px] font-extrabold text-white hover:bg-white/12 active:scale-95 transition cursor-pointer"
                   >
-                    {isFullscreen ? (
-                      <Minimize2 className="h-5 w-5 text-sky-300" />
+                    {worldTime === 'day' ? (
+                      <Sun className="h-5 w-5 text-amber-300" />
                     ) : (
-                      <Maximize2 className="h-5 w-5 text-sky-300" />
+                      <Moon className="h-5 w-5 text-sky-300" />
                     )}
-                    <span className="truncate">{t.fullscreen}</span>
+                    <span className="truncate">{worldTime === 'day' ? t.day : t.night}</span>
                   </button>
                 )}
               </div>

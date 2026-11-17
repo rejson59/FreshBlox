@@ -174,7 +174,6 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
   )
   const [rotateBannerDismissed, setRotateBannerDismissed] = useState(false)
 
-  const [soundEnabled, setSoundEnabled] = useState(true)
   const [copiedInvite, setCopiedInvite] = useState(false)
   const [onlineCount, setOnlineCount] = useState(1)
   const [activeEmote, setActiveEmote] = useState<PlayerPose | null>(null)
@@ -513,15 +512,6 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     window.setTimeout(() => setCopiedInvite(false), 2200)
   }, [roomCode])
 
-  const toggleSound = useCallback(() => {
-    setSoundEnabled((prev) => {
-      const next = !prev
-      sfx.setEnabled(next)
-      if (next) sfx.playClick()
-      return next
-    })
-  }, [])
-
   const handleToggleFullscreen = useCallback(() => {
     sfx.playClick()
     if (isDocumentFullscreen()) {
@@ -539,7 +529,6 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
     openFeedback: () => {},
     toggleShiftLockAlign: () => {},
     toggleWorldTime: () => {},
-    toggleSoundWithToast: () => {},
     toggleFullscreen: () => {},
     resetSpawnWithToast: () => {},
   })
@@ -640,19 +629,6 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
           ? `Pora dnia: ${next === 'night' ? 'Noc' : 'Dzień'}`
           : `Time of day: ${next === 'night' ? 'Night' : 'Day'}`,
       )
-    },
-    toggleSoundWithToast: () => {
-      setSoundEnabled((prev) => {
-        const next = !prev
-        sfx.setEnabled(next)
-        if (next) sfx.playClick()
-        showToast(
-          lang === 'pl'
-            ? `Dźwięki SFX: ${next ? 'WŁ.' : 'WYŁ.'}`
-            : `SFX Audio: ${next ? 'ON' : 'OFF'}`,
-        )
-        return next
-      })
     },
     toggleFullscreen: () => {
       handleToggleFullscreen()
@@ -1509,10 +1485,6 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         }
         if (code === 'KeyN') {
           shortcutActionsRef.current.toggleWorldTime()
-          return
-        }
-        if (code === 'KeyV') {
-          shortcutActionsRef.current.toggleSoundWithToast()
           return
         }
         if (code === 'KeyF') {
@@ -2519,13 +2491,11 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
         onChangeShiftLockAlign={(enabled) => updateMousePrefs({ shiftLockAlign: enabled })}
         onChangeMouseSensitivity={(sensitivity) => updateMousePrefs({ sensitivity })}
         worldTime={worldTime}
-        soundEnabled={soundEnabled}
         quality={quality}
         isFullscreen={isFullscreen}
         supabaseConnected={isSupabaseConfigured}
         copiedInvite={copiedInvite}
         onChangeWorldTime={setWorldTime}
-        onToggleSound={toggleSound}
         onChangeQuality={setQuality}
         onToggleTouchMode={() => setTouchMode((v) => !v)}
         onToggleFullscreen={handleToggleFullscreen}

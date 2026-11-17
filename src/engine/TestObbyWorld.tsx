@@ -247,7 +247,6 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
   const [elapsedMs, setElapsedMs] = useState<number>(0)
   const runStartTimeRef = useRef<number>(Date.now())
 
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(true)
   const [touchMode, setTouchMode] = useState<boolean>(() => isTouchMobileDevice())
   const [touchSprint, setTouchSprint] = useState<boolean>(false)
   const [shiftLockActive, setShiftLockActive] = useState<boolean>(false)
@@ -499,7 +498,6 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     openFeedback: () => {},
     toggleShiftLockAlign: () => {},
     toggleWorldTime: () => {},
-    toggleSoundWithToast: () => {},
     toggleFullscreen: () => {},
     stepStage: (_delta: -1 | 1) => {},
   })
@@ -620,10 +618,6 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         }
         if (code === 'KeyN') {
           shortcutActionsRef.current.toggleWorldTime()
-          return
-        }
-        if (code === 'KeyV') {
-          shortcutActionsRef.current.toggleSoundWithToast()
           return
         }
         if (code === 'KeyF') {
@@ -752,13 +746,6 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     setTimeout(() => setCopiedInvite(false), 2000)
   }, [roomCode])
 
-  const toggleSound = useCallback(() => {
-    const next = !soundEnabled
-    sfx.setEnabled(next)
-    setSoundEnabled(next)
-    if (next) sfx.playClick()
-  }, [soundEnabled])
-
   const jumpToStage = useCallback(
     (target: number) => {
       const clamped = Math.max(1, Math.min(maxUnlockedRef.current, target))
@@ -867,19 +854,6 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           ? `Pora dnia: ${next === 'night' ? 'Noc' : 'Dzień'}`
           : `Time of day: ${next === 'night' ? 'Night' : 'Day'}`,
       )
-    },
-    toggleSoundWithToast: () => {
-      setSoundEnabled((prev) => {
-        const next = !prev
-        sfx.setEnabled(next)
-        if (next) sfx.playClick()
-        showToast(
-          lang === 'pl'
-            ? `Dźwięki SFX: ${next ? 'WŁ.' : 'WYŁ.'}`
-            : `SFX Audio: ${next ? 'ON' : 'OFF'}`,
-        )
-        return next
-      })
     },
     toggleFullscreen: () => {
       sfx.playClick()
@@ -2995,13 +2969,11 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
         onChangeShiftLockAlign={(enabled) => updateMousePrefs({ shiftLockAlign: enabled })}
         onChangeMouseSensitivity={(sensitivity) => updateMousePrefs({ sensitivity })}
         worldTime={worldTime}
-        soundEnabled={soundEnabled}
         quality={quality}
         isFullscreen={isFullscreen}
         supabaseConnected={isSupabaseConfigured}
         copiedInvite={copiedInvite}
         onChangeWorldTime={setWorldTime}
-        onToggleSound={toggleSound}
         onChangeQuality={setQuality}
         onToggleTouchMode={() => setTouchMode((m) => !m)}
         onToggleFullscreen={() => {

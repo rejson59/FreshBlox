@@ -19,7 +19,7 @@ import { ARCTIC_SKY, getThemeTokens, ThemeMode } from '../../data/brandTheme'
 import { Lang } from '../../data/locales'
 import { DAILY_QUESTS, getRankForXp, QuestDef, WorldKind } from '../../data/catalog'
 import { FreshGemShard } from '../brand/FreshBloxBrand'
-import { CloudPlayerSummary, PlayerProfile } from '../../store/usePlayerStore'
+import { CloudPlayerSummary, getAccountRoleMeta, PlayerProfile } from '../../store/usePlayerStore'
 import { useWorldThumbnails, WorldPreviewKey } from '../../engine/worldThumbnails'
 import { sfx } from '../../lib/sfx'
 
@@ -114,6 +114,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
   const tokens = getThemeTokens(mode)
   const isDark = mode === 'dark'
   const rank = getRankForXp(profile.xp)
+  const roleMeta = getAccountRoleMeta(profile.role, lang)
 
   // Deep launcher palette surfaces (tight borders, native app contrast)
   const panelSurface = isDark ? '#0B1323' : '#FFFFFF'
@@ -468,10 +469,19 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
               type="button"
               onClick={onOpenProfile}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-display text-sm font-black text-white shadow-sm cursor-pointer transition hover:scale-105"
-              style={{ background: 'linear-gradient(135deg, #0EA5E9 0%, #2563EB 100%)' }}
+              style={{
+                background:
+                  profile.role === 'owner'
+                    ? 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)'
+                    : 'linear-gradient(135deg, #0EA5E9 0%, #2563EB 100%)',
+              }}
               title={profile.username}
             >
-              {profile.username.slice(0, 2).toUpperCase()}
+              {profile.role === 'owner' ? (
+                <Crown className="h-5 w-5 text-slate-950" />
+              ) : (
+                profile.username.slice(0, 2).toUpperCase()
+              )}
             </button>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
@@ -479,6 +489,18 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                 <span className="truncate text-sm font-extrabold" style={{ color: tokens.textPrimary }}>
                   {profile.username}
                 </span>
+                {profile.role !== 'player' && (
+                  <span
+                    className="shrink-0 rounded-md border px-1.5 py-0.5 text-[9px] font-black uppercase"
+                    style={{
+                      background: roleMeta.bg,
+                      borderColor: roleMeta.border,
+                      color: roleMeta.color,
+                    }}
+                  >
+                    {roleMeta.label}
+                  </span>
+                )}
               </div>
               <div className="mt-0.5 flex items-center justify-between text-[11px] font-bold" style={{ color: tokens.textSecondary }}>
                 <span className="truncate">{rank.name}</span>
