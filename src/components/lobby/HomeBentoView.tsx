@@ -466,6 +466,20 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                   <h3 className="font-display text-base font-extrabold leading-snug" style={{ color: tokens.textPrimary }}>
                     {lang === 'pl' ? room.titlePl : room.titleEn}
                   </h3>
+                  {isObby && (
+                    <div className="mt-2 inline-flex w-fit items-center gap-1 rounded-lg border border-amber-400/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-extrabold text-amber-400">
+                      <Trophy className="h-3 w-3 shrink-0" />
+                      <span>
+                        {profile.unlockedHats.includes('obby-crown')
+                          ? lang === 'pl'
+                            ? 'Korona Mistrza odblokowana ✓'
+                            : 'Champion Crown unlocked ✓'
+                          : lang === 'pl'
+                            ? 'Nagroda za 100: Korona Mistrza'
+                            : 'Stage 100 Reward: Champion Crown'}
+                      </span>
+                    </div>
+                  )}
 
                   <div className="mt-4 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5 text-xs" style={{ color: tokens.textSecondary }}>

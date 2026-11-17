@@ -401,6 +401,105 @@ function buildHatGroup(hatId: HatId, castShadow: boolean): { group: THREE.Group;
     )
     gem.position.set(0, 0.64, 0.28)
     group.add(gem)
+  } else if (hatId === 'obby-crown') {
+    // Exclusive Stage 100 Champion Crown: royal 6-point gold crown with velvet cap, pearl tips & crystal gems
+    const goldMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: '#F59E0B',
+        roughness: 0.18,
+        metalness: 0.78,
+      }),
+    )
+    const brightGoldMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: '#FDE047',
+        roughness: 0.16,
+        metalness: 0.74,
+      }),
+    )
+    const trimBandMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: '#0284C7',
+        roughness: 0.22,
+        metalness: 0.45,
+      }),
+    )
+    const velvetMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: '#1E3A8A',
+        roughness: 0.78,
+        metalness: 0.05,
+      }),
+    )
+    const skyGemMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: '#38BDF8',
+        roughness: 0.1,
+        metalness: 0.25,
+      }),
+    )
+    const emeraldGemMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: '#34D399',
+        roughness: 0.12,
+        metalness: 0.22,
+      }),
+    )
+
+    // Lower sapphire-arctic rim seated cleanly atop R6 head
+    const rim = new THREE.Mesh(trackGeo(new THREE.TorusGeometry(0.41, 0.036, 8, 24)), trimBandMat)
+    rim.rotation.x = Math.PI / 2
+    rim.position.y = 0.38
+    rim.castShadow = castShadow
+    group.add(rim)
+
+    // Flared royal gold band
+    const band = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.45, 0.4, 0.17, 12)), goldMat)
+    band.position.y = 0.46
+    band.castShadow = castShadow
+    group.add(band)
+
+    // Royal navy inner velvet cushion
+    const velvet = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.32, 0.36, 0.16, 12)), velvetMat)
+    velvet.position.y = 0.51
+    group.add(velvet)
+
+    // 6 sculpted crown spikes + pearl tips (front spike taller for regal silhouette!)
+    const spikeGeo = trackGeo(new THREE.ConeGeometry(0.105, 0.25, 4))
+    const frontSpikeGeo = trackGeo(new THREE.ConeGeometry(0.125, 0.35, 4))
+    const pearlGeo = trackGeo(new THREE.SphereGeometry(0.042, 8, 8))
+
+    for (let i = 0; i < 6; i++) {
+      // Angle 0 points along +Z (front of face)
+      const angle = (i / 6) * Math.PI * 2
+      const isFront = i === 0
+      const sx = Math.sin(angle) * 0.39
+      const sz = Math.cos(angle) * 0.39
+      const spikeH = isFront ? 0.35 : 0.25
+
+      const spike = new THREE.Mesh(isFront ? frontSpikeGeo : spikeGeo, isFront ? brightGoldMat : goldMat)
+      spike.position.set(sx, 0.53 + spikeH * 0.46, sz)
+      spike.rotation.y = angle
+      spike.castShadow = castShadow
+      group.add(spike)
+
+      const pearl = new THREE.Mesh(pearlGeo, brightGoldMat)
+      pearl.position.set(sx, 0.53 + spikeH * 0.96, sz)
+      group.add(pearl)
+    }
+
+    // Center crystal FreshGem mounted on the front of the crown + 2 emerald flank gems
+    const centerGem = new THREE.Mesh(trackGeo(new THREE.OctahedronGeometry(0.115, 0)), skyGemMat)
+    centerGem.scale.set(0.9, 1.35, 0.72)
+    centerGem.position.set(0, 0.56, 0.44)
+    group.add(centerGem)
+
+    const sideGemGeo = trackGeo(new THREE.OctahedronGeometry(0.072, 0))
+    for (const side of [-1, 1]) {
+      const sideGem = new THREE.Mesh(sideGemGeo, emeraldGemMat)
+      sideGem.position.set(side * 0.38, 0.48, 0.22)
+      group.add(sideGem)
+    }
   }
 
   return { group, disposables }

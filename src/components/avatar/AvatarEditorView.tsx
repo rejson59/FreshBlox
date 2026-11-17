@@ -17,10 +17,12 @@ import {
   Smile,
   Sparkles,
   Sun,
+  Trophy,
 } from 'lucide-react'
 import { ARCTIC_SKY, getThemeTokens, ThemeMode } from '../../data/brandTheme'
 import { Lang, LOCALES } from '../../data/locales'
 import {
+  CatalogItem,
   FACE_CATALOG,
   GEMS_SYSTEM_IN_PROGRESS,
   HAT_CATALOG,
@@ -101,24 +103,48 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
       id: string
       name: string
       price: number
+      rewardOnly?: 'obby100'
     }> = []
 
     if (!profile.unlockedOutfits.includes(previewAvatar.outfitId)) {
       const it = OUTFIT_CATALOG.find((x) => x.id === previewAvatar.outfitId)
-      if (it) list.push({ category: 'outfit', id: it.id, name: lang === 'pl' ? it.namePl : it.nameEn, price: it.price })
+      if (it)
+        list.push({
+          category: 'outfit',
+          id: it.id,
+          name: lang === 'pl' ? it.namePl : it.nameEn,
+          price: it.price,
+          rewardOnly: it.rewardOnly,
+        })
     }
     if (!profile.unlockedHats.includes(previewAvatar.hatId)) {
       const it = HAT_CATALOG.find((x) => x.id === previewAvatar.hatId)
-      if (it) list.push({ category: 'hat', id: it.id, name: lang === 'pl' ? it.namePl : it.nameEn, price: it.price })
+      if (it)
+        list.push({
+          category: 'hat',
+          id: it.id,
+          name: lang === 'pl' ? it.namePl : it.nameEn,
+          price: it.price,
+          rewardOnly: it.rewardOnly,
+        })
     }
     if (!profile.unlockedFaces.includes(previewAvatar.faceId)) {
       const it = FACE_CATALOG.find((x) => x.id === previewAvatar.faceId)
-      if (it) list.push({ category: 'face', id: it.id, name: lang === 'pl' ? it.namePl : it.nameEn, price: it.price })
+      if (it)
+        list.push({
+          category: 'face',
+          id: it.id,
+          name: lang === 'pl' ? it.namePl : it.nameEn,
+          price: it.price,
+          rewardOnly: it.rewardOnly,
+        })
     }
     return list
   }, [previewAvatar, profile.unlockedOutfits, profile.unlockedHats, profile.unlockedFaces, lang])
 
-  const totalTryOnPrice = useMemo(() => triedUnowned.reduce((acc, i) => acc + i.price, 0), [triedUnowned])
+  const purchasableTried = useMemo(() => triedUnowned.filter((i) => !i.rewardOnly), [triedUnowned])
+  const hasRewardOnlyTried = useMemo(() => triedUnowned.some((i) => Boolean(i.rewardOnly)), [triedUnowned])
+  const totalTryOnPrice = useMemo(() => purchasableTried.reduce((acc, i) => acc + i.price, 0), [purchasableTried])
 
   // Apply natural Day / Night lighting live (clean sky & moonlight — zero neon!)
   useEffect(() => {
@@ -474,8 +500,8 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
   }
 
   const handleBuyTryOnBundle = () => {
-    if (profile.freshGems < totalTryOnPrice || triedUnowned.length === 0) return
-    const ok = onBuyBundle(triedUnowned.map(({ category, id, price }) => ({ category, id, price })))
+    if (profile.freshGems < totalTryOnPrice || purchasableTried.length === 0) return
+    const ok = onBuyBundle(purchasableTried.map(({ category, id, price }) => ({ category, id, price })))
     if (ok) sfx.playQuestClaim()
   }
 
@@ -493,7 +519,7 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
 
   const renderCatalogGrid = <T extends string>(
     category: 'outfit' | 'hat' | 'face',
-    items: Array<{ id: T; namePl: string; nameEn: string; descPl: string; descEn: string; price: number; accent: string }>,
+    items: CatalogItem<T>[],
     unlocked: T[],
     equippedOwnedId: T,
     previewedId: T,
@@ -504,7 +530,8 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
         const isEquipped = isOwned && equippedOwnedId === item.id
         const isTryingOn = !isOwned && previewedId === item.id
         const isSelected = previewedId === item.id
-        const canAfford = !GEMS_SYSTEM_IN_PROGRESS && profile.freshGems >= item.price
+        const isRewardOnly = Boolean(item.rewardOnly)
+        const canAfford = !isRewardOnly && !GEMS_SYSTEM_IN_PROGRESS && profile.freshGems >= item.price
         const outfitSw = category === 'outfit' ? OUTFIT_SWATCHES[item.id as OutfitId] : null
 
         return (
@@ -582,6 +609,11 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
                     >
                       {t.equip}
                     </span>
+                  ) : isRewardOnly ? (
+                    <span className="inline-flex items-center gap-1 rounded-lg border border-amber-400/50 bg-amber-500/20 px-2 py-0.5 text-[10px] font-extrabold text-amber-300">
+                      <Trophy className="h-3 w-3" />
+                      {lang === 'pl' ? item.rewardLabelPl : item.rewardLabelEn}
+                    </span>
                   ) : (
                     <span
                       className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-extrabold"
@@ -611,24 +643,31 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
                   {isTryingOn ? t.tryingOn : t.tryOnHint}
                 </span>
 
-                <button
-                  type="button"
-                  disabled={!canAfford}
-                  onClick={(e) => handleBuyItem(e, category, item.id, item.price)}
-                  className={`inline-flex items-center gap-1 rounded-xl px-3 py-1 text-[11px] font-extrabold transition cursor-pointer ${
-                    canAfford
-                      ? 'text-white shadow-md hover:brightness-110 active:scale-95'
-                      : 'opacity-80 cursor-not-allowed bg-amber-500/18 text-amber-300'
-                  }`}
-                  style={canAfford ? { background: tokens.buttonGradient } : undefined}
-                >
-                  {!canAfford && <Lock className="h-3 w-3" />}
-                  {GEMS_SYSTEM_IN_PROGRESS
-                    ? LOCALES[lang].gemsNotice.shopLocked
-                    : canAfford
-                      ? `${t.buy} • ${item.price}`
-                      : t.notEnough}
-                </button>
+                {isRewardOnly ? (
+                  <span className="inline-flex items-center gap-1 rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-1 text-[11px] font-extrabold text-amber-300">
+                    <Trophy className="h-3 w-3" />
+                    {lang === 'pl' ? 'Przejdź Obby 100' : 'Beat Obby 100'}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={!canAfford}
+                    onClick={(e) => handleBuyItem(e, category, item.id, item.price)}
+                    className={`inline-flex items-center gap-1 rounded-xl px-3 py-1 text-[11px] font-extrabold transition cursor-pointer ${
+                      canAfford
+                        ? 'text-white shadow-md hover:brightness-110 active:scale-95'
+                        : 'opacity-80 cursor-not-allowed bg-amber-500/18 text-amber-300'
+                    }`}
+                    style={canAfford ? { background: tokens.buttonGradient } : undefined}
+                  >
+                    {!canAfford && <Lock className="h-3 w-3" />}
+                    {GEMS_SYSTEM_IN_PROGRESS
+                      ? LOCALES[lang].gemsNotice.shopLocked
+                      : canAfford
+                        ? `${t.buy} • ${item.price}`
+                        : t.notEnough}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -762,13 +801,27 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
                     className="inline-flex items-center gap-1 rounded-lg bg-slate-950/60 border border-amber-400/30 px-2 py-0.5 text-[11px] font-bold text-sky-50"
                   >
                     <span>{item.name}</span>
-                    <FreshGemShard size={12} />
-                    <span className="text-sky-300">{item.price}</span>
+                    {item.rewardOnly ? (
+                      <span className="inline-flex items-center gap-0.5 text-amber-300">
+                        <Trophy className="h-3 w-3" /> Obby 100
+                      </span>
+                    ) : (
+                      <>
+                        <FreshGemShard size={12} />
+                        <span className="text-sky-300">{item.price}</span>
+                      </>
+                    )}
                   </span>
                 ))}
               </div>
 
-              {GEMS_SYSTEM_IN_PROGRESS ? (
+              {hasRewardOnlyTried && purchasableTried.length === 0 ? (
+                <div className="rounded-xl border border-amber-400/40 bg-slate-950/55 px-3 py-2 text-xs font-bold text-amber-200 leading-snug">
+                  {lang === 'pl'
+                    ? '👑 Ta korona jest ekskluzywną nagrodą! Ukończ Test Obby 100 (Stage 100), aby odblokować ją na stałe.'
+                    : '👑 Exclusive reward! Complete Test Obby 100 (Stage 100) to unlock this crown permanently.'}
+                </div>
+              ) : GEMS_SYSTEM_IN_PROGRESS ? (
                 <div className="rounded-xl border border-amber-400/35 bg-slate-950/50 px-3 py-2 text-xs font-semibold text-amber-200 leading-snug">
                   {LOCALES[lang].gemsNotice.desc}
                 </div>

@@ -10,7 +10,14 @@ export type OutfitId =
 
 export type FaceId = 'fresh-smile' | 'wink-pro' | 'arctic-visor' | 'cool-shades' | 'star-eyes'
 
-export type HatId = 'none' | 'fresh-cap' | 'headphones' | 'crystal-halo' | 'frost-horns' | 'arctic-crown'
+export type HatId =
+  | 'none'
+  | 'fresh-cap'
+  | 'headphones'
+  | 'crystal-halo'
+  | 'frost-horns'
+  | 'arctic-crown'
+  | 'obby-crown'
 
 export type WorldKind = 'lobby' | 'obby'
 
@@ -29,6 +36,10 @@ export interface CatalogItem<T extends string> {
   descEn: string
   price: number
   accent: string
+  /** Optional milestone-only unlock (cannot be purchased with FreshGems) */
+  rewardOnly?: 'obby100'
+  rewardLabelPl?: string
+  rewardLabelEn?: string
 }
 
 export const OUTFIT_CATALOG: CatalogItem<OutfitId>[] = [
@@ -142,6 +153,18 @@ export const HAT_CATALOG: CatalogItem<HatId>[] = [
     descEn: 'Prestigious metallic-ice crown topped with a crystal FreshGem.',
     price: 350,
     accent: '#FBBF24',
+  },
+  {
+    id: 'obby-crown',
+    namePl: 'Korona Mistrza Obby',
+    nameEn: 'Obby 100 Champion Crown',
+    descPl: 'Ekskluzywna królewska korona ze szczytu Stage 100. Nie do kupienia — tylko za przejście Test Obby 100!',
+    descEn: 'Exclusive royal crown from Stage 100. Cannot be bought — earned only by completing Test Obby 100!',
+    price: 0,
+    accent: '#F59E0B',
+    rewardOnly: 'obby100',
+    rewardLabelPl: 'Nagroda: Obby 100',
+    rewardLabelEn: 'Reward: Obby 100',
   },
 ]
 

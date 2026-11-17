@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react'
-import { Check, Crown, Eye, Lock, Palette, RotateCcw, Shirt, ShoppingBag, Smile, Sparkles, X } from 'lucide-react'
+import { Check, Crown, Eye, Lock, Palette, RotateCcw, Shirt, ShoppingBag, Smile, Sparkles, Trophy, X } from 'lucide-react'
 import {
+  CatalogItem,
   FACE_CATALOG,
   FaceId,
   GEMS_SYSTEM_IN_PROGRESS,
@@ -63,23 +64,52 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
   const tw = LOCALES[lang].world
 
   const triedUnowned = useMemo(() => {
-    const list: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; name: string; price: number }> = []
+    const list: Array<{
+      category: 'outfit' | 'hat' | 'face'
+      id: string
+      name: string
+      price: number
+      rewardOnly?: 'obby100'
+    }> = []
     if (!unlockedOutfits.includes(previewAvatar.outfitId)) {
       const it = OUTFIT_CATALOG.find((x) => x.id === previewAvatar.outfitId)
-      if (it) list.push({ category: 'outfit', id: it.id, name: lang === 'pl' ? it.namePl : it.nameEn, price: it.price })
+      if (it)
+        list.push({
+          category: 'outfit',
+          id: it.id,
+          name: lang === 'pl' ? it.namePl : it.nameEn,
+          price: it.price,
+          rewardOnly: it.rewardOnly,
+        })
     }
     if (!unlockedHats.includes(previewAvatar.hatId)) {
       const it = HAT_CATALOG.find((x) => x.id === previewAvatar.hatId)
-      if (it) list.push({ category: 'hat', id: it.id, name: lang === 'pl' ? it.namePl : it.nameEn, price: it.price })
+      if (it)
+        list.push({
+          category: 'hat',
+          id: it.id,
+          name: lang === 'pl' ? it.namePl : it.nameEn,
+          price: it.price,
+          rewardOnly: it.rewardOnly,
+        })
     }
     if (!unlockedFaces.includes(previewAvatar.faceId)) {
       const it = FACE_CATALOG.find((x) => x.id === previewAvatar.faceId)
-      if (it) list.push({ category: 'face', id: it.id, name: lang === 'pl' ? it.namePl : it.nameEn, price: it.price })
+      if (it)
+        list.push({
+          category: 'face',
+          id: it.id,
+          name: lang === 'pl' ? it.namePl : it.nameEn,
+          price: it.price,
+          rewardOnly: it.rewardOnly,
+        })
     }
     return list
   }, [previewAvatar, unlockedOutfits, unlockedHats, unlockedFaces, lang])
 
-  const totalTryOnPrice = useMemo(() => triedUnowned.reduce((s, i) => s + i.price, 0), [triedUnowned])
+  const purchasableTried = useMemo(() => triedUnowned.filter((i) => !i.rewardOnly), [triedUnowned])
+  const hasRewardOnlyTried = useMemo(() => triedUnowned.some((i) => Boolean(i.rewardOnly)), [triedUnowned])
+  const totalTryOnPrice = useMemo(() => purchasableTried.reduce((s, i) => s + i.price, 0), [purchasableTried])
 
   const handleCardSelect = (category: 'outfit' | 'hat' | 'face', itemId: string, isOwned: boolean) => {
     sfx.playClick()
@@ -115,8 +145,8 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
   }
 
   const handleBuyBundle = () => {
-    if (freshGems < totalTryOnPrice || triedUnowned.length === 0) return
-    if (onBuyBundle(triedUnowned.map(({ category, id, price }) => ({ category, id, price })))) {
+    if (freshGems < totalTryOnPrice || purchasableTried.length === 0) return
+    if (onBuyBundle(purchasableTried.map(({ category, id, price }) => ({ category, id, price })))) {
       sfx.playQuestClaim()
     }
   }
@@ -130,7 +160,7 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
 
   const renderGrid = <T extends string>(
     category: 'outfit' | 'hat' | 'face',
-    items: Array<{ id: T; namePl: string; nameEn: string; price: number; accent: string }>,
+    items: CatalogItem<T>[],
     unlocked: T[],
     equippedOwnedId: T,
     previewedId: T,
@@ -141,7 +171,8 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
         const isEquipped = isOwned && equippedOwnedId === item.id
         const isTryingOn = !isOwned && previewedId === item.id
         const isSelected = previewedId === item.id
-        const canAfford = !GEMS_SYSTEM_IN_PROGRESS && freshGems >= item.price
+        const isRewardOnly = Boolean(item.rewardOnly)
+        const canAfford = !isRewardOnly && !GEMS_SYSTEM_IN_PROGRESS && freshGems >= item.price
         const sw = category === 'outfit' ? OUTFIT_SWATCHES[item.id as OutfitId] : null
 
         return (
@@ -199,6 +230,11 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
                     <span className="inline-flex items-center rounded-md bg-white/12 px-1.5 py-0.5 text-[9px] font-bold text-sky-100">
                       {t.equip}
                     </span>
+                  ) : isRewardOnly ? (
+                    <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-400/20 border border-amber-300/40 px-1.5 py-0.5 text-[9px] font-extrabold text-amber-200">
+                      <Trophy className="h-2.5 w-2.5" />
+                      {lang === 'pl' ? item.rewardLabelPl : item.rewardLabelEn}
+                    </span>
                   ) : (
                     <span className="inline-flex items-center gap-0.5 text-[10px] font-extrabold text-sky-200">
                       <FreshGemShard size={11} />
@@ -209,27 +245,35 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
               </div>
             </div>
 
-            {!isOwned && (
-              <button
-                type="button"
-                disabled={!canAfford}
-                onClick={(e) => handleBuySingle(e, category, item.id, item.price)}
-                className={`mt-2 flex w-full items-center justify-center gap-1 rounded-xl py-1 text-[10px] font-extrabold transition cursor-pointer ${
-                  canAfford
-                    ? 'bg-sky-400 text-slate-950 hover:bg-sky-300 active:scale-95'
-                    : 'bg-amber-500/15 text-amber-200/90 opacity-85 cursor-not-allowed'
-                }`}
-              >
-                {!canAfford && <Lock className="h-2.5 w-2.5" />}
-                <span>
-                  {GEMS_SYSTEM_IN_PROGRESS
-                    ? LOCALES[lang].gemsNotice.shopLocked
-                    : canAfford
-                      ? `${t.buy} • ${item.price}`
-                      : t.notEnough}
-                </span>
-              </button>
-            )}
+            {!isOwned &&
+              (isRewardOnly ? (
+                <div className="mt-2 flex w-full items-center justify-center gap-1 rounded-xl border border-amber-400/35 bg-amber-500/12 py-1 text-[10px] font-extrabold text-amber-200">
+                  <Trophy className="h-2.5 w-2.5 shrink-0" />
+                  <span className="truncate">
+                    {lang === 'pl' ? 'Przejdź Obby 100' : 'Beat Obby 100'}
+                  </span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!canAfford}
+                  onClick={(e) => handleBuySingle(e, category, item.id, item.price)}
+                  className={`mt-2 flex w-full items-center justify-center gap-1 rounded-xl py-1 text-[10px] font-extrabold transition cursor-pointer ${
+                    canAfford
+                      ? 'bg-sky-400 text-slate-950 hover:bg-sky-300 active:scale-95'
+                      : 'bg-amber-500/15 text-amber-200/90 opacity-85 cursor-not-allowed'
+                  }`}
+                >
+                  {!canAfford && <Lock className="h-2.5 w-2.5" />}
+                  <span>
+                    {GEMS_SYSTEM_IN_PROGRESS
+                      ? LOCALES[lang].gemsNotice.shopLocked
+                      : canAfford
+                        ? `${t.buy} • ${item.price}`
+                        : t.notEnough}
+                  </span>
+                </button>
+              ))}
           </div>
         )
       })}
@@ -366,7 +410,13 @@ export const InGameWardrobeDrawer: React.FC<InGameWardrobeDrawerProps> = ({
             </button>
           </div>
 
-          {GEMS_SYSTEM_IN_PROGRESS ? (
+          {hasRewardOnlyTried && purchasableTried.length === 0 ? (
+            <div className="rounded-xl bg-slate-950/60 border border-amber-400/35 px-2.5 py-1.5 text-[10px] font-bold text-amber-200 leading-snug">
+              {lang === 'pl'
+                ? '👑 Ekskluzywna nagroda! Dotrzyj do Stage 100 w Test Obby 100, aby odblokować ją na stałe.'
+                : '👑 Exclusive reward! Reach Stage 100 in Test Obby 100 to unlock permanently.'}
+            </div>
+          ) : GEMS_SYSTEM_IN_PROGRESS ? (
             <div className="rounded-xl bg-slate-950/60 border border-amber-400/25 px-2.5 py-1.5 text-[10px] font-semibold text-amber-100/90 leading-snug">
               {LOCALES[lang].gemsNotice.short}
             </div>

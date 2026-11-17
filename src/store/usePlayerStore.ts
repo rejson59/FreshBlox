@@ -134,11 +134,16 @@ function migrateOutfitId(id?: string): OutfitId {
   return 'fresh-creator'
 }
 
-function normalizeUnlocked(items: string[] | undefined) {
+function normalizeUnlocked(items: string[] | undefined, obbyCompleted = false) {
   const set = new Set((items ?? []).map((x) => (x === 'midnight-neon' ? 'midnight-slate' : x)))
-  const outfits = OUTFIT_CATALOG.filter((o) => o.price === 0 || set.has(o.id)).map((o) => o.id)
-  const hats = HAT_CATALOG.filter((h) => h.price === 0 || set.has(h.id)).map((h) => h.id)
-  const faces = FACE_CATALOG.filter((f) => f.price === 0 || set.has(f.id)).map((f) => f.id)
+  const outfits = OUTFIT_CATALOG.filter((o) => (!o.rewardOnly && o.price === 0) || set.has(o.id)).map((o) => o.id)
+  const hats = HAT_CATALOG.filter(
+    (h) =>
+      (!h.rewardOnly && h.price === 0) ||
+      set.has(h.id) ||
+      (h.rewardOnly === 'obby100' && obbyCompleted),
+  ).map((h) => h.id)
+  const faces = FACE_CATALOG.filter((f) => (!f.rewardOnly && f.price === 0) || set.has(f.id)).map((f) => f.id)
   return { outfits, hats, faces }
 }
 
@@ -148,12 +153,18 @@ function loadLocalProfile(): PlayerProfile {
     if (!raw) return createDefaultProfile()
     const parsed = JSON.parse(raw) as Partial<PlayerProfile>
     const def = createDefaultProfile()
+    const obbyBestStage = Math.max(1, Math.min(100, Number(parsed.obbyBestStage) || 1))
+    const obbyCompletions = Math.max(0, Number(parsed.obbyCompletions) || 0)
     const unlockedOutfits = Array.isArray(parsed.unlockedOutfits)
       ? Array.from(new Set(['fresh-creator', 'classic-remaster', ...parsed.unlockedOutfits.map((id) => migrateOutfitId(id))]))
       : def.unlockedOutfits
-    const unlockedHats = Array.isArray(parsed.unlockedHats)
-      ? Array.from(new Set(['none', ...parsed.unlockedHats])) as HatId[]
-      : def.unlockedHats
+    const baseHats = Array.isArray(parsed.unlockedHats)
+      ? (['none', ...parsed.unlockedHats] as HatId[])
+      : [...def.unlockedHats]
+    if (obbyBestStage >= 100 || obbyCompletions >= 1) {
+      baseHats.push('obby-crown')
+    }
+    const unlockedHats = Array.from(new Set(baseHats)) as HatId[]
     const unlockedFaces = Array.isArray(parsed.unlockedFaces)
       ? Array.from(new Set(['fresh-smile', 'wink-pro', ...parsed.unlockedFaces])) as FaceId[]
       : def.unlockedFaces
@@ -178,8 +189,8 @@ function loadLocalProfile(): PlayerProfile {
       friends: Array.isArray(parsed.friends) ? parsed.friends : [],
       badges: Array.isArray(parsed.badges) ? parsed.badges : def.badges,
       obbyStage: Math.max(1, Math.min(100, Number(parsed.obbyStage) || 1)),
-      obbyBestStage: Math.max(1, Math.min(100, Number(parsed.obbyBestStage) || 1)),
-      obbyCompletions: Math.max(0, Number(parsed.obbyCompletions) || 0),
+      obbyBestStage,
+      obbyCompletions,
       obbyBestTimeMs: typeof parsed.obbyBestTimeMs === 'number' ? parsed.obbyBestTimeMs : null,
     }
   } catch {
@@ -310,7 +321,8 @@ export function usePlayerStore() {
         }
 
         if (data) {
-          const unlocked = normalizeUnlocked(data.unlocked_items ?? undefined)
+          const obbyCompleted = (data.obby_best_stage ?? 1) >= 100 || (data.obby_completions ?? 0) >= 1
+          const unlocked = normalizeUnlocked(data.unlocked_items ?? undefined, obbyCompleted)
           const friends = await loadFriendsFromCloud(userId)
 
           hydratedFromCloudRef.current = true
@@ -748,6 +760,12 @@ async function postRegisterApi(
       if (clamped >= 10 && !badges.includes('obby_runner')) badges.push('obby_runner')
       if (clamped >= 100 && !badges.includes('obby_master')) badges.push('obby_master')
 
+      // Unlock the exclusive Obby 100 Champion Crown upon reaching Stage 100!
+      const unlockedHats =
+        clamped >= 100 && !p.unlockedHats.includes('obby-crown')
+          ? ([...p.unlockedHats, 'obby-crown'] as HatId[])
+          : p.unlockedHats
+
       const qDef = DAILY_QUESTS.find((q) => q.id === 'q_obby')
       const curQ = p.quests.progress.q_obby ?? 0
       const nextQ = qDef ? Math.min(qDef.target, curQ + (stageDelta > 0 ? stageDelta : clamped > p.obbyStage ? 1 : 0)) : curQ
@@ -769,6 +787,7 @@ async function postRegisterApi(
         obbyBestTimeMs: nextBestTime,
         xp: p.xp + bonusXp,
         badges,
+        unlockedHats,
         quests: {
           ...p.quests,
           progress: { ...p.quests.progress, q_obby: nextQ },
@@ -792,7 +811,19 @@ async function postRegisterApi(
         const listKey =
           category === 'outfit' ? 'unlockedOutfits' : category === 'hat' ? 'unlockedHats' : 'unlockedFaces'
         const currentList = p[listKey] as string[]
-        const alreadyOwned = currentList.includes(itemId) || price === 0
+        const catalogDef =
+          category === 'outfit'
+            ? OUTFIT_CATALOG.find((x) => x.id === itemId)
+            : category === 'hat'
+              ? HAT_CATALOG.find((x) => x.id === itemId)
+              : FACE_CATALOG.find((x) => x.id === itemId)
+        const isRewardOnly = Boolean(catalogDef?.rewardOnly)
+        const alreadyOwned = currentList.includes(itemId) || (!isRewardOnly && price === 0)
+
+        // Milestone-only rewards (like Obby 100 Crown) cannot be bought or equipped before unlocking!
+        if (isRewardOnly && !alreadyOwned) {
+          return p
+        }
 
         // While FreshGems economy is under construction, only owned/free items can be equipped!
         if (!alreadyOwned && (GEMS_SYSTEM_IN_PROGRESS || p.freshGems < price)) {
@@ -826,6 +857,13 @@ async function postRegisterApi(
       setProfile((p) => {
         let totalCost = 0
         const toBuy = items.filter((item) => {
+          const catalogDef =
+            item.category === 'outfit'
+              ? OUTFIT_CATALOG.find((x) => x.id === item.id)
+              : item.category === 'hat'
+                ? HAT_CATALOG.find((x) => x.id === item.id)
+                : FACE_CATALOG.find((x) => x.id === item.id)
+          if (catalogDef?.rewardOnly) return false
           const listKey =
             item.category === 'outfit'
               ? 'unlockedOutfits'

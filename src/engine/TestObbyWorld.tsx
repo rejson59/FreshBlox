@@ -2,9 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   Crosshair,
+  Crown,
   Flag,
   Home,
   Maximize2,
@@ -312,10 +314,10 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
 
   // Release pointer lock cleanly whenever any overlay opens
   useEffect(() => {
-    if ((hubOpen || wardrobeOpen || feedbackOpen) && document.pointerLockElement) {
+    if ((hubOpen || wardrobeOpen || feedbackOpen || Boolean(finishedBanner)) && document.pointerLockElement) {
       document.exitPointerLock?.()
     }
-  }, [hubOpen, wardrobeOpen, feedbackOpen])
+  }, [hubOpen, wardrobeOpen, feedbackOpen, finishedBanner])
 
   const updateMousePrefs = useCallback((patch: Partial<typeof mousePrefs>) => {
     setMousePrefs((prev) => {
@@ -1674,7 +1676,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
               sfx.playQuestClaim()
               setFinishedBanner({ elapsedMs: nowElapsed })
               callbacksRef.current.onStageReached(100, nowElapsed)
-              showToast(`🏆 ${t.obbyFinishedTitle}`)
+              showToast(`👑 ${t.obbyFinishedTitle}`)
             } else {
               sfx.playGemCollect()
               callbacksRef.current.onStageReached(stg)
@@ -2704,28 +2706,80 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
 
       {/* === STAGE 100 VICTORY BANNER === */}
       {finishedBanner && (
-        <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-3xl border border-amber-300/50 bg-slate-950/92 p-6 text-center text-white shadow-2xl">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-400/20 text-amber-300">
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl border border-amber-300/55 bg-slate-950/94 p-6 text-center text-white shadow-2xl">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-400/20 text-amber-300 border border-amber-300/40">
               <Trophy className="h-9 w-9" />
             </div>
             <h2 className="mt-3 font-display text-2xl font-black text-amber-300">{t.obbyFinishedTitle}</h2>
             <p className="mt-1 text-xs text-sky-100/85">{t.obbyFinishedSub}</p>
-            <div className="mt-4 grid grid-cols-2 gap-2.5">
+
+            {/* Exclusive Champion Crown Reward Card */}
+            <div className="mt-4 rounded-2xl border border-amber-400/45 bg-gradient-to-r from-amber-500/18 via-yellow-500/12 to-sky-500/15 p-3.5 text-left">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-amber-300/60 bg-gradient-to-br from-amber-400 to-yellow-600 text-slate-950 shadow">
+                  <Crown className="h-6 w-6" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] font-extrabold uppercase tracking-wider text-amber-300">
+                    {lang === 'pl' ? 'Odblokowano ekskluzywną nagrodę!' : 'Exclusive Reward Unlocked!'}
+                  </div>
+                  <div className="font-display text-sm font-black text-white">
+                    {lang === 'pl' ? 'Korona Mistrza Obby' : 'Obby 100 Champion Crown'}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={avatar.hatId === 'obby-crown'}
+                onClick={() => {
+                  const ok = onBuyAndEquip('hat', 'obby-crown', 0)
+                  if (ok) {
+                    setPreviewAvatar((prev) => ({ ...prev, hatId: 'obby-crown' }))
+                    sfx.playQuestClaim()
+                    triggerEmote('cheer')
+                  }
+                }}
+                className={`mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-extrabold transition cursor-pointer ${
+                  avatar.hatId === 'obby-crown'
+                    ? 'bg-emerald-500/25 border border-emerald-400/50 text-emerald-200 cursor-default'
+                    : 'bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 shadow hover:brightness-110 active:scale-[0.98]'
+                }`}
+              >
+                {avatar.hatId === 'obby-crown' ? (
+                  <>
+                    <Check className="h-4 w-4" />
+                    <span>{lang === 'pl' ? 'Korona założona na awatarze!' : 'Crown equipped on avatar!'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Crown className="h-4 w-4" />
+                    <span>{lang === 'pl' ? 'Załóż Koronę Mistrza teraz' : 'Equip Champion Crown now'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="mt-3.5 grid grid-cols-2 gap-2.5">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                <div className="text-[10px] font-bold uppercase text-sky-200/70">Czas biegu</div>
+                <div className="text-[10px] font-bold uppercase text-sky-200/70">
+                  {lang === 'pl' ? 'Czas biegu' : 'Run time'}
+                </div>
                 <div className="mt-0.5 font-mono text-lg font-black text-white">
                   {formatTimeMs(finishedBanner.elapsedMs)}
                 </div>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                <div className="text-[10px] font-bold uppercase text-sky-200/70">Ukończenia</div>
+                <div className="text-[10px] font-bold uppercase text-sky-200/70">
+                  {lang === 'pl' ? 'Ukończenia' : 'Completions'}
+                </div>
                 <div className="mt-0.5 font-mono text-lg font-black text-emerald-300">
                   {Math.max(1, completions)}
                 </div>
               </div>
             </div>
-            <div className="mt-5 flex flex-wrap gap-2">
+            <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={handleRestartFromOne}
