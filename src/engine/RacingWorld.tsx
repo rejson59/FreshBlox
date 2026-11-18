@@ -205,6 +205,7 @@ export function RacingWorld({
   const [finished, setFinished] = useState(false)
   const [rewardCoins, setRewardCoins] = useState(0)
   const [resetSignal, setResetSignal] = useState(0)
+  const [minimapDots, setMinimapDots] = useState<Array<{ x: number; y: number; color: string; isPlayer?: boolean }>>([])
 
   // Input refs
   const keysRef = useRef<Record<string, boolean>>({})
@@ -615,6 +616,14 @@ export function RacingWorld({
           setSpeedKmh(Math.round(Math.abs(speed) * 3.6))
           setBoostCharge(Math.round(boost))
           setRaceTimeMs(Math.round(elapsedMs))
+          const toMap = (p: THREE.Vector3) => ({
+            x: ((p.x + 110) / 230) * 100,
+            y: ((p.z + 155) / 180) * 100,
+          })
+          setMinimapDots([
+            ...aiKarts.map((ai) => ({ ...toMap(ai.mesh.position), color: ai.color })),
+            { ...toMap(playerKart.position), color: '#38BDF8', isPlayer: true },
+          ])
         }
       }
 
@@ -674,6 +683,25 @@ export function RacingWorld({
               {lang === 'pl' ? 'Przygotuj się...' : 'Get Ready...'}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Live Track Minimap */}
+      {minimapDots.length > 0 && (
+        <div className="pointer-events-none fixed left-3 top-16 z-20 hidden h-28 w-28 rounded-2xl border border-white/15 bg-slate-950/70 p-2 backdrop-blur-md sm:block">
+          <svg viewBox="0 0 100 100" className="h-full w-full overflow-visible">
+            {minimapDots.map((dot, idx) => (
+              <circle
+                key={idx}
+                cx={dot.x}
+                cy={dot.y}
+                r={dot.isPlayer ? 5.5 : 4}
+                fill={dot.color}
+                stroke="#FFFFFF"
+                strokeWidth={dot.isPlayer ? 1.8 : 1}
+              />
+            ))}
+          </svg>
         </div>
       )}
 
