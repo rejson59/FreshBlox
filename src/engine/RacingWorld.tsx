@@ -153,6 +153,7 @@ export function RacingWorld({
   const [isFullscreen, setIsFullscreen] = useState(false)
 
   // Race HUD state
+  const [countdown, setCountdown] = useState(3)
   const [lap, setLap] = useState(1)
   const [position, setPosition] = useState(1)
   const [speedKmh, setSpeedKmh] = useState(0)
@@ -439,7 +440,9 @@ export function RacingWorld({
       return { ...cfg, mesh, t: cfg.offset, lap: 1, totalProgress: cfg.offset }
     })
 
-    // Player physics state
+    // Countdown timer (3 -> 2 -> 1 -> GO!)
+    let countdownSec = 3.2
+    let countdownDone = false
     let speed = 0
     let currentT = 0
     let currentLap = 1
@@ -616,6 +619,20 @@ export function RacingWorld({
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#060B19] select-none">
       <div ref={mountRef} className="h-full w-full" />
+
+      {/* 3-2-1-GO! Start Countdown */}
+      {countdown > 0 && (
+        <div className="pointer-events-none fixed inset-0 z-20 flex items-center justify-center">
+          <div className="rounded-3xl border border-white/25 bg-slate-950/75 px-10 py-6 text-center shadow-2xl backdrop-blur-md">
+            <div className="font-display text-6xl font-black tracking-tight text-amber-300 drop-shadow">
+              {countdown}
+            </div>
+            <div className="mt-1 text-xs font-extrabold uppercase tracking-widest text-slate-300">
+              {lang === 'pl' ? 'Przygotuj się...' : 'Get Ready...'}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top HUD */}
       <div className="pointer-events-none fixed inset-x-0 top-0 z-20 flex items-start justify-between gap-2 p-2.5 sm:p-4">
