@@ -55,48 +55,80 @@ const TRACK_WIDTH = 14
 function buildKartMesh(colorHex: string, isPlayer: boolean, avatar?: R6AvatarConfig): THREE.Group {
   const group = new THREE.Group()
 
-  const bodyMat = new THREE.MeshStandardMaterial({
+  const bodyMat = new THREE.MeshPhysicalMaterial({
     color: colorHex,
-    roughness: 0.25,
-    metalness: 0.55,
+    roughness: 0.18,
+    metalness: 0.45,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.1,
   })
-  const darkMat = new THREE.MeshStandardMaterial({
-    color: '#0F172A',
-    roughness: 0.6,
-    metalness: 0.3,
+  const carbonMat = new THREE.MeshStandardMaterial({
+    color: '#111827',
+    roughness: 0.45,
+    metalness: 0.35,
   })
-  const glowMat = new THREE.MeshStandardMaterial({
-    color: isPlayer ? '#38BDF8' : colorHex,
-    emissive: isPlayer ? '#38BDF8' : colorHex,
-    emissiveIntensity: 1.4,
+  const rimMat = new THREE.MeshStandardMaterial({
+    color: '#E2E8F0',
     roughness: 0.2,
+    metalness: 0.85,
+  })
+  const accentMat = new THREE.MeshStandardMaterial({
+    color: isPlayer ? '#0284C7' : '#F8FAFC',
+    roughness: 0.25,
+    metalness: 0.5,
   })
 
-  // Chassis
-  const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.45, 3.2), bodyMat)
-  chassis.position.y = 0.48
-  chassis.castShadow = true
-  group.add(chassis)
+  // Sculpted aerodynamic main tub (rounded capsule-like hull)
+  const hull = new THREE.Mesh(new THREE.CapsuleGeometry(0.68, 1.85, 8, 16), bodyMat)
+  hull.rotation.x = Math.PI / 2
+  hull.scale.set(1.25, 1.0, 0.52)
+  hull.position.set(0, 0.48, 0)
+  hull.castShadow = true
+  group.add(hull)
 
-  // Front nose
-  const nose = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.32, 0.9), bodyMat)
-  nose.position.set(0, 0.42, -1.85)
+  // Aerodynamic front nose cone
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.62, 1.15, 16), bodyMat)
+  nose.rotation.x = -Math.PI / 2
+  nose.scale.set(1.25, 1.0, 0.45)
+  nose.position.set(0, 0.42, -1.65)
   nose.castShadow = true
   group.add(nose)
 
-  // Rear spoiler
-  const wing = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.14, 0.55), glowMat)
-  wing.position.set(0, 1.15, 1.45)
+  // Sidepods
+  const podGeo = new THREE.CapsuleGeometry(0.28, 1.1, 6, 12)
+  podGeo.rotateX(Math.PI / 2)
+  const podL = new THREE.Mesh(podGeo, accentMat)
+  podL.position.set(-0.78, 0.42, 0.15)
+  podL.castShadow = true
+  const podR = podL.clone()
+  podR.position.x = 0.78
+  group.add(podL, podR)
+
+  // Rear aerodynamic wing
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.1, 0.48), accentMat)
+  wing.position.set(0, 1.12, 1.45)
+  wing.castShadow = true
   group.add(wing)
-  const strutL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.55, 0.25), darkMat)
-  strutL.position.set(-0.7, 0.85, 1.45)
+  const strutL = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.55, 8), carbonMat)
+  strutL.position.set(-0.65, 0.85, 1.45)
   const strutR = strutL.clone()
-  strutR.position.x = 0.7
+  strutR.position.x = 0.65
   group.add(strutL, strutR)
 
-  // 4 Wheels
-  const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.36, 16)
-  wheelGeo.rotateZ(Math.PI / 2)
+  // Twin chrome exhausts
+  const exhaustGeo = new THREE.CylinderGeometry(0.09, 0.11, 0.5, 12)
+  exhaustGeo.rotateX(Math.PI / 2)
+  const exL = new THREE.Mesh(exhaustGeo, rimMat)
+  exL.position.set(-0.28, 0.52, 1.55)
+  const exR = exL.clone()
+  exR.position.x = 0.28
+  group.add(exL, exR)
+
+  // 4 Rubber Tires + Alloy Rims
+  const tireGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.36, 20)
+  tireGeo.rotateZ(Math.PI / 2)
+  const rimGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.38, 12)
+  rimGeo.rotateZ(Math.PI / 2)
   const wheelPositions: [number, number, number][] = [
     [-1.08, 0.42, -1.15],
     [1.08, 0.42, -1.15],
@@ -104,30 +136,41 @@ function buildKartMesh(colorHex: string, isPlayer: boolean, avatar?: R6AvatarCon
     [1.12, 0.42, 1.1],
   ]
   for (const [wx, wy, wz] of wheelPositions) {
-    const w = new THREE.Mesh(wheelGeo, darkMat)
-    w.position.set(wx, wy, wz)
-    w.castShadow = true
-    group.add(w)
+    const tire = new THREE.Mesh(tireGeo, carbonMat)
+    tire.position.set(wx, wy, wz)
+    tire.castShadow = true
+    const rim = new THREE.Mesh(rimGeo, rimMat)
+    rim.position.set(wx, wy, wz)
+    group.add(tire, rim)
   }
 
-  // Driver head & torso
-  const skinColor = avatar?.skinColor || '#FDE68A'
-  const torsoColor = isPlayer ? '#0EA5E9' : colorHex
+  // Driver with Racing Suit & Smooth Helmet
+  const suitColor = isPlayer ? '#0EA5E9' : colorHex
   const torso = new THREE.Mesh(
-    new THREE.BoxGeometry(0.85, 0.8, 0.55),
-    new THREE.MeshStandardMaterial({ color: torsoColor, roughness: 0.4 }),
+    new THREE.CapsuleGeometry(0.36, 0.45, 6, 12),
+    new THREE.MeshStandardMaterial({ color: suitColor, roughness: 0.35 }),
   )
-  torso.position.set(0, 1.05, 0.1)
+  torso.position.set(0, 0.98, 0.12)
   torso.castShadow = true
   group.add(torso)
 
-  const head = new THREE.Mesh(
-    new THREE.BoxGeometry(0.62, 0.62, 0.62),
-    new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.45 }),
+  const helmet = new THREE.Mesh(
+    new THREE.SphereGeometry(0.34, 18, 16),
+    new THREE.MeshPhysicalMaterial({
+      color: avatar?.skinColor ? '#F8FAFC' : colorHex,
+      roughness: 0.15,
+      clearcoat: 1.0,
+    }),
   )
-  head.position.set(0, 1.72, 0.1)
-  head.castShadow = true
-  group.add(head)
+  helmet.position.set(0, 1.58, 0.12)
+  helmet.castShadow = true
+  const visor = new THREE.Mesh(
+    new THREE.SphereGeometry(0.31, 16, 12, 0, Math.PI, 0.3, 0.85),
+    new THREE.MeshPhysicalMaterial({ color: '#0F172A', roughness: 0.05, metalness: 0.8 }),
+  )
+  visor.rotation.y = Math.PI
+  visor.position.set(0, 1.58, 0.08)
+  group.add(helmet, visor)
 
   return group
 }
