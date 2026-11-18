@@ -255,12 +255,37 @@ export function RacingWorld({
     // Ground plane
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(500, 500),
-      new THREE.MeshStandardMaterial({ color: '#0B132B', roughness: 0.9, metalness: 0.1 }),
+      new THREE.MeshStandardMaterial({ color: '#34B356', roughness: 0.94, metalness: 0.02 }),
     )
     ground.rotation.x = -Math.PI / 2
     ground.position.y = -0.05
     ground.receiveShadow = true
     scene.add(ground)
+
+    const createAsphaltTexture = () => {
+      const c = document.createElement('canvas')
+      c.width = 256
+      c.height = 256
+      const ctx = c.getContext('2d')!
+      ctx.fillStyle = '#2B3445'
+      ctx.fillRect(0, 0, 256, 256)
+      for (let i = 0; i < 1800; i++) {
+        const v = 32 + Math.floor(Math.random() * 28)
+        ctx.fillStyle = `rgb(${v},${v + 4},${v + 10})`
+        ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2)
+      }
+      ctx.fillStyle = '#F8FAFC'
+      ctx.fillRect(6, 0, 8, 256)
+      ctx.fillRect(242, 0, 8, 256)
+      ctx.fillStyle = 'rgba(248, 250, 252, 0.55)'
+      ctx.fillRect(125, 16, 6, 96)
+      ctx.fillRect(125, 144, 6, 96)
+      const tex = new THREE.CanvasTexture(c)
+      tex.wrapS = THREE.RepeatWrapping
+      tex.wrapT = THREE.RepeatWrapping
+      tex.repeat.set(1, 36)
+      return tex
+    }
 
     // Track ribbon & neon borders
     const SAMPLES = 220
@@ -270,6 +295,7 @@ export function RacingWorld({
     const leftBorderPts: THREE.Vector3[] = []
     const rightBorderPts: THREE.Vector3[] = []
 
+    const uvs: number[] = []
     for (let i = 0; i <= SAMPLES; i++) {
       const t = (i % SAMPLES) / SAMPLES
       const pt = trackCurve.getPointAt(t)
@@ -278,6 +304,7 @@ export function RacingWorld({
       const left = pt.clone().addScaledVector(normal, TRACK_WIDTH / 2)
       const right = pt.clone().addScaledVector(normal, -TRACK_WIDTH / 2)
       vertices.push(left.x, 0.02, left.z, right.x, 0.02, right.z)
+      uvs.push(0, i / SAMPLES, 1, i / SAMPLES)
       leftBorderPts.push(left.clone().setY(0.35))
       rightBorderPts.push(right.clone().setY(0.35))
       if (i < SAMPLES) {
@@ -286,11 +313,17 @@ export function RacingWorld({
       }
     }
     trackGeo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3))
+    trackGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
     trackGeo.setIndex(indices)
     trackGeo.computeVertexNormals()
     const trackMesh = new THREE.Mesh(
       trackGeo,
-      new THREE.MeshStandardMaterial({ color: '#1E293B', roughness: 0.55, metalness: 0.25, side: THREE.DoubleSide }),
+      new THREE.MeshStandardMaterial({
+        map: createAsphaltTexture(),
+        roughness: 0.65,
+        metalness: 0.15,
+        side: THREE.DoubleSide,
+      }),
     )
     trackMesh.receiveShadow = true
     scene.add(trackMesh)
@@ -539,7 +572,12 @@ export function RacingWorld({
         }
       }
 
-      // Smooth chase camera
+      // Smooth chase camera + dynamic FOV boost kick
+      const targetFov = boostTimer > 0 ? Math.min(88, fov + 11) : fov
+      if (Math.abs(camera.fov - targetFov) > 0.15) {
+        camera.fov += (targetFov - camera.fov) * 0.14
+        camera.updateProjectionMatrix()
+      }
       const camOffset = new THREE.Vector3(0, 4.4, 9.2).applyAxisAngle(new THREE.Vector3(0, 1, 0), playerHeading)
       const desiredCamPos = playerKart.position.clone().add(camOffset)
       camera.position.lerp(desiredCamPos, 0.14)
