@@ -1,0 +1,3101 @@
+import {Bricks,pine} from './art/voxel'
+import {village} from './art/village'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import * as THREE from 'three'
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import {
+  Armchair,
+  Crosshair,
+  Flag,
+  Hand,
+  Keyboard,
+  MessageSquare,
+  MessageSquarePlus,
+  Music,
+  Orbit,
+  PartyPopper,
+  RefreshCw,
+  RotateCw,
+  Shirt,
+  Sparkles,
+  Users,
+  X,
+} from 'lucide-react'
+import {
+  BackId,
+  FaceId,
+  getRankForXp,
+  HatId,
+  OutfitId,
+  PetId,
+  R6AvatarConfig,
+  TrailId,
+} from '../data/catalog'
+import { Lang, LOCALES } from '../data/locales'
+import {
+  LobbyChatMessage,
+  LobbyMultiplayerClient,
+  PlayerPose,
+  pruneExpiredChatMessages,
+  RemotePlayerState,
+} from '../lib/multiplayer'
+import {
+  enterGameFullscreenLandscape,
+  exitGameFullscreen,
+  isDocumentFullscreen,
+  isTouchMobileDevice,
+} from '../lib/mobileFullscreen'
+import { loadMousePrefs, saveMousePrefs, LobbyWeatherMode } from '../lib/mousePrefs'
+import { fetchObbyTopChampions, formatSpeedrunTime } from '../lib/socialApi'
+import { useVisualViewport } from '../lib/useVisualViewport'
+import { sfx } from '../lib/sfx'
+import { audioEngine } from '../lib/audioEngine'
+import { isSupabaseConfigured } from '../lib/supabase'
+import { FreshBloxLogo } from '../components/brand/FreshBloxBrand'
+import { MobileTouchControls } from '../components/hud/MobileTouchControls'
+import { InGameWardrobeDrawer } from '../components/hud/InGameWardrobeDrawer'
+import { InGameMenuDrawer, MenuDrawerTab } from '../components/hud/InGameMenuDrawer'
+import { ShortcutsOverlayModal } from '../components/hud/ShortcutsOverlayModal'
+import { EmoteRadialWheel } from '../components/hud/EmoteRadialWheel'
+import { GameChatBox } from '../components/hud/GameChatBox'
+import { createR6Rig, R6RigHandle } from './r6Builder'
+import { cloneFreshTexturesWithRepeat, FreshSurfaceKind } from './freshTextures'
+
+export type GraphicsQuality = 'low' | 'medium' | 'high'
+type WorldTimeMode = 'day' | 'night'
+
+interface LobbyRosterEntry {
+  id: string
+  username: string
+  rank: string
+  isSelf?: boolean
+}
+
+interface AABB {
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
+  minZ: number
+  maxZ: number
+}
+
+interface BenchSpot {
+  id: string
+  x: number
+  z: number
+  rotY: number
+  seatY: number
+  /** Facing angle (+Z in local bench frame rotated by rotY) */
+  faceAngle: number
+}
+
+interface JumpPad {
+  x: number
+  z: number
+  y: number
+  radius: number
+  boost: number
+  ring: THREE.Mesh
+}
+
+interface MainLobbyWorldProps {
+  roomCode: string
+  lang: Lang
+  playerId: string
+  authUserId: string | null
+  username: string
+  clanTag?: string | null
+  freshGems: number
+  xp: number
+  avatar: R6AvatarConfig
+  unlockedOutfits: OutfitId[]
+  unlockedHats: HatId[]
+  unlockedFaces: FaceId[]
+  unlockedTrails?: TrailId[]
+  unlockedBacks?: BackId[]
+  unlockedPets?: PetId[]
+  isFullscreen: boolean
+  onChatSent: () => void
+  onEmoteUsed: () => void
+  onJumpPadUsed: () => void
+  onReachTerrace: () => void
+  onBackHome: () => void
+  onEnterObby: () => void
+  onEnterArena?: () => void
+  onEnterFrisbee?: () => void
+  onBuyAndEquip: (category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet', itemId: string, price: number) => boolean
+  onBuyBundle: (items: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; price: number }>) => boolean
+  onSkinChange: (hex: string) => void
+  feedbackOpen?: boolean
+  onOpenFeedback?: (context: string) => void
+}
+
+function detectDefaultQuality(): GraphicsQuality {
+  if (typeof window === 'undefined') return 'medium'
+  const cores = navigator.hardwareConcurrency || 4
+  const isTouch = isTouchMobileDevice()
+  const narrow = window.innerWidth < 820
+  if (cores <= 2) return 'low'
+  if (isTouch || narrow || cores <= 4) return 'medium'
+  return 'high'
+}
+
+const STEP_HEIGHT = 0.56 // Auto-step smoothly over walkways, plaza layers & low stairs without jumping!
+
+function avatarKey(a: R6AvatarConfig): string {
+  return `${a.outfitId}|${a.hatId}|${a.faceId}|${a.skinColor}|${a.trailId ?? 'none'}|${a.backId ?? 'none'}|${a.petId ?? 'none'}`
+}
+
+export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
+  roomCode,
+  lang,
+  playerId,
+  authUserId,
+  username,
+  clanTag = null,
+  freshGems,
+  xp,
+  avatar,
+  unlockedOutfits,
+  unlockedHats,
+  unlockedFaces,
+  unlockedTrails = ['none'],
+  unlockedBacks = ['none'],
+  unlockedPets = ['none'],
+  isFullscreen,
+  onChatSent,
+  onEmoteUsed,
+  onJumpPadUsed,
+  onReachTerrace,
+  onBackHome,
+  onEnterObby,
+  onEnterArena,
+  onEnterFrisbee,
+  onBuyAndEquip,
+  onBuyBundle,
+  onSkinChange,
+  feedbackOpen = false,
+  onOpenFeedback,
+}) => {
+  const t = LOCALES[lang].world
+  const mountRef = useRef<HTMLDivElement>(null)
+
+  const [quality, setQuality] = useState<GraphicsQuality>(() => detectDefaultQuality())
+  const [touchMode, setTouchMode] = useState<boolean>(() => isTouchMobileDevice())
+  const [sprintLocked, setSprintLocked] = useState<boolean>(false)
+  const [fpsDisplay, setFpsDisplay] = useState<number>(60)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [hubOpen, setHubOpen] = useState(false)
+  const [hubTab, setHubTab] = useState<MenuDrawerTab>('overview')
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [wardrobeOpen, setWardrobeOpen] = useState(false)
+  const [previewAvatar, setPreviewAvatar] = useState<R6AvatarConfig>(() => ({ ...avatar }))
+  const [worldTime, setWorldTime] = useState<WorldTimeMode>('day')
+  const [roster, setRoster] = useState<LobbyRosterEntry[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  // Interactive bench state
+  const [nearBench, setNearBench] = useState<BenchSpot | null>(null)
+  const [seatedBench, setSeatedBench] = useState<BenchSpot | null>(null)
+
+  // Portrait mobile rotate hint
+  const [isPortraitMobile, setIsPortraitMobile] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? isTouchMobileDevice() && window.innerHeight > window.innerWidth : false,
+  )
+  const [rotateBannerDismissed, setRotateBannerDismissed] = useState(false)
+
+  const [copiedInvite, setCopiedInvite] = useState(false)
+  const [onlineCount, setOnlineCount] = useState(1)
+  const [activeEmote, setActiveEmote] = useState<PlayerPose | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const [chatInput, setChatInput] = useState('')
+  const [messages, setMessages] = useState<LobbyChatMessage[]>([])
+
+  // Always start with an empty chat on room join & auto-purge messages older than 20 minutes
+  useEffect(() => {
+    setMessages([])
+    setUnreadCount(0)
+    const id = window.setInterval(() => {
+      setMessages((prev) => {
+        const next = pruneExpiredChatMessages(prev)
+        return next.length === prev.length ? prev : next
+      })
+    }, 15_000)
+    return () => window.clearInterval(id)
+  }, [roomCode])
+
+  const qualityRef = useRef(quality)
+  qualityRef.current = quality
+  const sprintLockedRef = useRef(sprintLocked)
+  sprintLockedRef.current = sprintLocked
+  const chatOpenRef = useRef(chatOpen)
+  chatOpenRef.current = chatOpen
+  const hubOpenRef = useRef(hubOpen)
+  hubOpenRef.current = hubOpen
+  const hubTabRef = useRef<MenuDrawerTab>(hubTab)
+  hubTabRef.current = hubTab
+  const shortcutsOpenRef = useRef(shortcutsOpen)
+  shortcutsOpenRef.current = shortcutsOpen
+  const touchModeRef = useRef(touchMode)
+  touchModeRef.current = touchMode
+  const wardrobeOpenRef = useRef(wardrobeOpen)
+  wardrobeOpenRef.current = wardrobeOpen
+  const chatInputRef = useRef<HTMLInputElement | null>(null)
+  const wasLockedBeforeUiRef = useRef<boolean>(false)
+  const focusWardrobeCamRef = useRef<() => void>(() => {})
+
+  const [mousePrefs, setMousePrefs] = useState(() => loadMousePrefs())
+  const [emoteWheelOpen, setEmoteWheelOpen] = useState(false)
+  const emoteWheelOpenRef = useRef(false)
+  emoteWheelOpenRef.current = emoteWheelOpen
+  const clickToLockRef = useRef(mousePrefs.clickToLock)
+  clickToLockRef.current = mousePrefs.clickToLock
+  const shiftLockAlignRef = useRef(mousePrefs.shiftLockAlign)
+  shiftLockAlignRef.current = mousePrefs.shiftLockAlign
+  const mouseSensRef = useRef(mousePrefs.sensitivity)
+  mouseSensRef.current = mousePrefs.sensitivity
+  const fovRef = useRef(mousePrefs.fov)
+  fovRef.current = mousePrefs.fov
+  const weatherRef = useRef<LobbyWeatherMode>(mousePrefs.weather)
+  weatherRef.current = mousePrefs.weather
+  const autoDayCycleRef = useRef<boolean>(mousePrefs.autoDayCycle)
+  autoDayCycleRef.current = mousePrefs.autoDayCycle
+
+  const updateMousePrefs = useCallback((patch: Partial<typeof mousePrefs>) => {
+    setMousePrefs((prev) => {
+      const next = { ...prev, ...patch }
+      saveMousePrefs(next)
+      return next
+    })
+  }, [])
+
+  const nearBenchRef = useRef<BenchSpot | null>(null)
+  const seatedBenchRef = useRef<BenchSpot | null>(null)
+  const toggleSitActionRef = useRef<() => void>(() => {})
+  const resetSpawnActionRef = useRef<() => void>(() => {})
+  const teleportToMemberRef = useRef<(memberId: string) => void>(() => {})
+  const recenterCamRef = useRef<() => void>(() => {})
+  const toggleShiftLockRef = useRef<() => void>(() => {})
+  const lockMouseRef = useRef<() => void>(() => {})
+  const pointerLockReleasedAtRef = useRef<number>(0)
+  const programmaticUnlockRef = useRef<boolean>(false)
+
+  const exitPointerLockSilently = useCallback(() => {
+    if (document.pointerLockElement) {
+      programmaticUnlockRef.current = true
+      document.exitPointerLock?.()
+    }
+  }, [])
+
+  const [shiftLockActive, setShiftLockActive] = useState(false)
+  const shiftLockRef = useRef(false)
+  const vp = useVisualViewport()
+
+  // Release pointer lock cleanly whenever any menu/modal opens
+  useEffect(() => {
+    if ((hubOpen || wardrobeOpen || shortcutsOpen || emoteWheelOpen || feedbackOpen) && document.pointerLockElement) {
+      exitPointerLockSilently()
+    }
+  }, [hubOpen, wardrobeOpen, shortcutsOpen, emoteWheelOpen, feedbackOpen, exitPointerLockSilently])
+
+  const touchMoveRef = useRef<{ x: number; y: number; autoSprint: boolean }>({
+    x: 0,
+    y: 0,
+    autoSprint: false,
+  })
+  const jumpQueuedRef = useRef<boolean>(false)
+  const jumpHeldRef = useRef<boolean>(false)
+
+  const avatarRef = useRef(avatar)
+  avatarRef.current = avatar
+  const displayedAvatar: R6AvatarConfig = wardrobeOpen ? previewAvatar : avatar
+  const displayedAvatarRef = useRef<R6AvatarConfig>(displayedAvatar)
+  displayedAvatarRef.current = displayedAvatar
+  const localRigKeyRef = useRef<string>(avatarKey(displayedAvatar))
+  const usernameRef = useRef(username)
+  usernameRef.current = username
+  const clanTagRef = useRef(clanTag)
+  clanTagRef.current = clanTag
+  const rankRef = useRef(getRankForXp(xp).name)
+  rankRef.current = getRankForXp(xp).name
+  const worldTimeRef = useRef<WorldTimeMode>(worldTime)
+  worldTimeRef.current = worldTime
+
+  const activeEmoteRef = useRef<PlayerPose | null>(null)
+  const emoteTimerRef = useRef<number>(0)
+  const chatInputFocusedRef = useRef(false)
+  const feedbackOpenRef = useRef<boolean>(feedbackOpen)
+  feedbackOpenRef.current = feedbackOpen
+  const mpRef = useRef<LobbyMultiplayerClient | null>(null)
+  const localRigRef = useRef<R6RigHandle | null>(null)
+  const speechTimeoutRef = useRef<number | null>(null)
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
+  const hemiLightRef = useRef<THREE.HemisphereLight | null>(null)
+  const sunLightRef = useRef<THREE.DirectionalLight | null>(null)
+  const sceneRef = useRef<THREE.Scene | null>(null)
+  const cloudsGroupRef = useRef<THREE.Group | null>(null)
+  const nightSkyGroupRef = useRef<THREE.Group | null>(null)
+
+  const authUserIdRef = useRef(authUserId)
+  authUserIdRef.current = authUserId
+  const nearPortalRef = useRef<{ name: string; action?: 'obby' | 'arena' | 'frisbee' } | null>(null)
+  const [nearPortalInfo, setNearPortalInfo] = useState<{ name: string; action?: 'obby' | 'arena' | 'frisbee' } | null>(null)
+
+  const callbacksRef = useRef({
+    onChatSent,
+    onEmoteUsed,
+    onJumpPadUsed,
+    onReachTerrace,
+    onEnterObby,
+    onEnterArena,
+    onEnterFrisbee,
+    onOpenFeedback,
+  })
+  callbacksRef.current = {
+    onChatSent,
+    onEmoteUsed,
+    onJumpPadUsed,
+    onReachTerrace,
+    onEnterObby,
+    onEnterArena,
+    onEnterFrisbee,
+    onOpenFeedback,
+  }
+
+  // Audio 2.0: ambient Lobby soundtrack & spatial cleanup
+  useEffect(() => {
+    audioEngine.setWorldMusic('lobby')
+    return () => {
+      audioEngine.setSpatialLoopLevel('fountain', 0)
+      audioEngine.setSpatialLoopLevel('portal', 0)
+      audioEngine.setWorldMusic('none')
+    }
+  }, [])
+
+  // Track mobile orientation cleanly
+  useEffect(() => {
+    const checkOrient = () => {
+      setIsPortraitMobile(isTouchMobileDevice() && window.innerHeight > window.innerWidth)
+    }
+    window.addEventListener('resize', checkOrient)
+    window.addEventListener('orientationchange', checkOrient)
+    return () => {
+      window.removeEventListener('resize', checkOrient)
+      window.removeEventListener('orientationchange', checkOrient)
+    }
+  }, [])
+
+  const showToast = useCallback((msg: string) => {
+    setToast(msg)
+    window.setTimeout(() => {
+      setToast((cur) => (cur === msg ? null : cur))
+    }, 2400)
+  }, [])
+
+  // Live graphics quality + natural Day / Night atmosphere application
+  useEffect(() => {
+    const renderer = rendererRef.current
+    const sun = sunLightRef.current
+    const hemi = hemiLightRef.current
+    const scene = sceneRef.current
+    const clouds = cloudsGroupRef.current
+    const nightSky = nightSkyGroupRef.current
+    if (!renderer || !scene) return
+
+    const isNight = worldTime === 'night'
+    const skyHex = isNight ? '#0B1528' : '#BAE6FD'
+    scene.background = new THREE.Color(skyHex)
+
+    if (hemi) {
+      if (isNight) {
+        hemi.color.set('#89AED8')
+        hemi.groundColor.set('#14233C')
+        hemi.intensity = 0.72
+      } else {
+        hemi.color.set('#F0F9FF')
+        hemi.groundColor.set('#7DD3FC')
+        hemi.intensity = 1.15
+      }
+    }
+
+    if (sun) {
+      if (isNight) {
+        sun.color.set('#D8E8FF')
+        sun.intensity = 1.05
+      } else {
+        sun.color.set('#FFFBEB')
+        sun.intensity = 1.65
+      }
+    }
+
+    if (nightSky) nightSky.visible = isNight
+
+    const dpr = window.devicePixelRatio || 1
+    if (quality === 'low') {
+      renderer.setPixelRatio(Math.min(dpr, 1.0))
+      renderer.shadowMap.enabled = false
+      if (sun) sun.castShadow = false
+      scene.fog = new THREE.Fog(skyHex, 40, 115)
+      if (clouds) clouds.visible = false
+    } else if (quality === 'medium') {
+      renderer.setPixelRatio(Math.min(dpr, 1.35))
+      renderer.shadowMap.enabled = true
+      if (sun) sun.castShadow = true
+      scene.fog = new THREE.Fog(skyHex, 54, 150)
+      if (clouds) clouds.visible = !isNight
+    } else {
+      renderer.setPixelRatio(Math.min(dpr, 1.85))
+      renderer.shadowMap.enabled = true
+      if (sun) sun.castShadow = true
+      scene.fog = new THREE.Fog(skyHex, 68, 178)
+      if (clouds) clouds.visible = !isNight
+    }
+    renderer.shadowMap.needsUpdate = true
+  }, [quality, worldTime])
+
+  // LIVE HOT-SWAP LOCAL R6 AVATAR IN-GAME (0ms reload — instant outfit/hat/face/skin changes!)
+  useEffect(() => {
+    const nextKey = avatarKey(displayedAvatar)
+    if (nextKey === localRigKeyRef.current) return
+    const scene = sceneRef.current
+    const oldRig = localRigRef.current
+    if (!scene || !oldRig) return
+
+    const pos = oldRig.root.position.clone()
+    const rotY = oldRig.root.rotation.y
+    scene.remove(oldRig.root)
+    oldRig.dispose()
+
+    const freshRig = createR6Rig({
+      avatar: displayedAvatar,
+      username: usernameRef.current,
+      clanTag: clanTagRef.current,
+      rank: rankRef.current,
+      showNameplate: false,
+      castShadow: qualityRef.current !== 'low',
+    })
+    freshRig.root.position.copy(pos)
+    freshRig.root.rotation.y = rotY
+    scene.add(freshRig.root)
+    localRigRef.current = freshRig
+    localRigKeyRef.current = nextKey
+  }, [displayedAvatar])
+
+  const openLiveWardrobe = useCallback(() => {
+    setPreviewAvatar({ ...avatarRef.current })
+    setHubOpen(false)
+    setShortcutsOpen(false)
+    setChatOpen(false)
+    setWardrobeOpen(true)
+    focusWardrobeCamRef.current()
+    sfx.playClick()
+  }, [])
+
+  const closeLiveWardrobe = useCallback(() => {
+    setWardrobeOpen(false)
+    setPreviewAvatar({ ...avatarRef.current })
+    sfx.playClick()
+  }, [])
+
+  const triggerEmote = useCallback((pose: PlayerPose) => {
+    // If sitting on bench, stand up cleanly for non-sit emotes
+    if (seatedBenchRef.current && pose !== 'sit') {
+      seatedBenchRef.current = null
+      setSeatedBench(null)
+    }
+    activeEmoteRef.current = pose
+    const durations: Partial<Record<PlayerPose, number>> = {
+      backflip: 1.75,
+      spin: 1.45,
+      dance: 6.4,
+      cheer: 2.4,
+      wave: 3.2,
+      sit: 18,
+    }
+    emoteTimerRef.current = durations[pose] ?? 3.4
+    setActiveEmote(pose)
+    sfx.playClick()
+    callbacksRef.current.onEmoteUsed()
+  }, [])
+
+  const handleTouchMoveVector = useCallback((x: number, y: number, autoSprint = false) => {
+    touchMoveRef.current.x = x
+    touchMoveRef.current.y = y
+    touchMoveRef.current.autoSprint = autoSprint
+  }, [])
+
+  const handleTouchJump = useCallback(() => {
+    jumpQueuedRef.current = true
+  }, [])
+
+  const handleTouchJumpHold = useCallback((held: boolean) => {
+    jumpHeldRef.current = held
+  }, [])
+
+  const pushOutgoingChat = useCallback(
+    (rawText: string) => {
+      const clean = rawText.trim().slice(0, 220)
+      if (!clean) return false
+      const msg: LobbyChatMessage = {
+        id: `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        senderId: playerId,
+        username: usernameRef.current,
+        text: clean,
+        timestamp: Date.now(),
+      }
+      setMessages((prev) => [...pruneExpiredChatMessages(prev).slice(-49), msg])
+      sfx.playChatPop()
+      mpRef.current?.broadcastChat(msg, authUserIdRef.current)
+      callbacksRef.current.onChatSent()
+
+      localRigRef.current?.setSpeech(clean)
+      if (speechTimeoutRef.current) window.clearTimeout(speechTimeoutRef.current)
+      speechTimeoutRef.current = window.setTimeout(() => {
+        localRigRef.current?.setSpeech(null)
+      }, 5500)
+      return true
+    },
+    [playerId],
+  )
+
+  const handleSendChat = useCallback(
+    (e?: React.FormEvent) => {
+      e?.preventDefault()
+      const sent = pushOutgoingChat(chatInput)
+      if (sent) {
+        setChatInput('')
+      }
+      chatInputRef.current?.blur()
+      if (wasLockedBeforeUiRef.current && clickToLockRef.current) {
+        wasLockedBeforeUiRef.current = false
+        lockMouseRef.current()
+      }
+    },
+    [chatInput, pushOutgoingChat],
+  )
+
+  const handleQuickChat = useCallback(
+    (text: string) => {
+      pushOutgoingChat(text)
+    },
+    [pushOutgoingChat],
+  )
+
+  const handleCopyInvite = useCallback(() => {
+    const url = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomCode)}`
+    navigator.clipboard?.writeText(url).catch(() => {})
+    setCopiedInvite(true)
+    sfx.playClick()
+    window.setTimeout(() => setCopiedInvite(false), 2200)
+  }, [roomCode])
+
+  const handleToggleFullscreen = useCallback(() => {
+    sfx.playClick()
+    if (isDocumentFullscreen()) {
+      exitGameFullscreen()
+    } else {
+      enterGameFullscreenLandscape()
+    }
+  }, [])
+
+  const shortcutActionsRef = useRef({
+    openChatAndFocus: () => {},
+    toggleWardrobe: () => {},
+    toggleHubTab: (_tab: MenuDrawerTab) => {},
+    toggleShortcuts: () => {},
+    openFeedback: () => {},
+    toggleShiftLockAlign: () => {},
+    toggleWorldTime: () => {},
+    toggleFullscreen: () => {},
+    resetSpawnWithToast: () => {},
+  })
+
+  shortcutActionsRef.current = {
+    openChatAndFocus: () => {
+      if (shiftLockRef.current) {
+        wasLockedBeforeUiRef.current = true
+        exitPointerLockSilently()
+      }
+      setHubOpen(false)
+      setWardrobeOpen(false)
+      setShortcutsOpen(false)
+      setChatOpen(true)
+      setUnreadCount(0)
+      sfx.playClick()
+      window.setTimeout(() => {
+        chatInputRef.current?.focus()
+      }, 25)
+    },
+    toggleWardrobe: () => {
+      if (wardrobeOpenRef.current) {
+        closeLiveWardrobe()
+        if (wasLockedBeforeUiRef.current && clickToLockRef.current) {
+          wasLockedBeforeUiRef.current = false
+          lockMouseRef.current()
+        }
+      } else {
+        if (shiftLockRef.current) {
+          wasLockedBeforeUiRef.current = true
+        }
+        openLiveWardrobe()
+      }
+    },
+    toggleHubTab: (targetTab: MenuDrawerTab) => {
+      if (hubOpenRef.current && hubTabRef.current === targetTab) {
+        setHubOpen(false)
+        sfx.playClick()
+        if (wasLockedBeforeUiRef.current && clickToLockRef.current) {
+          wasLockedBeforeUiRef.current = false
+          lockMouseRef.current()
+        }
+      } else {
+        if (!hubOpenRef.current && shiftLockRef.current) {
+          wasLockedBeforeUiRef.current = true
+        }
+        setWardrobeOpen(false)
+        setShortcutsOpen(false)
+        setHubTab(targetTab)
+        setHubOpen(true)
+        sfx.playClick()
+      }
+    },
+    toggleShortcuts: () => {
+      if (shortcutsOpenRef.current) {
+        setShortcutsOpen(false)
+        sfx.playClick()
+        if (wasLockedBeforeUiRef.current && clickToLockRef.current) {
+          wasLockedBeforeUiRef.current = false
+          lockMouseRef.current()
+        }
+      } else {
+        if (shiftLockRef.current) {
+          wasLockedBeforeUiRef.current = true
+        }
+        setHubOpen(false)
+        setWardrobeOpen(false)
+        setShortcutsOpen(true)
+        sfx.playClick()
+      }
+    },
+    openFeedback: () => {
+      if (!callbacksRef.current.onOpenFeedback) return
+      if (shiftLockRef.current) {
+        exitPointerLockSilently()
+      }
+      setHubOpen(false)
+      setShortcutsOpen(false)
+      sfx.playClick()
+      callbacksRef.current.onOpenFeedback(`Lobby Główne (${roomCode})`)
+    },
+    toggleShiftLockAlign: () => {
+      const next = !shiftLockAlignRef.current
+      updateMousePrefs({ shiftLockAlign: next })
+      sfx.playClick()
+      showToast(
+        lang === 'pl'
+          ? `Shift-Lock: ${next ? 'WŁ.' : 'WYŁ.'}`
+          : `Shift-Lock: ${next ? 'ON' : 'OFF'}`,
+      )
+    },
+    toggleWorldTime: () => {
+      const next: WorldTimeMode = worldTimeRef.current === 'day' ? 'night' : 'day'
+      setWorldTime(next)
+      sfx.playClick()
+      showToast(
+        lang === 'pl'
+          ? `Pora dnia: ${next === 'night' ? 'Noc' : 'Dzień'}`
+          : `Time of day: ${next === 'night' ? 'Night' : 'Day'}`,
+      )
+    },
+    toggleFullscreen: () => {
+      handleToggleFullscreen()
+    },
+    resetSpawnWithToast: () => {
+      resetSpawnActionRef.current()
+      showToast(lang === 'pl' ? 'Powrót na środek placu' : 'Returned to center spawn')
+    },
+  }
+
+  useEffect(() => {
+    const container = mountRef.current
+    if (!container) return
+
+    const disposables: Array<{ dispose: () => void }> = []
+    const trackGeo = <T extends THREE.BufferGeometry>(g: T): T => {
+      disposables.push(g)
+      return g
+    }
+    const trackMat = <T extends THREE.Material>(m: T): T => {
+      disposables.push(m)
+      return m
+    }
+    const trackTex = <T extends THREE.Texture>(t2: T): T => {
+      disposables.push(t2)
+      return t2
+    }
+
+    const initQ = qualityRef.current
+    const width = container.clientWidth || window.innerWidth
+    const height = container.clientHeight || window.innerHeight - 64
+
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color('#BAE6FD')
+    scene.fog = new THREE.Fog('#BAE6FD', initQ === 'low' ? 40 : 62, initQ === 'low' ? 115 : 168)
+    sceneRef.current = scene
+
+    const camera = new THREE.PerspectiveCamera(58, width / height, 0.2, 220)
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: initQ !== 'low',
+      powerPreference: 'high-performance',
+    })
+    renderer.setSize(width, height)
+    const dpr = window.devicePixelRatio || 1
+    renderer.setPixelRatio(Math.min(dpr, initQ === 'low' ? 1 : initQ === 'medium' ? 1.35 : 1.85))
+    renderer.shadowMap.enabled = initQ !== 'low'
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.06
+    renderer.domElement.style.touchAction = 'none'
+    container.innerHTML = ''
+    container.appendChild(renderer.domElement)
+    rendererRef.current = renderer
+
+    // Fresh-Day bright sky lighting (switches cleanly to natural moonlight in Night mode)
+    const hemi = new THREE.HemisphereLight('#F0F9FF', '#7DD3FC', 1.15)
+    scene.add(hemi)
+    hemiLightRef.current = hemi
+
+    const sun = new THREE.DirectionalLight('#fff0ca', 1.75)
+    sun.position.set(28, 46, 24)
+    sun.castShadow = initQ !== 'low'
+    const shadowRes = initQ === 'high' ? 1024 : 512
+    sun.shadow.mapSize.set(shadowRes, shadowRes)
+    sun.shadow.camera.near = 6
+    sun.shadow.camera.far = 120
+    const dShadow = 38
+    sun.shadow.camera.left = -dShadow
+    sun.shadow.camera.right = dShadow
+    sun.shadow.camera.top = dShadow
+    sun.shadow.camera.bottom = -dShadow
+    sun.shadow.bias = -0.0007
+    scene.add(sun)
+    sunLightRef.current = sun
+
+    // Autorskie materiały FreshBlox z mapami albedo + bumpMap (zero studsów z Robloksa, zero płaskiego plastiku!)
+    const surfaceMatCache = new Map<string, THREE.MeshStandardMaterial>()
+
+    const getSurfaceMat = (
+      surface: FreshSurfaceKind,
+      color: string,
+      rx: number,
+      rz: number,
+      roughness = 0.32,
+      metalness = 0.05,
+    ) => {
+      const key = `${surface}_${color}_${rx}_${rz}_${roughness}_${metalness}`
+      const hit = surfaceMatCache.get(key)
+      if (hit) return hit
+      const pair = cloneFreshTexturesWithRepeat(surface, rx, rz, trackTex)
+      const mat = trackMat(
+        new THREE.MeshStandardMaterial({
+          color,
+          map: pair.map,
+          bumpMap: pair.bumpMap,
+          bumpScale: pair.bumpScale,
+          roughness,
+          metalness,
+        }),
+      )
+      surfaceMatCache.set(key, mat)
+      return mat
+    }
+
+    const colliders: AABB[] = []
+
+    const addBlock = (
+      x: number,
+      y: number,
+      z: number,
+      w: number,
+      h: number,
+      d: number,
+      color: string,
+      opts?: {
+        solid?: boolean
+        surface?: FreshSurfaceKind
+        radius?: number
+        roughness?: number
+        metalness?: number
+        tileUnit?: number
+        castShadow?: boolean
+      },
+    ) => {
+      const {
+        solid = true,
+        surface = 'facetTile',
+        radius = 0.14,
+        roughness = 0.32,
+        metalness = 0.05,
+        tileUnit = 2.6,
+        castShadow = true,
+      } = opts ?? {}
+      const rx = Math.max(1, Math.round(w / tileUnit))
+      const rz = Math.max(1, Math.round(Math.max(d, h) / tileUnit))
+      const geo = trackGeo(new RoundedBoxGeometry(w, h, d, 2, Math.min(radius, h * 0.35)))
+      const mat = getSurfaceMat(surface, color, rx, rz, roughness, metalness)
+      const mesh = new THREE.Mesh(geo, mat)
+      mesh.position.set(x, y, z)
+      mesh.castShadow = castShadow
+      mesh.receiveShadow = true
+      scene.add(mesh)
+      if (solid) {
+        colliders.push({
+          minX: x - w / 2,
+          maxX: x + w / 2,
+          minY: y - h / 2,
+          maxY: y + h / 2,
+          minZ: z - d / 2,
+          maxZ: z + d / 2,
+        })
+      }
+      return mesh
+    }
+
+    // === MAIN LOBBY (LOBBY GŁÓWNE) WORLD GEOMETRY ===
+    // Main plaza deck: Arctic architectural terrazzo stone pavers
+    addBlock(0, -1.5, 0, 74, 3, 74, '#8fb842', {
+      surface: 'terrazzo',
+      tileUnit: 4.5,
+      radius: 0.28,
+      roughness: 0.44,
+      castShadow: false,
+    })
+    addBlock(0, -0.02, 0, 26, 0.3, 26, '#95b948', {
+      surface: 'foliage',
+      tileUnit: 3.6,
+      radius: 0.12,
+      roughness: 0.32,
+      castShadow: false,
+    })
+    addBlock(0, 0.06, 0, 14, 0.26, 14, '#95b948', {
+      surface: 'facetTile',
+      tileUnit: 2.8,
+      radius: 0.1,
+      roughness: 0.28,
+      castShadow: false,
+    })
+
+    // Four cardinal walkway runners: honed light marble slabs
+    addBlock(0, 0.055, 18, 6.2, 0.2, 22, '#979e91', { surface: 'terrazzo', tileUnit: 3.1, radius: 0.08, roughness: 0.3, castShadow: false })
+    addBlock(0, 0.055, -18, 6.2, 0.2, 22, '#979e91', { surface: 'terrazzo', tileUnit: 3.1, radius: 0.08, roughness: 0.3, castShadow: false })
+    addBlock(18, 0.055, 0, 22, 0.2, 6.2, '#979e91', { surface: 'terrazzo', tileUnit: 3.1, radius: 0.08, roughness: 0.3, castShadow: false })
+    addBlock(-18, 0.055, 0, 22, 0.2, 6.2, '#979e91', { surface: 'terrazzo', tileUnit: 3.1, radius: 0.08, roughness: 0.3, castShadow: false })
+
+    // Village and central stepped fountain
+    const town = village(scene)
+    for(const [x,z] of town.cottages) colliders.push({minX:x-3.6,maxX:x+3.6,minZ:z-3.06,maxZ:z+3.06,minY:0,maxY:6.65})
+    // Climbable basin, spillway and central jet.
+    colliders.push({ minX: -4.1, maxX: 4.1, minY: 0, maxY: 0.42, minZ: -4.1, maxZ: 4.1 })
+    colliders.push({ minX: -2.95, maxX: 2.95, minY: 0.42, maxY: 0.98, minZ: -2.95, maxZ: 2.95 })
+    colliders.push({ minX: -1.35, maxX: 1.35, minY: 0.98, maxY: 3.36, minZ: -1.35, maxZ: 1.35 })
+
+    const crystalPair = cloneFreshTexturesWithRepeat('ice', 1, 1, trackTex)
+
+    // === INTERACTIVE HANGOUT BENCHES (5 sculpted timber-and-stone benches with backrests!) ===
+    const benchSeatMat = getSurfaceMat('wood', '#C28A5B', 2, 1, 0.56, 0.02)
+    const benchBackMat = getSurfaceMat('wood', '#B0774A', 2, 1, 0.58, 0.02)
+    const benchLegMat = getSurfaceMat('terrazzo', '#E2E8F0', 1, 1, 0.42, 0.05)
+    const benchSeatGeo = trackGeo(new RoundedBoxGeometry(3.6, 0.3, 1.2, 2, 0.08))
+    const benchBackGeo = trackGeo(new RoundedBoxGeometry(3.6, 0.72, 0.24, 2, 0.06))
+    const benchLegGeo = trackGeo(new RoundedBoxGeometry(0.4, 0.52, 0.96, 2, 0.06))
+
+    const benches: BenchSpot[] = [
+      { id: 'b1', x: -16, z: -8, rotY: 0.45, seatY: 0.82, faceAngle: 0.45 },
+      { id: 'b2', x: -16, z: 8, rotY: Math.PI - 0.45, seatY: 0.82, faceAngle: Math.PI - 0.45 },
+      { id: 'b3', x: -22, z: 0, rotY: Math.PI / 2, seatY: 0.82, faceAngle: Math.PI / 2 },
+      { id: 'b4', x: -8.5, z: -8.5, rotY: Math.PI / 4, seatY: 0.82, faceAngle: Math.PI / 4 },
+      { id: 'b5', x: 8.5, z: 8.5, rotY: -Math.PI * 0.75, seatY: 0.82, faceAngle: -Math.PI * 0.75 },
+    ]
+
+    for (const bp of benches) {
+      const benchGroup = new THREE.Group()
+      benchGroup.position.set(bp.x, 0, bp.z)
+      benchGroup.rotation.y = bp.rotY
+
+      const seat = new THREE.Mesh(benchSeatGeo, benchSeatMat)
+      seat.position.set(0, 0.65, 0)
+      seat.castShadow = true
+      seat.receiveShadow = true
+      benchGroup.add(seat)
+
+      // Backrest on local -Z so sitting faces local +Z!
+      const back = new THREE.Mesh(benchBackGeo, benchBackMat)
+      back.position.set(0, 1.12, -0.52)
+      back.rotation.x = -0.14
+      back.castShadow = true
+      benchGroup.add(back)
+
+      for (const side of [-1.35, 1.35]) {
+        const leg = new THREE.Mesh(benchLegGeo, benchLegMat)
+        leg.position.set(side, 0.26, 0)
+        benchGroup.add(leg)
+      }
+      scene.add(benchGroup)
+
+      colliders.push({
+        minX: bp.x - 1.35,
+        maxX: bp.x + 1.35,
+        minY: 0,
+        maxY: 0.82,
+        minZ: bp.z - 1.1,
+        maxZ: bp.z + 1.1,
+      })
+    }
+
+    // Hangout Stage / Dance Platform (South side) + Walk-up stairs!
+    addBlock(0, 0.45, 24, 13, 0.9, 8.5, '#1E293B', { surface: 'terrazzo', tileUnit: 3.0, radius: 0.16, roughness: 0.44 })
+    // Seamless auto-step-up front stair leading onto the stage
+    addBlock(0, 0.22, 19.3, 6.4, 0.45, 1.4, '#38BDF8', { surface: 'facetTile', tileUnit: 2.0, radius: 0.08 })
+    const danceFloorMat = getSurfaceMat('facetTile', '#0EA5E9', 5, 3, 0.24, 0.12)
+    const danceFloor = new THREE.Mesh(trackGeo(new RoundedBoxGeometry(11.6, 0.16, 7.2, 2, 0.05)), danceFloorMat)
+    danceFloor.position.set(0, 0.92, 24)
+    danceFloor.receiveShadow = true
+    scene.add(danceFloor)
+
+    // Game Mode Portals (North side) — Parkour, Frisbee King & Portal Arena are ALL LIVE!
+    const portalZones: Array<{ name: string; x: number; z: number; action?: 'obby' | 'arena' | 'frisbee' }> = [
+      { name: 'Parkour', x: -11, z: -26, action: 'obby' },
+      { name: 'Frisbee King', x: 0, z: -28, action: 'frisbee' },
+      { name: 'Portal Arena', x: 11, z: -26, action: 'arena' },
+    ]
+
+    const createPortalArch = (x: number, z: number, label: string, sub: string, color: string) => {
+      addBlock(x - 3.1, 3.1, z, 1.1, 6.2, 1.2, '#F8FAFC', { surface: 'fluted', tileUnit: 2.0, radius: 0.14, roughness: 0.34 })
+      addBlock(x + 3.1, 3.1, z, 1.1, 6.2, 1.2, '#F8FAFC', { surface: 'fluted', tileUnit: 2.0, radius: 0.14, roughness: 0.34 })
+      addBlock(x, 6.3, z, 7.4, 1.1, 1.3, color, { surface: 'facetTile', tileUnit: 2.2, radius: 0.16, roughness: 0.28 })
+
+      const gate = new THREE.Mesh(
+        trackGeo(new THREE.PlaneGeometry(5.1, 5.4)),
+        trackMat(
+          new THREE.MeshBasicMaterial({
+            color,
+            transparent: true,
+            opacity: 0.25,
+            side: THREE.DoubleSide,
+          }),
+        ),
+      )
+      gate.position.set(x, 3.1, z)
+      scene.add(gate)
+
+      const signCanvas = document.createElement('canvas')
+      signCanvas.width = 420
+      signCanvas.height = 128
+      const sctx = signCanvas.getContext('2d')!
+      sctx.fillStyle = '#071124'
+      sctx.beginPath()
+      sctx.roundRect(8, 8, 404, 112, 22)
+      sctx.fill()
+      sctx.strokeStyle = color
+      sctx.lineWidth = 5
+      sctx.stroke()
+      sctx.fillStyle = '#F0F9FF'
+      sctx.font = '900 32px Inter, system-ui, sans-serif'
+      sctx.textAlign = 'center'
+      sctx.fillText(label, 210, 56)
+      sctx.fillStyle = '#7DD3FC'
+      sctx.font = '700 22px Inter, system-ui, sans-serif'
+      sctx.fillText(sub, 210, 96)
+      const signTex = trackTex(new THREE.CanvasTexture(signCanvas))
+      signTex.colorSpace = THREE.SRGBColorSpace
+      const sign = new THREE.Mesh(
+        trackGeo(new THREE.PlaneGeometry(5.8, 1.75)),
+        trackMat(new THREE.MeshBasicMaterial({ map: signTex, transparent: true })),
+      )
+      sign.position.set(x, 7.75, z + 0.1)
+      scene.add(sign)
+    }
+
+    createPortalArch(-11, -26, 'PARKOUR', lang === 'pl' ? '100 LEVELI • GRAJ' : '100 STAGES • PLAY', '#F59E0B')
+    createPortalArch(0, -28, 'FRISBEE KING', lang === 'pl' ? '3 RUNDY • OGNISTY DYSK' : '3 ROUNDS • BLAZING DISC', '#F97316')
+    createPortalArch(11, -26, 'PORTAL ARENA', lang === 'pl' ? 'PORTALE 2.0 • GRAJ!' : 'PORTALS 2.0 • PLAY!', '#22D3EE')
+
+    // === U-13: 3D CHAMPIONS PODIUM (REAL SUPABASE TOP 3 PARKOUR) ===
+    const podiumGroup = new THREE.Group()
+    podiumGroup.position.set(12.2, 0, -15.2)
+    podiumGroup.rotation.y = -0.34
+    scene.add(podiumGroup)
+
+    const podiumBase = new THREE.Mesh(
+      trackGeo(new RoundedBoxGeometry(9.6, 0.36, 3.8, 2, 0.08)),
+      getSurfaceMat('marble', '#E2E8F0', 3, 2, 0.34, 0.08),
+    )
+    podiumBase.position.set(0, 0.18, 0)
+    podiumBase.receiveShadow = true
+    podiumGroup.add(podiumBase)
+
+    const podiumSlots = [
+      { place: 1, x: 0, h: 1.75, color: '#F59E0B', pose: 'cheer' as PlayerPose },
+      { place: 2, x: -2.75, h: 1.25, color: '#94A3B8', pose: 'wave' as PlayerPose },
+      { place: 3, x: 2.75, h: 0.9, color: '#CD7F32', pose: 'dance' as PlayerPose },
+    ]
+    for (const slot of podiumSlots) {
+      const ped = new THREE.Mesh(
+        trackGeo(new RoundedBoxGeometry(2.35, slot.h, 2.35, 2, 0.1)),
+        trackMat(new THREE.MeshStandardMaterial({ color: slot.color, roughness: 0.28, metalness: 0.45 })),
+      )
+      ped.position.set(slot.x, 0.36 + slot.h / 2, 0)
+      ped.castShadow = true
+      ped.receiveShadow = true
+      podiumGroup.add(ped)
+
+      // Crisp place badge (#1 / #2 / #3) on front face
+      const badgeCanvas = document.createElement('canvas')
+      badgeCanvas.width = 128
+      badgeCanvas.height = 128
+      const bctx = badgeCanvas.getContext('2d')!
+      bctx.fillStyle = '#071124'
+      bctx.beginPath()
+      bctx.roundRect(12, 12, 104, 104, 24)
+      bctx.fill()
+      bctx.strokeStyle = slot.color
+      bctx.lineWidth = 6
+      bctx.stroke()
+      bctx.fillStyle = '#FFFFFF'
+      bctx.font = '900 54px Inter, system-ui, sans-serif'
+      bctx.textAlign = 'center'
+      bctx.textBaseline = 'middle'
+      bctx.fillText(`#${slot.place}`, 64, 68)
+      const badgeTex = trackTex(new THREE.CanvasTexture(badgeCanvas))
+      badgeTex.colorSpace = THREE.SRGBColorSpace
+      const badgeMesh = new THREE.Mesh(
+        trackGeo(new THREE.PlaneGeometry(0.82, 0.82)),
+        trackMat(new THREE.MeshBasicMaterial({ map: badgeTex, transparent: true })),
+      )
+      badgeMesh.position.set(slot.x, 0.36 + slot.h * 0.52, 1.2)
+      podiumGroup.add(badgeMesh)
+    }
+
+    // Podium overhead sign
+    const podiumSignCanvas = document.createElement('canvas')
+    podiumSignCanvas.width = 512
+    podiumSignCanvas.height = 112
+    const psctx = podiumSignCanvas.getContext('2d')!
+    psctx.fillStyle = 'rgba(7, 17, 36, 0.92)'
+    psctx.beginPath()
+    psctx.roundRect(8, 8, 496, 96, 22)
+    psctx.fill()
+    psctx.strokeStyle = '#F59E0B'
+    psctx.lineWidth = 5
+    psctx.stroke()
+    psctx.fillStyle = '#FDE047'
+    psctx.font = '900 32px Inter, system-ui, sans-serif'
+    psctx.textAlign = 'center'
+    psctx.fillText(lang === 'pl' ? '🏆 MISTRZOWIE PARKOUR' : '🏆 PARKOUR CHAMPIONS', 256, 52)
+    psctx.fillStyle = '#BAE6FD'
+    psctx.font = '700 20px Inter, system-ui, sans-serif'
+    psctx.fillText('TOP 3 LIVE RANKING', 256, 86)
+    const podiumSignTex = trackTex(new THREE.CanvasTexture(podiumSignCanvas))
+    podiumSignTex.colorSpace = THREE.SRGBColorSpace
+    const podiumSignMesh = new THREE.Mesh(
+      trackGeo(new THREE.PlaneGeometry(5.6, 1.24)),
+      trackMat(new THREE.MeshBasicMaterial({ map: podiumSignTex, transparent: true, side: THREE.DoubleSide })),
+    )
+    podiumSignMesh.position.set(0, 6.75, -0.5)
+    podiumGroup.add(podiumSignMesh)
+
+    // Light collider around podium base so players walk cleanly around it
+    colliders.push({
+      minX: 7.4,
+      maxX: 16.9,
+      minY: 0,
+      maxY: 2.2,
+      minZ: -17.6,
+      maxZ: -12.8,
+    })
+
+    const championRigs: Array<{ rig: R6RigHandle; pose: PlayerPose; offset: number }> = []
+    let disposedFlag = false
+    void fetchObbyTopChampions(3).then((champs) => {
+      if (disposedFlag) return
+      champs.slice(0, 3).forEach((champ, idx) => {
+        const slot = podiumSlots[idx]
+        if (!slot) return
+        const subRank =
+          champ.obby_best_time_ms !== null
+            ? `#${idx + 1} · ${formatSpeedrunTime(champ.obby_best_time_ms)}`
+            : `#${idx + 1} · Stage ${champ.obby_best_stage}`
+        const rig = createR6Rig({
+          avatar: champ.avatar_config,
+          username: champ.username,
+          rank: subRank,
+          showNameplate: true,
+          castShadow: true,
+        })
+        rig.root.position.set(slot.x, 0.36 + slot.h, 0)
+        podiumGroup.add(rig.root)
+        championRigs.push({ rig, pose: slot.pose, offset: idx * 1.4 })
+      })
+    })
+
+    // === U-12: DYNAMIC WEATHER PARTICLES (ARCTIC SNOW & METEOR STARFALL) ===
+    const SNOW_COUNT = 420
+    const snowPositions = new Float32Array(SNOW_COUNT * 3)
+    for (let i = 0; i < SNOW_COUNT; i++) {
+      snowPositions[i * 3] = (Math.random() - 0.5) * 90
+      snowPositions[i * 3 + 1] = Math.random() * 34 + 1
+      snowPositions[i * 3 + 2] = (Math.random() - 0.5) * 90
+    }
+    const snowGeo = trackGeo(new THREE.BufferGeometry())
+    snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPositions, 3))
+    const snowMat = trackMat(
+      new THREE.PointsMaterial({
+        color: '#E0F2FE',
+        size: 0.36,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+      }),
+    )
+    const snowPoints = new THREE.Points(snowGeo, snowMat)
+    snowPoints.visible = weatherRef.current === 'snow'
+    scene.add(snowPoints)
+
+    const METEOR_COUNT = 220
+    const meteorPositions = new Float32Array(METEOR_COUNT * 3)
+    for (let i = 0; i < METEOR_COUNT; i++) {
+      meteorPositions[i * 3] = (Math.random() - 0.5) * 110
+      meteorPositions[i * 3 + 1] = Math.random() * 44 + 8
+      meteorPositions[i * 3 + 2] = (Math.random() - 0.5) * 110
+    }
+    const meteorGeo = trackGeo(new THREE.BufferGeometry())
+    meteorGeo.setAttribute('position', new THREE.BufferAttribute(meteorPositions, 3))
+    const meteorMat = trackMat(
+      new THREE.PointsMaterial({
+        color: '#FDE047',
+        size: 0.52,
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+      }),
+    )
+    const meteorPoints = new THREE.Points(meteorGeo, meteorMat)
+    meteorPoints.visible = weatherRef.current === 'stars'
+    scene.add(meteorPoints)
+
+    const daySkyCol = new THREE.Color('#7DD3FC')
+    const sunsetSkyCol = new THREE.Color('#FB923C')
+    const nightSkyCol = new THREE.Color('#0B1730')
+    const cycleSkyCol = new THREE.Color()
+
+    // Sky Observation Terrace Parkour (East side)
+    const terraceSteps = [
+      { x: 16, y: 1.0, z: -7, w: 4.5, h: 0.7, d: 4.5, c: '#38BDF8' },
+      { x: 20.5, y: 2.35, z: -4, w: 4.2, h: 0.7, d: 4.2, c: '#0EA5E9' },
+      { x: 24, y: 3.8, z: 1.5, w: 4.2, h: 0.7, d: 4.2, c: '#7DD3FC' },
+      { x: 21.5, y: 5.3, z: 7.5, w: 4.5, h: 0.7, d: 4.5, c: '#38BDF8' },
+      { x: 25.5, y: 6.8, z: 13.5, w: 8.6, h: 0.9, d: 8.6, c: '#F0F9FF' },
+    ]
+    for (let i = 0; i < terraceSteps.length; i++) {
+      const s = terraceSteps[i]
+      addBlock(s.x, s.y, s.z, s.w, s.h, s.d, s.c, {
+        surface: i === terraceSteps.length - 1 ? 'marble' : 'facetTile',
+        tileUnit: 2.2,
+        radius: 0.14,
+      })
+    }
+
+    const terraceBeacon = new THREE.Mesh(
+      trackGeo(new THREE.OctahedronGeometry(0.9, 0)),
+      trackMat(
+        new THREE.MeshStandardMaterial({
+          color: '#38BDF8',
+          map: crystalPair.map,
+          bumpMap: crystalPair.bumpMap,
+          bumpScale: 0.04,
+          roughness: 0.14,
+          metalness: 0.24,
+        }),
+      ),
+    )
+    terraceBeacon.position.set(25.5, 9.2, 13.5)
+    scene.add(terraceBeacon)
+
+    // Stylized FreshBlox Sculpted Trees (textured wood bark + painterly leaf canopy!)
+    const grove=new Bricks()
+    const addTree=(x:number,z:number)=>{pine(grove,x,0,z,1.37);colliders.push({minX:x-.5,maxX:x+.5,minY:0,maxY:3.6,minZ:z-.5,maxZ:z+.5})}
+    const treeCoords = [
+      [-26, -22],
+      [-28, -8],
+      [-28, 12],
+      [-20, 26],
+      [20, -24],
+      [29, -12],
+      [15, 28],
+      [-14, 28],
+    ]
+    for (const [tx, tz] of treeCoords) addTree(tx, tz)
+    disposables.push({dispose:grove.finish(scene)})
+
+    // Jump-Pads (tactile athletic grip deck + crisp satin sky ring — zero neon!)
+    const jumpPads: JumpPad[] = []
+    const padBaseGeo = trackGeo(new THREE.CylinderGeometry(1.55, 1.8, 0.28, 20))
+    const padBaseMat = getSurfaceMat('grip', '#1E293B', 2, 2, 0.38, 0.12)
+    const padRingGeo = trackGeo(new THREE.TorusGeometry(1.22, 0.14, 10, 24))
+    const padRingMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: '#38BDF8',
+        roughness: 0.2,
+        metalness: 0.24,
+      }),
+    )
+
+    const addJumpPad = (x: number, y: number, z: number, boost: number) => {
+      const base = new THREE.Mesh(padBaseGeo, padBaseMat)
+      base.position.set(x, y + 0.14, z)
+      scene.add(base)
+      const ring = new THREE.Mesh(padRingGeo, padRingMat)
+      ring.rotation.x = Math.PI / 2
+      ring.position.set(x, y + 0.34, z)
+      scene.add(ring)
+      jumpPads.push({ x, y, z, radius: 1.65, boost, ring })
+    }
+
+    addJumpPad(11.5, 0, -10.5, 16.5)
+    addJumpPad(-11.5, 0, 12.5, 16.5)
+    addJumpPad(12.5, 0, 14.5, 19.5)
+
+    // FreshGems pickups removed from Main Lobby while the Gems economy is under construction
+
+    // Soft floating Arctic Sky clouds (Day)
+    const cloudsGroup = new THREE.Group()
+    cloudsGroup.visible = initQ !== 'low' && worldTimeRef.current === 'day'
+    const cloudMat = trackMat(new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.85 }))
+    const cloudGeo = trackGeo(new RoundedBoxGeometry(10, 2.2, 5.5, 2, 0.7))
+    for (let i = 0; i < 6; i++) {
+      const c = new THREE.Mesh(cloudGeo, cloudMat)
+      c.position.set(-48 + i * 19, 25 + (i % 3) * 3.5, -42 + ((i * 23) % 80))
+      cloudsGroup.add(c)
+    }
+    scene.add(cloudsGroup)
+    cloudsGroupRef.current = cloudsGroup
+
+    // Natural starry night sky with Moon (Night — zero neon!)
+    const nightSkyGroup = new THREE.Group()
+    nightSkyGroup.visible = worldTimeRef.current === 'night'
+    const moonMesh = new THREE.Mesh(
+      trackGeo(new THREE.SphereGeometry(4.2, 18, 14)),
+      trackMat(new THREE.MeshBasicMaterial({ color: '#F4F7FF', fog: false })),
+    )
+    moonMesh.position.set(36, 48, -68)
+    nightSkyGroup.add(moonMesh)
+
+    const starGeo = trackGeo(new THREE.OctahedronGeometry(0.42, 0))
+    const starMat = trackMat(new THREE.MeshBasicMaterial({ color: '#E2ECFF', fog: false }))
+    for (let i = 0; i < 28; i++) {
+      const angle = (i / 28) * Math.PI * 2 + (i % 3) * 0.25
+      const dist = 56 + (i % 5) * 9
+      const sy = 28 + (i % 6) * 6.5
+      const st = new THREE.Mesh(starGeo, starMat)
+      st.position.set(Math.cos(angle) * dist, sy, Math.sin(angle) * dist)
+      st.scale.setScalar(0.65 + (i % 4) * 0.22)
+      nightSkyGroup.add(st)
+    }
+    scene.add(nightSkyGroup)
+    nightSkyGroupRef.current = nightSkyGroup
+
+    // === LOCAL PLAYER CLEAN R6 RIG ===
+    const localRig = createR6Rig({
+      avatar: displayedAvatarRef.current,
+      username: usernameRef.current,
+      clanTag: clanTagRef.current,
+      rank: rankRef.current,
+      showNameplate: false,
+      castShadow: initQ !== 'low',
+    })
+    scene.add(localRig.root)
+    localRigRef.current = localRig
+    localRigKeyRef.current = avatarKey(displayedAvatarRef.current)
+
+    interface LobbyMantleState {
+      elapsed: number
+      duration: number
+      startX: number
+      startY: number
+      startZ: number
+      grabX: number
+      grabY: number
+      grabZ: number
+      endX: number
+      endY: number
+      endZ: number
+      faceYaw: number
+    }
+
+    const player = {
+      x: -6,
+      y: 0.2,
+      z: 9,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      rotY: Math.PI,
+      grounded: false,
+      coyoteTimer: 0,
+      jumpBufferTimer: 0,
+      mantle: null as LobbyMantleState | null,
+      mantleCooldown: 0,
+      reachedTerrace: false,
+      visualStepOffset: 0,
+    }
+
+    // Bind sit/stand & spawn reset actions directly to physics player state!
+    const standUpFromBench = () => {
+      const b = seatedBenchRef.current
+      if (!b) return
+      // Step smoothly 1.5m forward off the bench seat
+      player.x = b.x + Math.sin(b.faceAngle) * 1.55
+      player.z = b.z + Math.cos(b.faceAngle) * 1.55
+      player.y = 0.25
+      player.vy = 0
+      seatedBenchRef.current = null
+      setSeatedBench(null)
+      sfx.playClick()
+    }
+
+    const sitOnBench = (b: BenchSpot) => {
+      player.x = b.x + Math.sin(b.faceAngle) * 0.14
+      player.z = b.z + Math.cos(b.faceAngle) * 0.14
+      player.y = b.seatY - 0.36
+      player.vx = 0
+      player.vy = 0
+      player.vz = 0
+      player.rotY = b.faceAngle
+      player.grounded = true
+      activeEmoteRef.current = null
+      setActiveEmote(null)
+      seatedBenchRef.current = b
+      setSeatedBench(b)
+      sfx.playClick()
+    }
+
+    toggleSitActionRef.current = () => {
+      if (seatedBenchRef.current) {
+        standUpFromBench()
+      } else if (nearBenchRef.current) {
+        sitOnBench(nearBenchRef.current)
+      }
+    }
+
+    resetSpawnActionRef.current = () => {
+      seatedBenchRef.current = null
+      setSeatedBench(null)
+      player.x = 0
+      player.y = 0.5
+      player.z = 9
+      player.vx = 0
+      player.vy = 0
+      player.vz = 0
+      player.rotY = Math.PI
+      player.mantle = null
+      player.mantleCooldown = 0
+      player.coyoteTimer = 0
+      player.jumpBufferTimer = 0
+      sfx.playJump()
+    }
+
+    // === REMOTE MULTIPLAYER PLAYERS ===
+    const remotePlayers = new Map<
+      string,
+      { state: RemotePlayerState; rig: R6RigHandle; speechUntil: number }
+    >()
+
+    // Teleport right next to any player in the room ("Meet" button in FreshBlox Menu!)
+    teleportToMemberRef.current = (memberId: string) => {
+      const remote = remotePlayers.get(memberId)
+      if (!remote) return
+      const targetX = remote.state.x
+      const targetY = Math.max(0.25, remote.state.y)
+      const targetZ = remote.state.z
+      const targetName = remote.state.username
+
+      seatedBenchRef.current = null
+      setSeatedBench(null)
+      activeEmoteRef.current = null
+      setActiveEmote(null)
+
+      // Place player 2.3m cleanly beside target facing them
+      const offsetAngle = Math.atan2(player.x - targetX, player.z - targetZ)
+      const destX = Math.max(-33, Math.min(33, targetX + Math.sin(offsetAngle) * 2.35))
+      const destZ = Math.max(-33, Math.min(33, targetZ + Math.cos(offsetAngle) * 2.35))
+      player.x = destX
+      player.y = targetY + 0.15
+      player.z = destZ
+      player.vx = 0
+      player.vy = 0
+      player.vz = 0
+      player.rotY = Math.atan2(targetX - destX, targetZ - destZ)
+      sfx.playJump()
+      showToast(`${t.teleportedTo} ${targetName}`)
+    }
+
+    const mp = new LobbyMultiplayerClient({
+      roomId: roomCode,
+      world: 'lobby',
+      selfId: playerId,
+      onState: (state) => {
+        const existing = remotePlayers.get(state.id)
+        if (!existing) {
+          const rig = createR6Rig({
+            avatar: state.avatar,
+            username: state.username,
+            clanTag: state.clanTag ?? null,
+            rank: state.rank,
+            showNameplate: true,
+            castShadow: qualityRef.current !== 'low',
+          })
+          rig.root.position.set(state.x, state.y, state.z)
+          scene.add(rig.root)
+          remotePlayers.set(state.id, { state, rig, speechUntil: 0 })
+        } else {
+          // Live hot-swap remote player rig whenever a friend changes outfit/hat/face/skin in real time!
+          if (
+            avatarKey(existing.state.avatar) !== avatarKey(state.avatar) ||
+            (existing.state.clanTag ?? null) !== (state.clanTag ?? null)
+          ) {
+            const pos = existing.rig.root.position.clone()
+            const rotY = existing.rig.root.rotation.y
+            scene.remove(existing.rig.root)
+            existing.rig.dispose()
+            const swapped = createR6Rig({
+              avatar: state.avatar,
+              username: state.username,
+              clanTag: state.clanTag ?? null,
+              rank: state.rank,
+              showNameplate: true,
+              castShadow: qualityRef.current !== 'low',
+            })
+            swapped.root.position.copy(pos)
+            swapped.root.rotation.y = rotY
+            scene.add(swapped.root)
+            existing.rig = swapped
+          }
+          existing.state = state
+        }
+      },
+      onLeave: (id) => {
+        const entry = remotePlayers.get(id)
+        if (entry) {
+          scene.remove(entry.rig.root)
+          entry.rig.dispose()
+          remotePlayers.delete(id)
+        }
+      },
+      onChat: (msg) => {
+        setMessages((prev) => [...pruneExpiredChatMessages(prev).slice(-49), msg])
+        if (!chatOpenRef.current) setUnreadCount((n) => n + 1)
+        sfx.playChatPop()
+        const entry = remotePlayers.get(msg.senderId)
+        if (entry) {
+          entry.rig.setSpeech(msg.text)
+          entry.speechUntil = performance.now() + 5500
+        }
+      },
+    })
+    mp.connect()
+    mpRef.current = mp
+
+    // === INPUT HANDLING: KEYBOARD + MOUSE + MULTI-TOUCH ORBIT & PINCH ZOOM ===
+    const keys = new Set<string>()
+    let camYaw = -.43
+    let camPitch = .47
+    let camDist = 13.5
+
+    // Smoothly swing camera to face the player's front when opening Live Wardrobe!
+    focusWardrobeCamRef.current = () => {
+      camYaw = player.rotY + 0.16
+      camPitch = 0.22
+    }
+
+    recenterCamRef.current = () => {
+      camYaw = player.rotY + Math.PI
+      camPitch = 0.32
+      sfx.playClick()
+    }
+
+    const requestLockSafe = () => {
+      if (touchModeRef.current) return
+      if (document.pointerLockElement === renderer.domElement) return
+      try {
+        const res = (renderer.domElement.requestPointerLock as unknown as () => Promise<void> | void)?.()
+        if (res && typeof (res as Promise<void>).catch === 'function') {
+          ;(res as Promise<void>).catch(() => {})
+        }
+      } catch {
+        // Ignore browser rejection when called outside direct user gesture
+      }
+    }
+
+    lockMouseRef.current = () => {
+      requestLockSafe()
+    }
+
+    toggleShiftLockRef.current = () => {
+      if (document.pointerLockElement === renderer.domElement) {
+        exitPointerLockSilently()
+      } else {
+        requestLockSafe()
+      }
+      sfx.playClick()
+    }
+
+    const onPointerLockChange = () => {
+      const locked = document.pointerLockElement === renderer.domElement
+      const wasLocked = shiftLockRef.current
+      shiftLockRef.current = locked
+      setShiftLockActive(locked)
+      if (locked) {
+        programmaticUnlockRef.current = false
+        activePointers.clear()
+        return
+      }
+      if (wasLocked) {
+        pointerLockReleasedAtRef.current = performance.now()
+        if (programmaticUnlockRef.current) {
+          programmaticUnlockRef.current = false
+        } else if (
+          document.visibilityState === 'visible' &&
+          !hubOpenRef.current &&
+          !wardrobeOpenRef.current &&
+          !shortcutsOpenRef.current &&
+          !feedbackOpenRef.current
+        ) {
+          // Single ESC while Mouse Lock was active -> open mini menu immediately!
+          keys.clear()
+          wasLockedBeforeUiRef.current = false
+          setHubTab('overview')
+          setHubOpen(true)
+        }
+      }
+    }
+
+    const activePointers = new Map<number, { x: number; y: number }>()
+    let lastPinchDist = 0
+
+    const isTextFieldFocused = () => {
+      if (chatInputFocusedRef.current) return true
+      const el = document.activeElement
+      if (!el) return false
+      const tag = el.tagName
+      return tag === 'INPUT' || tag === 'TEXTAREA' || (el as HTMLElement).isContentEditable
+    }
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (feedbackOpenRef.current) return
+      const code = e.code
+
+      if (code === 'Escape' && isTextFieldFocused()) {
+        e.preventDefault()
+        ;(document.activeElement as HTMLElement | null)?.blur()
+        chatInputFocusedRef.current = false
+        wasLockedBeforeUiRef.current = false
+        sfx.playClick()
+        return
+      }
+
+      if (isTextFieldFocused()) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'F1'].includes(code)) {
+        e.preventDefault()
+      }
+
+      if (code === 'Escape') {
+        e.preventDefault()
+        wasLockedBeforeUiRef.current = false
+        // Ignore duplicate keydown fired by browsers (e.g. Firefox) right after pointerlockchange already handled the single ESC press
+        if (performance.now() - pointerLockReleasedAtRef.current < 240) {
+          return
+        }
+        if (emoteWheelOpenRef.current) {
+          setEmoteWheelOpen(false)
+          return
+        }
+        if (shortcutsOpenRef.current) {
+          setShortcutsOpen(false)
+          sfx.playClick()
+          return
+        }
+        if (wardrobeOpenRef.current) {
+          setWardrobeOpen(false)
+          setPreviewAvatar({ ...avatarRef.current })
+          sfx.playClick()
+          return
+        }
+        if (hubOpenRef.current) {
+          setHubOpen(false)
+          sfx.playClick()
+          return
+        }
+        setHubTab('overview')
+        setHubOpen(true)
+        sfx.playClick()
+        return
+      }
+
+      // Single-key UI shortcuts (all work cleanly even while Mouse Lock is active!)
+      if (!e.repeat) {
+        if (code === 'KeyT' || code === 'Slash') {
+          e.preventDefault()
+          keys.clear()
+          shortcutActionsRef.current.openChatAndFocus()
+          return
+        }
+        if (code === 'KeyI') {
+          e.preventDefault()
+          keys.clear()
+          shortcutActionsRef.current.toggleWardrobe()
+          return
+        }
+        if (code === 'KeyH') {
+          e.preventDefault()
+          keys.clear()
+          shortcutActionsRef.current.toggleHubTab('overview')
+          return
+        }
+        if (code === 'KeyP') {
+          e.preventDefault()
+          keys.clear()
+          shortcutActionsRef.current.toggleHubTab('players')
+          return
+        }
+        if (code === 'KeyO') {
+          e.preventDefault()
+          keys.clear()
+          shortcutActionsRef.current.toggleHubTab('settings')
+          return
+        }
+        if (code === 'KeyB') {
+          e.preventDefault()
+          keys.clear()
+          shortcutActionsRef.current.openFeedback()
+          return
+        }
+        if (code === 'KeyG') {
+          e.preventDefault()
+          keys.clear()
+          setEmoteWheelOpen((v) => !v)
+          return
+        }
+        if (code === 'KeyK' || code === 'F1' || e.key === '?') {
+          e.preventDefault()
+          keys.clear()
+          shortcutActionsRef.current.toggleShortcuts()
+          return
+        }
+        if (code === 'Tab' || code === 'KeyM') {
+          e.preventDefault()
+          if (hubOpenRef.current || wardrobeOpenRef.current || shortcutsOpenRef.current) {
+            setHubOpen(false)
+            setWardrobeOpen(false)
+            setShortcutsOpen(false)
+            setPreviewAvatar({ ...avatarRef.current })
+          }
+          toggleShiftLockRef.current()
+          return
+        }
+        if (code === 'KeyL') {
+          shortcutActionsRef.current.toggleShiftLockAlign()
+          return
+        }
+        if (code === 'KeyN') {
+          shortcutActionsRef.current.toggleWorldTime()
+          return
+        }
+        if (code === 'KeyF') {
+          shortcutActionsRef.current.toggleFullscreen()
+          return
+        }
+        if (code === 'KeyR') {
+          shortcutActionsRef.current.resetSpawnWithToast()
+          return
+        }
+      }
+
+      if (hubOpenRef.current || shortcutsOpenRef.current) return
+
+      if (code === 'Space') {
+        const activeEl = document.activeElement as HTMLElement | null
+        if (activeEl && activeEl.tagName === 'BUTTON') {
+          activeEl.blur()
+        }
+        if (!e.repeat) {
+          jumpQueuedRef.current = true
+        }
+      }
+      if (code === 'KeyC') {
+        recenterCamRef.current()
+        return
+      }
+      keys.add(code)
+      if (code === 'KeyE') {
+        if (nearPortalRef.current?.action === 'obby') {
+          sfx.playJump()
+          callbacksRef.current.onEnterObby()
+        } else if (nearPortalRef.current?.action === 'arena') {
+          audioEngine.playPortalWarp()
+          callbacksRef.current.onEnterArena?.()
+        } else if (nearPortalRef.current?.action === 'frisbee') {
+          audioEngine.playFrisbeeThrow(0.6)
+          callbacksRef.current.onEnterFrisbee?.()
+        } else if (seatedBenchRef.current || nearBenchRef.current) {
+          toggleSitActionRef.current()
+        }
+      }
+      if (code === 'Digit1') triggerEmote('wave')
+      if (code === 'Digit2') triggerEmote('dance')
+      if (code === 'Digit3') triggerEmote('cheer')
+      if (code === 'Digit4') triggerEmote('sit')
+      if (code === 'Digit5') triggerEmote('spin')
+      if (code === 'Digit6') triggerEmote('backflip')
+    }
+    const onKeyUp = (e: KeyboardEvent) => keys.delete(e.code)
+    const onWindowBlur = () => {
+      keys.clear()
+      jumpQueuedRef.current = false
+      jumpHeldRef.current = false
+    }
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 2) return
+      // Desktop PC: clicking the 3D scene automatically locks the mouse when Mouse Lock mode is enabled!
+      if (
+        !touchModeRef.current &&
+        clickToLockRef.current &&
+        e.pointerType !== 'touch' &&
+        e.button === 0 &&
+        document.pointerLockElement !== renderer.domElement &&
+        !hubOpenRef.current &&
+        !wardrobeOpenRef.current &&
+        !shortcutsOpenRef.current &&
+        !feedbackOpenRef.current
+      ) {
+        const activeEl = document.activeElement as HTMLElement | null
+        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'BUTTON')) {
+          activeEl.blur()
+        }
+        requestLockSafe()
+        return
+      }
+      activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      try {
+        renderer.domElement.setPointerCapture(e.pointerId)
+      } catch {
+        // ignore
+      }
+      if (activePointers.size === 2) {
+        const pts = Array.from(activePointers.values())
+        lastPinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
+      }
+    }
+
+    let lastLockMoveTs = 0
+    const applyPointerLockDelta = (mx: number, my: number, ts: number) => {
+      if (ts === lastLockMoveTs) return
+      lastLockMoveTs = ts
+      if (Math.abs(mx) > 350 || Math.abs(my) > 350) return
+      const s = mouseSensRef.current
+      camYaw -= mx * 0.0038 * s
+      camPitch = Math.max(0.08, Math.min(1.12, camPitch + my * 0.0034 * s))
+    }
+
+    const onLockedMouseMove = (e: MouseEvent) => {
+      if (document.pointerLockElement === renderer.domElement) {
+        applyPointerLockDelta(e.movementX, e.movementY, e.timeStamp)
+      }
+    }
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (document.pointerLockElement === renderer.domElement) {
+        applyPointerLockDelta(e.movementX, e.movementY, e.timeStamp)
+        return
+      }
+
+      const prev = activePointers.get(e.pointerId)
+      if (!prev) return
+
+      const dx = e.clientX - prev.x
+      const dy = e.clientY - prev.y
+      prev.x = e.clientX
+      prev.y = e.clientY
+
+      if (activePointers.size === 1) {
+        const sensitivity = e.pointerType === 'touch' ? 0.0092 : 0.0055 * mouseSensRef.current
+        camYaw -= dx * sensitivity
+        camPitch = Math.max(0.08, Math.min(1.12, camPitch + dy * sensitivity * 0.85))
+      } else if (activePointers.size === 2) {
+        const pts = Array.from(activePointers.values())
+        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
+        if (lastPinchDist > 0) {
+          camDist = Math.max(6.2, Math.min(18, camDist - (dist - lastPinchDist) * 0.03))
+        }
+        lastPinchDist = dist
+      }
+    }
+
+    const onPointerEnd = (e: PointerEvent) => {
+      activePointers.delete(e.pointerId)
+      if (activePointers.size < 2) lastPinchDist = 0
+    }
+
+    const onWheel = (e: WheelEvent) => {
+      camDist = Math.max(6.2, Math.min(18, camDist + e.deltaY * 0.008))
+    }
+
+    const onContext = (e: MouseEvent) => e.preventDefault()
+
+    document.addEventListener('pointerlockchange', onPointerLockChange)
+    document.addEventListener('mousemove', onLockedMouseMove)
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onWindowBlur)
+    renderer.domElement.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerEnd)
+    window.addEventListener('pointercancel', onPointerEnd)
+    renderer.domElement.addEventListener('wheel', onWheel, { passive: true })
+    renderer.domElement.addEventListener('contextmenu', onContext)
+
+    const onResize = () => {
+      if (!container) return
+      const w = container.clientWidth || window.innerWidth
+      const h = container.clientHeight || window.innerHeight
+      camera.aspect = w / h
+      camera.updateProjectionMatrix()
+      renderer.setSize(w, h)
+    }
+    const ro = new ResizeObserver(onResize)
+    ro.observe(container)
+    window.addEventListener('resize', onResize)
+
+    // Pre-allocated scratch vectors
+    const camForward = new THREE.Vector3()
+    const camRight = new THREE.Vector3()
+    const moveVec = new THREE.Vector3()
+    const desiredCamPos = new THREE.Vector3()
+    const lookTarget = new THREE.Vector3()
+
+    // Helper: checks if stepping up onto `targetY` at `(tx, tz)` has clear headroom!
+    const playerR = 0.54
+    const hasHeadroomAt = (tx: number, tz: number, targetY: number): boolean => {
+      for (const b of colliders) {
+        if (tx + playerR > b.minX && tx - playerR < b.maxX && tz + playerR > b.minZ && tz - playerR < b.maxZ) {
+          if (targetY + 3.1 > b.minY + 0.15 && targetY < b.maxY - 0.05) {
+            return false
+          }
+        }
+      }
+      return true
+    }
+
+    let rafId = 0
+    let lastTime = performance.now()
+    let elapsed = 0
+    let lastBroadcast = 0
+    let lastCountUpdate = 0
+    let lastProximityCheck = 0
+    let fpsFrames = 0
+    let fpsLastTick = performance.now()
+
+    const animate = (now: number) => {
+      rafId = requestAnimationFrame(animate)
+      const dt = Math.min(0.05, (now - lastTime) / 1000)
+      lastTime = now
+      elapsed += dt
+
+      // Lightweight FPS meter
+      fpsFrames++
+      if (now - fpsLastTick >= 500) {
+        const measured = Math.round((fpsFrames * 1000) / (now - fpsLastTick))
+        setFpsDisplay(measured)
+        fpsFrames = 0
+        fpsLastTick = now
+      }
+
+      // Combine keyboard + analog virtual thumbstick inputs
+      const inputBlocked = feedbackOpenRef.current
+      let inputX = 0
+      let inputZ = 0
+      if (!inputBlocked) {
+        if (keys.has('KeyW') || keys.has('ArrowUp')) inputZ += 1
+        if (keys.has('KeyS') || keys.has('ArrowDown')) inputZ -= 1
+        if (keys.has('KeyA') || keys.has('ArrowLeft')) inputX -= 1
+        if (keys.has('KeyD') || keys.has('ArrowRight')) inputX += 1
+
+        const stickX = touchMoveRef.current.x
+        const stickY = touchMoveRef.current.y
+        if (Math.abs(stickX) > 0.08 || Math.abs(stickY) > 0.08) {
+          inputX += stickX
+          inputZ -= stickY
+        }
+
+        // Keyboard smooth camera yaw rotation (Q / E when not near bench/portal)
+        if (keys.has('KeyQ')) camYaw += 2.2 * dt
+        if (keys.has('KeyE') && !nearBenchRef.current && !seatedBenchRef.current && nearPortalRef.current?.action !== 'obby') {
+          camYaw -= 2.2 * dt
+        }
+      }
+
+      const isMoving = Math.abs(inputX) > 0.06 || Math.abs(inputZ) > 0.06
+      const holdJump = !inputBlocked && (keys.has('Space') || jumpHeldRef.current)
+      if (!inputBlocked && jumpQueuedRef.current) {
+        player.jumpBufferTimer = 0.18
+        jumpQueuedRef.current = false
+      } else {
+        player.jumpBufferTimer = Math.max(0, player.jumpBufferTimer - dt)
+      }
+      player.mantleCooldown = Math.max(0, player.mantleCooldown - dt)
+
+      // If seated on a bench, moving or jumping stands you right back up!
+      if (seatedBenchRef.current) {
+        if (isMoving || holdJump || player.jumpBufferTimer > 0) {
+          const triggeredJump = holdJump || player.jumpBufferTimer > 0
+          standUpFromBench()
+          if (triggeredJump) {
+            player.vy = 10.8
+            player.grounded = false
+            player.coyoteTimer = 0
+            player.jumpBufferTimer = 0
+            sfx.playJump()
+          }
+        }
+      }
+
+      const isSprinting =
+        keys.has('ShiftLeft') ||
+        keys.has('ShiftRight') ||
+        sprintLockedRef.current ||
+        touchMoveRef.current.autoSprint
+      const speed = isSprinting ? 12.6 : 7.8
+
+      if (!seatedBenchRef.current) {
+        if (player.mantle) {
+          // === ACTIVE LEDGE GRAB & CLIMB-UP MANTLE ===
+          const m = player.mantle
+          m.elapsed += dt
+          const p = Math.min(1, m.elapsed / m.duration)
+          let diff = m.faceYaw - player.rotY
+          while (diff > Math.PI) diff -= Math.PI * 2
+          while (diff < -Math.PI) diff += Math.PI * 2
+          player.rotY += diff * Math.min(1, dt * 22)
+
+          if (p < 0.3) {
+            const k = 1 - Math.pow(1 - p / 0.3, 2)
+            player.x = m.startX + (m.grabX - m.startX) * k
+            player.y = m.startY + (m.grabY - m.startY) * k
+            player.z = m.startZ + (m.grabZ - m.startZ) * k
+          } else {
+            const t = (p - 0.3) / 0.7
+            const ty = 1 - Math.pow(1 - Math.min(1, t / 0.76), 2)
+            const rawXZ = Math.max(0, Math.min(1, (t - 0.22) / 0.78))
+            const txz = rawXZ < 0.5 ? 4 * rawXZ * rawXZ * rawXZ : 1 - Math.pow(-2 * rawXZ + 2, 3) / 2
+            player.x = m.grabX + (m.endX - m.grabX) * txz
+            player.y = m.grabY + (m.endY - m.grabY) * ty
+            player.z = m.grabZ + (m.endZ - m.grabZ) * txz
+          }
+          player.vx = 0
+          player.vy = 0
+          player.vz = 0
+          player.grounded = false
+          player.visualStepOffset = 0
+
+          if (p >= 1) {
+            player.x = m.endX
+            player.y = m.endY
+            player.z = m.endZ
+            player.vy = 0
+            player.grounded = true
+            player.coyoteTimer = 0.15
+            player.mantle = null
+            player.mantleCooldown = 0.14
+            if (player.jumpBufferTimer > 0) {
+              player.vy = 11.4
+              player.grounded = false
+              player.coyoteTimer = 0
+              player.jumpBufferTimer = 0
+              sfx.playJump()
+            }
+          }
+        } else {
+          if (isMoving && activeEmoteRef.current) {
+            activeEmoteRef.current = null
+            setActiveEmote(null)
+          }
+
+          camForward.set(-Math.sin(camYaw), 0, -Math.cos(camYaw))
+          camRight.set(Math.cos(camYaw), 0, -Math.sin(camYaw))
+          moveVec.set(0, 0, 0).addScaledVector(camForward, inputZ).addScaledVector(camRight, inputX)
+          const mag = moveVec.length()
+          if (mag > 1) moveVec.divideScalar(mag)
+
+          player.vx = moveVec.x * speed
+          player.vz = moveVec.z * speed
+
+          if (shiftLockRef.current && shiftLockAlignRef.current) {
+            const targetAngle = camYaw + Math.PI
+            let diff = targetAngle - player.rotY
+            while (diff > Math.PI) diff -= Math.PI * 2
+            while (diff < -Math.PI) diff += Math.PI * 2
+            player.rotY += diff * Math.min(1, dt * 18)
+          } else if (isMoving) {
+            const targetAngle = Math.atan2(player.vx, player.vz)
+            let diff = targetAngle - player.rotY
+            while (diff > Math.PI) diff -= Math.PI * 2
+            while (diff < -Math.PI) diff += Math.PI * 2
+            player.rotY += diff * Math.min(1, dt * 14)
+          }
+
+          // Coyote Time (150ms) + Jump Buffer (180ms) + Instant Hold-to-Jump (ZERO felt cooldown!)
+          if (player.grounded) {
+            player.coyoteTimer = 0.15
+          } else {
+            player.coyoteTimer = Math.max(0, player.coyoteTimer - dt)
+          }
+
+          const tryLobbyJump = () => {
+            if (inputBlocked) return false
+            const canJump = player.grounded || player.coyoteTimer > 0
+            const wantsJump = player.jumpBufferTimer > 0 || (holdJump && player.grounded)
+            if (canJump && wantsJump) {
+              player.vy = 11.4
+              player.grounded = false
+              player.coyoteTimer = 0
+              player.jumpBufferTimer = 0
+              if (activeEmoteRef.current) {
+                activeEmoteRef.current = null
+                setActiveEmote(null)
+              }
+              sfx.playJump()
+              return true
+            }
+            return false
+          }
+
+          tryLobbyJump()
+
+          // === SUB-STEPPED SOLID 3D COLLISION + AUTO-STEP + LEDGE GRAB & MANTLE ===
+          const PLAYER_H = 3.15
+          const subSteps = Math.max(1, Math.min(4, Math.ceil(dt / 0.011)))
+          const sdt = dt / subSteps
+
+          for (let step = 0; step < subSteps; step++) {
+            player.vy -= 28 * sdt
+
+            const prevX = player.x
+            const prevY = player.y
+            const prevZ = player.z
+            let autoSteppedToY = prevY
+            let startedMantle = false
+
+            const tryTriggerLobbyMantle = (b: AABB, nx: number, nz: number, curX: number, curZ: number) => {
+              if (player.grounded || player.mantleCooldown > 0 || player.vy > 5.8) return false
+              const ledgeDelta = b.maxY - prevY
+              if (ledgeDelta < 0.28 || ledgeDelta > 2.35) return false
+              // Ignore narrow tree trunks so players don't climb straight up tree bark
+              if (b.maxX - b.minX < 1.45 && b.maxZ - b.minZ < 1.45) return false
+
+              const towardDot =
+                (isMoving ? moveVec.x * -nx + moveVec.z * -nz : 0) +
+                (Math.sin(player.rotY) * -nx + Math.cos(player.rotY) * -nz) * 0.4
+              if (towardDot <= -0.15 && !holdJump && player.jumpBufferTimer <= 0) return false
+
+              const halfW = (b.maxX - b.minX) * 0.5
+              const halfD = (b.maxZ - b.minZ) * 0.5
+              const cx = (b.minX + b.maxX) * 0.5
+              const cz = (b.minZ + b.maxZ) * 0.5
+              const grabX = nx !== 0 ? cx + nx * (halfW + playerR + 0.02) : Math.max(b.minX + 0.25, Math.min(b.maxX - 0.25, curX))
+              const grabZ = nz !== 0 ? cz + nz * (halfD + playerR + 0.02) : Math.max(b.minZ + 0.25, Math.min(b.maxZ - 0.25, curZ))
+              const insetX = Math.min(0.55, halfW * 0.72)
+              const insetZ = Math.min(0.55, halfD * 0.72)
+              const endX = nx !== 0 ? cx + nx * Math.max(0, halfW - insetX) : Math.max(b.minX + 0.28, Math.min(b.maxX - 0.28, curX))
+              const endZ = nz !== 0 ? cz + nz * Math.max(0, halfD - insetZ) : Math.max(b.minZ + 0.28, Math.min(b.maxZ - 0.28, curZ))
+
+              if (!hasHeadroomAt(endX, endZ, b.maxY)) return false
+
+              player.mantle = {
+                elapsed: 0,
+                duration: 0.34,
+                startX: prevX,
+                startY: prevY,
+                startZ: prevZ,
+                grabX,
+                grabY: Math.min(b.maxY - 1.35, Math.max(prevY, b.maxY - 1.75)),
+                grabZ,
+                endX,
+                endY: b.maxY,
+                endZ,
+                faceYaw: Math.atan2(-nx, -nz),
+              }
+              if (activeEmoteRef.current) {
+                activeEmoteRef.current = null
+                setActiveEmote(null)
+              }
+              sfx.playLedgeGrab()
+              return true
+            }
+
+            // Move X with solid side wall & auto-step / mantle check
+            player.x += player.vx * sdt
+            for (const b of colliders) {
+              if (prevY + PLAYER_H > b.minY + 0.08 && prevY < b.maxY - 0.06) {
+                if (
+                  player.x + playerR > b.minX &&
+                  player.x - playerR < b.maxX &&
+                  player.z + playerR > b.minZ &&
+                  player.z - playerR < b.maxZ
+                ) {
+                  const ledgeHeight = b.maxY - prevY
+                  if (player.grounded && ledgeHeight > 0 && ledgeHeight <= STEP_HEIGHT && hasHeadroomAt(player.x, player.z, b.maxY)) {
+                    autoSteppedToY = Math.max(autoSteppedToY, b.maxY)
+                  } else {
+                    const nx = prevX >= (b.minX + b.maxX) * 0.5 ? 1 : -1
+                    if (tryTriggerLobbyMantle(b, nx, 0, player.x, player.z)) {
+                      startedMantle = true
+                      break
+                    }
+                    if (nx < 0) player.x = b.minX - playerR - 0.002
+                    else player.x = b.maxX + playerR + 0.002
+                  }
+                }
+              }
+            }
+            if (startedMantle) break
+
+            // Move Z with solid side wall & auto-step / mantle check
+            player.z += player.vz * sdt
+            for (const b of colliders) {
+              if (prevY + PLAYER_H > b.minY + 0.08 && prevY < b.maxY - 0.06) {
+                if (
+                  player.x + playerR > b.minX &&
+                  player.x - playerR < b.maxX &&
+                  player.z + playerR > b.minZ &&
+                  player.z - playerR < b.maxZ
+                ) {
+                  const ledgeHeight = b.maxY - prevY
+                  if (player.grounded && ledgeHeight > 0 && ledgeHeight <= STEP_HEIGHT && hasHeadroomAt(player.x, player.z, b.maxY)) {
+                    autoSteppedToY = Math.max(autoSteppedToY, b.maxY)
+                  } else {
+                    const nz = prevZ >= (b.minZ + b.maxZ) * 0.5 ? 1 : -1
+                    if (tryTriggerLobbyMantle(b, 0, nz, player.x, player.z)) {
+                      startedMantle = true
+                      break
+                    }
+                    if (nz < 0) player.z = b.minZ - playerR - 0.002
+                    else player.z = b.maxZ + playerR + 0.002
+                  }
+                }
+              }
+            }
+            if (startedMantle) break
+
+            if (autoSteppedToY > prevY) {
+              const delta = autoSteppedToY - prevY
+              player.y = autoSteppedToY
+              player.visualStepOffset -= delta
+              player.vy = Math.max(0, player.vy)
+            }
+
+            // Move Y: Land on tops + Ceiling bump (no head clipping under arches/ledges!)
+            player.y += player.vy * sdt
+            player.grounded = false
+            for (const b of colliders) {
+              if (
+                player.x + playerR > b.minX &&
+                player.x - playerR < b.maxX &&
+                player.z + playerR > b.minZ &&
+                player.z - playerR < b.maxZ
+              ) {
+                if (player.vy <= 0 && prevY >= b.maxY - STEP_HEIGHT && player.y <= b.maxY + 0.05) {
+                  player.y = b.maxY
+                  player.vy = 0
+                  player.grounded = true
+                } else if (player.vy > 0 && prevY + PLAYER_H <= b.minY + 0.24 && player.y + PLAYER_H >= b.minY) {
+                  player.y = b.minY - PLAYER_H
+                  player.vy = 0
+                }
+              }
+            }
+
+            if (player.grounded) {
+              player.coyoteTimer = 0.15
+              // Instant re-jump on exact landing frame if Space/Jump was buffered or held!
+              tryLobbyJump()
+            }
+          }
+
+          // Decay visual step smoothing quickly
+          player.visualStepOffset *= Math.max(0, 1 - dt * 18)
+
+          // Plaza boundary & safety respawn
+          player.x = Math.max(-35, Math.min(35, player.x))
+          player.z = Math.max(-35, Math.min(35, player.z))
+          if (player.y < -12) {
+            player.x = 0
+            player.y = 1.5
+            player.z = 9
+            player.vy = 0
+          }
+
+          // Jump-Pads
+          for (const jp of jumpPads) {
+            jp.ring.scale.setScalar(1 + Math.sin(elapsed * 5) * 0.06)
+            const dSq = (player.x - jp.x) ** 2 + (player.z - jp.z) ** 2
+            if (dSq < jp.radius * jp.radius && Math.abs(player.y - jp.y) < 0.7 && player.vy <= 1) {
+              player.vy = jp.boost
+              player.grounded = false
+              player.coyoteTimer = 0
+              sfx.playJumpPad()
+              callbacksRef.current.onJumpPadUsed()
+            }
+          }
+        }
+      }
+
+      // Interactive proximity checks (every ~120ms so React never re-renders unnecessarily!)
+      if (now - lastProximityCheck > 120) {
+        lastProximityCheck = now
+        let closestBench: BenchSpot | null = null
+        let bestDistSq = 2.65 * 2.65
+        for (const b of benches) {
+          const dSq = (player.x - b.x) ** 2 + (player.z - b.z) ** 2
+          if (dSq < bestDistSq) {
+            bestDistSq = dSq
+            closestBench = b
+          }
+        }
+        if (closestBench?.id !== nearBenchRef.current?.id) {
+          nearBenchRef.current = closestBench
+          setNearBench(closestBench)
+        }
+
+        let foundPortal: { name: string; action?: 'obby' | 'arena' | 'frisbee' } | null = null
+        for (const pz of portalZones) {
+          const dSq = (player.x - pz.x) ** 2 + (player.z - pz.z) ** 2
+          if (dSq < 4.4 * 4.4) {
+            foundPortal = { name: pz.name, action: pz.action }
+            break
+          }
+        }
+        if (foundPortal?.name !== nearPortalRef.current?.name) {
+          nearPortalRef.current = foundPortal
+          setNearPortalInfo(foundPortal)
+        }
+      }
+
+      // Audio 2.0: Subtle portal proximity hum + dynamic footsteps (NO fountain noise!)
+      const distNearestPortal = Math.min(
+        Math.hypot(player.x + 11, player.z + 26),
+        Math.hypot(player.x, player.z + 28),
+        Math.hypot(player.x - 11, player.z + 26),
+      )
+      audioEngine.setSpatialLoopLevel('portal', Math.max(0, 1 - distNearestPortal / 11))
+      const horizSpeedLobby = Math.hypot(player.vx, player.vz)
+      if (player.grounded && horizSpeedLobby > 1.8 && !seatedBenchRef.current) {
+        const stepInterval = horizSpeedLobby > 10 ? 0.25 : 0.36
+        if (Math.floor(elapsed / stepInterval) !== Math.floor((elapsed - dt) / stepInterval)) {
+          audioEngine.playFootstep(Math.abs(player.x) > 17 || Math.abs(player.z) > 19 ? 'grass' : 'stone', horizSpeedLobby > 10)
+        }
+      }
+
+      // Reactive South Dance Stage glow when player steps on it!
+      const onStage = Math.abs(player.x) < 6.2 && player.z > 19.6 && player.z < 28.4 && player.y >= 0.75
+      danceFloorMat.emissiveIntensity = onStage ? 0.55 + Math.sin(elapsed * 8) * 0.25 : 0.35
+
+      // Sky Observation Terrace milestone
+      if (!player.reachedTerrace && player.y >= 7.0 && player.x > 21 && player.z > 9) {
+        player.reachedTerrace = true
+        sfx.playQuestClaim()
+        callbacksRef.current.onReachTerrace()
+        showToast(t.terraceUnlocked)
+      }
+
+      // Animate 3D FreshBlox Logo Statue, terrace beacon & clouds
+      town.update(elapsed)
+      terraceBeacon.rotation.y = -elapsed * 1.4
+      if (cloudsGroup.visible) {
+        cloudsGroup.children.forEach((c, idx) => {
+          c.position.x += dt * (0.42 + (idx % 3) * 0.14)
+          if (c.position.x > 65) c.position.x = -65
+        })
+      }
+
+      // Emote timer & local R6 pose
+      if (activeEmoteRef.current) {
+        emoteTimerRef.current -= dt
+        if (emoteTimerRef.current <= 0) {
+          activeEmoteRef.current = null
+          setActiveEmote(null)
+        }
+      }
+
+      let currentPose: PlayerPose = 'idle'
+      if (player.mantle) currentPose = 'mantle'
+      else if (seatedBenchRef.current) currentPose = 'sit'
+      else if (!player.grounded) currentPose = player.vy > 0 ? 'jump' : 'fall'
+      else if (activeEmoteRef.current) currentPose = activeEmoteRef.current
+      else if (isMoving) currentPose = isSprinting ? 'run' : 'walk'
+
+      if (localRigRef.current) {
+        localRigRef.current.root.position.set(player.x, player.y + player.visualStepOffset, player.z)
+        localRigRef.current.root.rotation.y = player.rotY
+        localRigRef.current.update(dt, elapsed, currentPose)
+      }
+
+      // Interpolate remote multiplayer peers
+      for (const [id, entry] of remotePlayers.entries()) {
+        if (now - entry.state.lastSeen > 12000) {
+          scene.remove(entry.rig.root)
+          entry.rig.dispose()
+          remotePlayers.delete(id)
+          continue
+        }
+        entry.rig.root.position.x += (entry.state.x - entry.rig.root.position.x) * Math.min(1, dt * 12)
+        entry.rig.root.position.y += (entry.state.y - entry.rig.root.position.y) * Math.min(1, dt * 12)
+        entry.rig.root.position.z += (entry.state.z - entry.rig.root.position.z) * Math.min(1, dt * 12)
+        entry.rig.root.rotation.y = entry.state.rotY
+        entry.rig.update(dt, elapsed, entry.state.pose)
+        if (entry.speechUntil > 0 && now > entry.speechUntil) {
+          entry.rig.setSpeech(null)
+          entry.speechUntil = 0
+        }
+      }
+
+      // Broadcast local state at ~15 Hz
+      if (now - lastBroadcast > 66) {
+        lastBroadcast = now
+        mp.broadcastState({
+          id: playerId,
+          username: usernameRef.current,
+          clanTag: clanTagRef.current,
+          rank: rankRef.current,
+          x: player.x,
+          y: player.y,
+          z: player.z,
+          rotY: player.rotY,
+          pose: currentPose,
+          avatar: avatarRef.current,
+          lastSeen: now,
+        })
+      }
+
+      if (now - lastCountUpdate > 800) {
+        lastCountUpdate = now
+        const nextRoster: LobbyRosterEntry[] = [
+          { id: playerId, username: usernameRef.current, rank: rankRef.current, isSelf: true },
+        ]
+        for (const entry of remotePlayers.values()) {
+          nextRoster.push({
+            id: entry.state.id,
+            username: entry.state.username,
+            rank: entry.state.rank,
+          })
+        }
+        setRoster(nextRoster)
+        setOnlineCount(nextRoster.length)
+      }
+
+      // Smooth 3rd-person orbit camera (frames avatar neatly on the left when Live Wardrobe is open + avoids clipping inside central statue plinth!)
+      const targetVisualY = player.y + player.visualStepOffset
+      const inWardrobe = wardrobeOpenRef.current
+      const lobbySpeed = Math.hypot(player.vx, player.vz)
+      const targetLobbyFov = THREE.MathUtils.clamp(fovRef.current + (!inWardrobe && lobbySpeed > 11.5 ? 3.8 : 0), 58, 94)
+      if (Math.abs(camera.fov - targetLobbyFov) > 0.08) {
+        camera.fov = THREE.MathUtils.lerp(camera.fov, targetLobbyFov, Math.min(1, dt * 8))
+        camera.updateProjectionMatrix()
+      }
+      const effectiveDist = inWardrobe ? 5.85 : camDist
+      const rightX = Math.cos(camYaw)
+      const rightZ = -Math.sin(camYaw)
+      const sideOffset = inWardrobe ? 1.15 : 0
+
+      let camX = player.x + rightX * sideOffset + Math.sin(camYaw) * Math.cos(camPitch) * effectiveDist
+      let camY = Math.max(1.2, targetVisualY + (inWardrobe ? 2.15 : 2.45) + Math.sin(camPitch) * effectiveDist)
+      let camZ = player.z + rightZ * sideOffset + Math.cos(camYaw) * Math.cos(camPitch) * effectiveDist
+      // Keep camera from clipping inside the central 3D FreshBlox Monument plinth
+      const monRad = Math.hypot(camX, camZ)
+      if (monRad < 4.6 && camY < 4.0) {
+        const pushScale = 4.65 / Math.max(0.01, monRad)
+        camX *= pushScale
+        camZ *= pushScale
+      }
+      desiredCamPos.set(camX, camY, camZ)
+      camera.position.lerp(desiredCamPos, 1 - Math.exp(-12 * dt))
+      lookTarget.set(
+        player.x + rightX * sideOffset,
+        targetVisualY + (inWardrobe ? 1.95 : 2.2),
+        player.z + rightZ * sideOffset,
+      )
+      camera.lookAt(lookTarget)
+
+      // U-13: Animate live TOP 3 Parkour Champions on Podium
+      for (const ch of championRigs) {
+        ch.rig.update(dt, elapsed + ch.offset, ch.pose)
+      }
+
+      // U-12: Dynamic Weather particles (snow / meteor stars)
+      const activeWeather = weatherRef.current
+      snowPoints.visible = activeWeather === 'snow'
+      meteorPoints.visible = activeWeather === 'stars'
+      if (activeWeather === 'snow') {
+        const attr = snowGeo.getAttribute('position') as THREE.BufferAttribute
+        const arr = attr.array as Float32Array
+        for (let i = 0; i < SNOW_COUNT; i++) {
+          const idx = i * 3
+          arr[idx] += Math.sin(elapsed * 0.9 + i) * dt * 0.65
+          arr[idx + 1] -= dt * (2.6 + (i % 5) * 0.35)
+          if (arr[idx + 1] < 0.2) {
+            arr[idx + 1] = 34
+            arr[idx] = (Math.random() - 0.5) * 90
+            arr[idx + 2] = (Math.random() - 0.5) * 90
+          }
+        }
+        attr.needsUpdate = true
+      } else if (activeWeather === 'stars') {
+        const attr = meteorGeo.getAttribute('position') as THREE.BufferAttribute
+        const arr = attr.array as Float32Array
+        for (let i = 0; i < METEOR_COUNT; i++) {
+          const idx = i * 3
+          arr[idx] -= dt * 7.2
+          arr[idx + 1] -= dt * 5.8
+          arr[idx + 2] += dt * 2.1
+          if (arr[idx + 1] < 4) {
+            arr[idx] = (Math.random() - 0.5) * 110 + 20
+            arr[idx + 1] = 42 + Math.random() * 14
+            arr[idx + 2] = (Math.random() - 0.5) * 110
+          }
+        }
+        attr.needsUpdate = true
+      }
+
+      // U-12: Smooth Automatic Day / Sunset / Night Cycle (~90s full loop)
+      if (autoDayCycleRef.current) {
+        const phase = (elapsed * 0.07) % (Math.PI * 2)
+        const sunElev = Math.sin(phase) // -1 night .. +1 noon
+        if (sunElev >= 0) {
+          const tSunset = Math.pow(1 - sunElev, 2.2)
+          cycleSkyCol.copy(daySkyCol).lerp(sunsetSkyCol, tSunset * 0.8)
+        } else {
+          const tNight = Math.min(1, -sunElev * 1.4)
+          cycleSkyCol.copy(sunsetSkyCol).lerp(nightSkyCol, tNight)
+        }
+        scene.background = cycleSkyCol
+        if (scene.fog instanceof THREE.Fog) scene.fog.color.copy(cycleSkyCol)
+        sun.intensity = Math.max(0.28, 0.35 + Math.max(0, sunElev) * 0.9)
+        sun.position.set(Math.cos(phase) * 32, Math.max(6, 26 * Math.abs(sunElev) + 6), 18)
+        hemi.intensity = Math.max(0.45, 0.52 + Math.max(0, sunElev) * 0.55)
+        if (nightSkyGroupRef.current) nightSkyGroupRef.current.visible = sunElev < 0.08
+      }
+
+      // Dynamic camera FOV is smoothly updated in camera block above (incorporating fovRef.current + sprint boost)
+
+      renderer.render(scene, camera)
+    }
+
+    rafId = requestAnimationFrame(animate)
+
+    return () => {
+      disposedFlag = true
+      cancelAnimationFrame(rafId)
+      for (const ch of championRigs) {
+        podiumGroup.remove(ch.rig.root)
+        ch.rig.dispose()
+      }
+      ro.disconnect()
+      mp.disconnect()
+      if (document.pointerLockElement === renderer.domElement) {
+        exitPointerLockSilently()
+      }
+      document.removeEventListener('pointerlockchange', onPointerLockChange)
+      document.removeEventListener('mousemove', onLockedMouseMove)
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onWindowBlur)
+      window.removeEventListener('resize', onResize)
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerEnd)
+      window.removeEventListener('pointercancel', onPointerEnd)
+      renderer.domElement.removeEventListener('wheel', onWheel)
+      renderer.domElement.removeEventListener('contextmenu', onContext)
+
+      localRigRef.current?.dispose()
+      localRigRef.current = null
+      town.dispose()
+      for (const entry of remotePlayers.values()) entry.rig.dispose()
+      for (const d of disposables) d.dispose()
+      renderer.dispose()
+      rendererRef.current = null
+      hemiLightRef.current = null
+      sunLightRef.current = null
+      sceneRef.current = null
+      cloudsGroupRef.current = null
+      nightSkyGroupRef.current = null
+    }
+  }, [roomCode, playerId, lang, showToast, t.terraceUnlocked, triggerEmote])
+
+  const emotesList: Array<{
+    key: string
+    pose: PlayerPose
+    label: string
+    icon: React.ComponentType<{ className?: string }>
+  }> = [
+    { key: '1', pose: 'wave', label: t.emotes.wave, icon: Hand },
+    { key: '2', pose: 'dance', label: t.emotes.dance, icon: Music },
+    { key: '3', pose: 'cheer', label: t.emotes.cheer, icon: PartyPopper },
+    { key: '4', pose: 'sit', label: t.emotes.sit, icon: Armchair },
+    { key: '5', pose: 'spin', label: t.emotes.spin, icon: RefreshCw },
+    { key: '6', pose: 'backflip', label: t.emotes.backflip, icon: Sparkles },
+  ]
+
+  return (
+    <div
+      className="fixed inset-x-0 z-30 w-full overflow-hidden bg-sky-200 select-none"
+      style={{
+        top: vp.offsetTop,
+        height: vp.height,
+        overscrollBehavior: 'none',
+      }}
+    >
+      {/* 3D Canvas Host */}
+      <div ref={mountRef} className="h-full w-full cursor-grab active:cursor-grabbing" style={{ touchAction: 'none' }} />
+
+      {/* === MINIMALIST ICON-FIRST TOP HUD === */}
+      <div
+        className="pointer-events-none absolute top-0 inset-x-0 z-20 flex flex-nowrap items-center justify-between gap-2"
+        style={{
+          paddingTop: 'max(0.5rem, calc(env(safe-area-inset-top) + 0.35rem))',
+          paddingLeft: 'max(0.6rem, calc(env(safe-area-inset-left) + 0.4rem))',
+          paddingRight: 'max(0.6rem, calc(env(safe-area-inset-right) + 0.4rem))',
+        }}
+      >
+        {/* Left glass dock: Menu (H) · Chat (T) · Players (P) */}
+        <div className="pointer-events-auto flex h-10 items-center gap-0.5 rounded-2xl border border-white/15 bg-slate-950/70 p-1 shadow-lg backdrop-blur-xl">
+          <button
+            type="button"
+            onClick={() => {
+              setHubOpen((open) => {
+                const next = !open
+                if (next) {
+                  setHubTab('overview')
+                  setWardrobeOpen(false)
+                  setShortcutsOpen(false)
+                  if (touchMode) setChatOpen(false)
+                }
+                return next
+              })
+              sfx.playClick()
+            }}
+            title="Menu (H / Esc)"
+            aria-label="Menu"
+            className={`relative flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+              hubOpen ? 'bg-sky-500/35 ring-1 ring-sky-300/60' : 'hover:bg-white/10'
+            }`}
+          >
+            <FreshBloxLogo size={22} />
+            {!touchMode && (
+              <span className="pointer-events-none absolute right-0.5 bottom-0.5 font-mono text-[8px] font-black leading-none text-sky-200/80">
+                H
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setChatOpen((open) => {
+                const next = !open
+                if (next) {
+                  setUnreadCount(0)
+                  setHubOpen(false)
+                  setShortcutsOpen(false)
+                  if (touchMode) setWardrobeOpen(false)
+                }
+                return next
+              })
+              sfx.playClick()
+            }}
+            title={`${t.chatTitle} (T)`}
+            aria-label={t.chatTitle}
+            className={`relative flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+              chatOpen ? 'bg-sky-500/30 text-white' : 'text-sky-100/90 hover:bg-white/10'
+            }`}
+          >
+            <MessageSquare className="h-4 w-4 text-sky-300" />
+            {!touchMode && (
+              <span className="pointer-events-none absolute right-0.5 bottom-0.5 font-mono text-[8px] font-black leading-none text-sky-200/75">
+                T
+              </span>
+            )}
+            {unreadCount > 0 && !chatOpen && (
+              <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-400 px-1 text-[9px] font-black text-slate-950">
+                {unreadCount}
+              </span>
+            )}
+          </button>
+
+          <div className="mx-0.5 h-4 w-[1px] bg-white/15" />
+
+          <button
+            type="button"
+            onClick={() => {
+              setHubTab('players')
+              setHubOpen((o) => (o && hubTab === 'players' ? false : true))
+              setWardrobeOpen(false)
+              setShortcutsOpen(false)
+              sfx.playClick()
+            }}
+            title={`#${roomCode} · ${lang === 'pl' ? 'Gracze' : 'Players'} (P)`}
+            aria-label={lang === 'pl' ? 'Gracze' : 'Players'}
+            className="relative flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs font-extrabold text-sky-100 hover:bg-white/10 active:scale-95 transition cursor-pointer"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            <Users className="h-3.5 w-3.5 text-sky-300" />
+            <span className="font-mono text-[11px]">{onlineCount}</span>
+            {!touchMode && (
+              <span className="font-mono text-[8px] font-black text-sky-200/65">P</span>
+            )}
+          </button>
+        </div>
+
+        {/* Right glass dock: Parkour · Wardrobe (I) · Mouse Lock (Tab) · Feedback (B) · Shortcuts (K) */}
+        <div className="pointer-events-auto flex h-10 items-center gap-0.5 rounded-2xl border border-white/15 bg-slate-950/70 p-1 shadow-lg backdrop-blur-xl">
+          <button
+            type="button"
+            onClick={() => {
+              sfx.playClick()
+              onEnterObby()
+            }}
+            title="Parkour"
+            aria-label="Parkour"
+            className="flex h-8 items-center gap-1 rounded-xl bg-amber-500/18 px-2.5 text-[11px] font-extrabold text-amber-200 hover:bg-amber-500/30 active:scale-95 transition cursor-pointer"
+          >
+            <Flag className="h-3.5 w-3.5 text-amber-300 shrink-0" />
+            <span className="hidden sm:inline">Parkour</span>
+          </button>
+
+          <div className="mx-0.5 h-4 w-[1px] bg-white/15" />
+
+          <button
+            type="button"
+            onClick={() => (wardrobeOpen ? closeLiveWardrobe() : openLiveWardrobe())}
+            title={`${t.quickAvatar} (I)`}
+            aria-label={t.quickAvatar}
+            className={`relative flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+              wardrobeOpen ? 'bg-sky-500/40 text-white ring-1 ring-sky-300/60' : 'text-sky-100 hover:bg-white/10'
+            }`}
+          >
+            <Shirt className="h-4 w-4 text-sky-300" />
+            {!touchMode && (
+              <span className="pointer-events-none absolute right-0.5 bottom-0.5 font-mono text-[8px] font-black leading-none text-sky-200/75">
+                I
+              </span>
+            )}
+          </button>
+
+          {!touchMode && (
+            <button
+              type="button"
+              onClick={() => toggleShiftLockRef.current()}
+              title={
+                shiftLockActive
+                  ? lang === 'pl'
+                    ? 'Zwolnij mysz (Tab / Esc)'
+                    : 'Release mouse (Tab / Esc)'
+                  : lang === 'pl'
+                    ? 'Lock myszy (Tab / M)'
+                    : 'Mouse Lock (Tab / M)'
+              }
+              aria-label="Mouse Lock"
+              className={`relative flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+                shiftLockActive
+                  ? 'bg-sky-400 text-slate-950 shadow'
+                  : 'text-sky-100 hover:bg-white/10'
+              }`}
+            >
+              <Crosshair className={`h-4 w-4 ${shiftLockActive ? 'text-slate-950' : 'text-sky-300'}`} />
+            </button>
+          )}
+
+          {onOpenFeedback && (
+            <button
+              type="button"
+              onClick={() => {
+                sfx.playClick()
+                onOpenFeedback(`Lobby Główne (${roomCode})`)
+              }}
+              title={lang === 'pl' ? 'Zgłoś błąd / pomysł (B)' : 'Feedback (B)'}
+              aria-label={lang === 'pl' ? 'Zgłoś' : 'Feedback'}
+              className="relative flex h-8 w-9 items-center justify-center rounded-xl text-sky-100 hover:bg-white/10 active:scale-95 transition cursor-pointer"
+            >
+              <MessageSquarePlus className="h-4 w-4 text-sky-300" />
+              {!touchMode && (
+                <span className="pointer-events-none absolute right-0.5 bottom-0.5 font-mono text-[8px] font-black leading-none text-sky-200/75">
+                  B
+                </span>
+              )}
+            </button>
+          )}
+
+          {!touchMode && (
+            <button
+              type="button"
+              onClick={() => {
+                setHubOpen(false)
+                setWardrobeOpen(false)
+                setShortcutsOpen((v) => !v)
+                sfx.playClick()
+              }}
+              title={lang === 'pl' ? 'Skróty klawiszowe (K)' : 'Shortcuts (K)'}
+              aria-label="Shortcuts"
+              className={`relative hidden sm:flex h-8 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+                shortcutsOpen ? 'bg-sky-500/40 text-white' : 'text-sky-100 hover:bg-white/10'
+              }`}
+            >
+              <Keyboard className="h-4 w-4 text-sky-300" />
+              <span className="pointer-events-none absolute right-0.5 bottom-0.5 font-mono text-[8px] font-black leading-none text-sky-200/75">
+                K
+              </span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* === LIVE IN-GAME WARDROBE DRAWER (Change outfits, hats, faces, wings, pets & trails without leaving 3D!) === */}
+      {wardrobeOpen && (
+        <InGameWardrobeDrawer
+          lang={lang}
+          freshGems={freshGems}
+          ownedAvatar={avatar}
+          previewAvatar={previewAvatar}
+          unlockedOutfits={unlockedOutfits}
+          unlockedHats={unlockedHats}
+          unlockedFaces={unlockedFaces}
+          unlockedTrails={unlockedTrails}
+          unlockedBacks={unlockedBacks}
+          unlockedPets={unlockedPets}
+          onPreviewChange={setPreviewAvatar}
+          onBuyAndEquip={onBuyAndEquip}
+          onBuyBundle={onBuyBundle}
+          onSkinChange={onSkinChange}
+          onTestEmote={triggerEmote}
+          onClose={closeLiveWardrobe}
+        />
+      )}
+
+      {/* === UPGRADED FRESHBLOX IN-GAME MENU (Logo F / H / Esc) === */}
+      <InGameMenuDrawer
+        open={hubOpen}
+        activeTab={hubTab}
+        onTabChange={setHubTab}
+        onOpenShortcuts={() => setShortcutsOpen(true)}
+        worldKind="lobby"
+        lang={lang}
+        roomCode={roomCode}
+        username={username}
+        rankName={getRankForXp(xp).name}
+        onlineCount={onlineCount}
+        roster={roster}
+        fpsDisplay={fpsDisplay}
+        touchMode={touchMode}
+        pointerLocked={shiftLockActive}
+        clickToLock={mousePrefs.clickToLock}
+        shiftLockAlign={mousePrefs.shiftLockAlign}
+        mouseSensitivity={mousePrefs.sensitivity}
+        fov={mousePrefs.fov}
+        weather={mousePrefs.weather}
+        autoDayCycle={mousePrefs.autoDayCycle}
+        onTogglePointerLock={() => toggleShiftLockRef.current()}
+        onChangeClickToLock={(enabled) => updateMousePrefs({ clickToLock: enabled })}
+        onChangeShiftLockAlign={(enabled) => updateMousePrefs({ shiftLockAlign: enabled })}
+        onChangeMouseSensitivity={(sensitivity) => updateMousePrefs({ sensitivity })}
+        onChangeFov={(fov) => updateMousePrefs({ fov })}
+        onChangeWeather={(weather) => updateMousePrefs({ weather })}
+        onChangeAutoDayCycle={(autoDayCycle) => updateMousePrefs({ autoDayCycle })}
+        worldTime={worldTime}
+        quality={quality}
+        isFullscreen={isFullscreen}
+        supabaseConnected={isSupabaseConfigured}
+        copiedInvite={copiedInvite}
+        onChangeWorldTime={(wt) => {
+          updateMousePrefs({ autoDayCycle: false })
+          setWorldTime(wt)
+        }}
+        onChangeQuality={setQuality}
+        onToggleTouchMode={() => setTouchMode((v) => !v)}
+        onToggleFullscreen={handleToggleFullscreen}
+        onClose={() => setHubOpen(false)}
+        onResumeAndLock={() => {
+          setHubOpen(false)
+          lockMouseRef.current()
+        }}
+        onOpenWardrobe={openLiveWardrobe}
+        onCopyInvite={handleCopyInvite}
+        onResetPosition={() => resetSpawnActionRef.current()}
+        onSwitchWorld={onEnterObby}
+        onSwitchToArena={onEnterArena}
+        onSwitchToFrisbee={onEnterFrisbee}
+        onLeaveToHome={onBackHome}
+        onOpenFeedback={() => onOpenFeedback?.(`Lobby Główne (${roomCode})`)}
+        onTeleportToMember={(memberId) => teleportToMemberRef.current(memberId)}
+      />
+
+      {/* === U-03: RADIAL EMOTE WHEEL (G) === */}
+      <EmoteRadialWheel
+        open={emoteWheelOpen}
+        lang={lang}
+        activeEmote={activeEmote}
+        onSelect={(pose) => triggerEmote(pose)}
+        onClose={() => setEmoteWheelOpen(false)}
+      />
+
+      {/* === PC KEYBOARD SHORTCUTS OVERLAY (K / ?) === */}
+      <ShortcutsOverlayModal
+        open={shortcutsOpen}
+        worldKind="lobby"
+        lang={lang}
+        onClose={() => {
+          setShortcutsOpen(false)
+          wasLockedBeforeUiRef.current = false
+        }}
+        onResumeAndLock={
+          !touchMode && mousePrefs.clickToLock
+            ? () => {
+                setShortcutsOpen(false)
+                wasLockedBeforeUiRef.current = false
+                lockMouseRef.current()
+              }
+            : undefined
+        }
+      />
+
+      {/* MOBILE PORTRAIT ROTATE + FULLSCREEN HELPER BANNER */}
+      {isPortraitMobile && !rotateBannerDismissed && (
+        <div className="pointer-events-auto absolute top-14 left-1/2 -translate-x-1/2 z-30 w-[min(330px,calc(100vw-24px))]">
+          <div className="flex items-center justify-between gap-2 rounded-2xl border border-white/15 bg-slate-950/90 px-3 py-2 text-xs text-sky-50 shadow-2xl backdrop-blur-xl">
+            <div className="flex items-center gap-2 min-w-0">
+              <RotateCw className="h-4 w-4 shrink-0 text-sky-400" />
+              <span className="text-[11px] font-semibold leading-tight">{t.rotateBannerText}</span>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => enterGameFullscreenLandscape()}
+                className="rounded-xl bg-sky-400 px-2.5 py-1.5 text-[10px] font-black text-slate-950 active:scale-95 cursor-pointer"
+              >
+                {t.rotateBannerBtn}
+              </button>
+              <button
+                type="button"
+                onClick={() => setRotateBannerDismissed(true)}
+                className="rounded-lg p-1 text-sky-200/70 hover:text-white cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REWARD / EVENT TOAST */}
+      {toast && (
+        <div className="pointer-events-none absolute top-14 left-1/2 -translate-x-1/2 z-30 animate-[rewardPop_0.35s_ease-out]">
+          <div className="flex items-center gap-2 rounded-full bg-slate-950/88 border border-sky-400/40 px-4 py-1.5 text-xs sm:text-sm font-extrabold text-sky-100 shadow-xl backdrop-blur-md">
+            <Sparkles className="h-4 w-4 text-sky-300" />
+            {toast}
+          </div>
+        </div>
+      )}
+
+      {/* INTERACTIVE BENCH SIT / STAND PROMPT OR PORTAL ACTION */}
+      {(seatedBench || nearBench || nearPortalInfo) && (
+        <div
+          className="pointer-events-auto absolute left-1/2 -translate-x-1/2 z-20"
+          style={{
+            bottom: touchMode
+              ? 'max(6.2rem, calc(env(safe-area-inset-bottom) + 5.6rem))'
+              : 'max(1.4rem, env(safe-area-inset-bottom))',
+          }}
+        >
+          {seatedBench || nearBench ? (
+            <button
+              type="button"
+              onClick={() => toggleSitActionRef.current()}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="flex items-center gap-2 rounded-full border border-sky-300/60 bg-slate-950/85 px-4 py-2 text-xs font-extrabold text-sky-50 shadow-xl backdrop-blur-xl transition hover:bg-slate-900 active:scale-95 cursor-pointer"
+            >
+              <Armchair className="h-4 w-4 text-sky-400" />
+              <span>{seatedBench ? t.standPrompt : t.sitPrompt}</span>
+              <span className="hidden sm:inline rounded-md bg-white/10 border border-white/20 px-1.5 py-0.5 font-mono text-[10px] text-sky-200">
+                E
+              </span>
+            </button>
+          ) : nearPortalInfo?.action === 'obby' ? (
+            <button
+              type="button"
+              onClick={() => {
+                sfx.playJump()
+                onEnterObby()
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="flex items-center gap-2 rounded-full border border-amber-300/70 bg-gradient-to-r from-sky-500 to-blue-600 px-5 py-2.5 text-xs sm:text-sm font-extrabold text-white shadow-xl backdrop-blur-xl transition hover:brightness-110 active:scale-95 cursor-pointer"
+            >
+              <Flag className="h-4 w-4 text-amber-200" />
+              <span>{t.portalObbyPrompt}</span>
+              <span className="hidden sm:inline rounded-md bg-white/15 border border-white/25 px-1.5 py-0.5 font-mono text-[10px] text-white">
+                E
+              </span>
+            </button>
+          ) : nearPortalInfo?.action === 'arena' ? (
+            <button
+              type="button"
+              onClick={() => {
+                audioEngine.playPortalWarp()
+                onEnterArena?.()
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="flex items-center gap-2 rounded-full border border-cyan-300/75 bg-gradient-to-r from-cyan-400 to-orange-500 px-5 py-2.5 text-xs sm:text-sm font-black text-slate-950 shadow-xl backdrop-blur-xl transition hover:brightness-110 active:scale-95 cursor-pointer"
+            >
+              <Orbit className="h-4 w-4" />
+              <span>{lang === 'pl' ? 'Wejdź do Portal Arena' : 'Enter Portal Arena'}</span>
+              <span className="hidden sm:inline rounded-md bg-slate-950/20 border border-slate-950/30 px-1.5 py-0.5 font-mono text-[10px] text-slate-950">
+                E
+              </span>
+            </button>
+          ) : nearPortalInfo?.action === 'frisbee' ? (
+            <button
+              type="button"
+              onClick={() => {
+                audioEngine.playFrisbeeThrow(0.6)
+                onEnterFrisbee?.()
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="flex items-center gap-2 rounded-full border border-orange-300/80 bg-gradient-to-r from-orange-500 to-amber-300 px-5 py-2.5 text-xs sm:text-sm font-black text-slate-950 shadow-xl backdrop-blur-xl transition hover:brightness-110 active:scale-95 cursor-pointer"
+            >
+              <Sparkles className="h-4 w-4" />
+              <span>{lang === 'pl' ? 'Wejdź do Frisbee King' : 'Enter Frisbee King'}</span>
+              <span className="hidden sm:inline rounded-md bg-slate-950/20 border border-slate-950/30 px-1.5 py-0.5 font-mono text-[10px] text-slate-950">
+                E
+              </span>
+            </button>
+          ) : nearPortalInfo ? (
+            <div className="flex items-center gap-2 rounded-full border border-white/20 bg-slate-950/80 px-4 py-2 text-xs font-bold text-sky-100 backdrop-blur-xl shadow-lg">
+              <Sparkles className="h-3.5 w-3.5 text-sky-400" />
+              <span>
+                {nearPortalInfo.name} — {t.portalSoonHint}
+              </span>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* === MODERN LIVE ROOM CHAT (Empty on join · Ephemeral · Auto-purge >20 min) === */}
+      <GameChatBox
+        open={chatOpen}
+        roomCode={roomCode}
+        onlineCount={onlineCount}
+        lang={lang}
+        touchMode={touchMode}
+        selfId={playerId}
+        messages={messages}
+        chatInput={chatInput}
+        chatInputRef={chatInputRef}
+        onChatInputChange={setChatInput}
+        onFocusChange={(focused) => {
+          chatInputFocusedRef.current = focused
+        }}
+        onSend={handleSendChat}
+        onSendQuickText={handleQuickChat}
+        onClose={() => setChatOpen(false)}
+        onOpen={() => {
+          setChatOpen(true)
+          setUnreadCount(0)
+        }}
+        worldKind="lobby"
+      />
+
+      {/* DESKTOP MINIMALIST ICON EMOTE DOCK (hidden while Live Wardrobe is open) */}
+      {!touchMode && !wardrobeOpen && (
+        <div className="pointer-events-none absolute bottom-4 right-4 hidden sm:flex flex-col items-end gap-1.5 z-10">
+          <div className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/15 bg-slate-950/70 p-1.5 backdrop-blur-xl shadow-2xl">
+            {emotesList.map((em) => {
+              const Icon = em.icon
+              const isActive = activeEmote === em.pose
+              return (
+                <button
+                  key={em.key}
+                  type="button"
+                  onClick={() => triggerEmote(em.pose)}
+                  title={`${em.label} (${em.key})`}
+                  aria-label={em.label}
+                  className={`relative flex h-9 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+                    isActive
+                      ? 'bg-sky-400 text-slate-950 shadow-md'
+                      : 'bg-white/[0.06] text-sky-100 hover:bg-white/15'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span
+                    className={`pointer-events-none absolute top-0.5 left-1 font-mono text-[8px] font-black leading-none ${
+                      isActive ? 'text-slate-950/80' : 'text-sky-300/75'
+                    }`}
+                  >
+                    {em.key}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* MOUSE LOCK / SHIFT-LOCK RETICLE (Desktop) */}
+      {shiftLockActive && !touchMode && (
+        <div className="pointer-events-none fixed inset-0 z-20 flex items-center justify-center">
+          {mousePrefs.shiftLockAlign ? (
+            <Crosshair className="h-5 w-5 text-sky-200 drop-shadow-[0_1px_4px_rgba(2,132,199,0.95)]" />
+          ) : (
+            <div className="h-2.5 w-2.5 rounded-full border-2 border-white/95 bg-sky-400/90 shadow-[0_0_8px_rgba(56,189,248,0.95)]" />
+          )}
+        </div>
+      )}
+
+      {/* MOBILE / TABLET VIRTUAL THUMBSTICK & ACTION BUTTONS (hidden cleanly while Live Wardrobe is open!) */}
+      {touchMode && !wardrobeOpen && (
+        <MobileTouchControls
+          onMoveVector={handleTouchMoveVector}
+          onJump={handleTouchJump}
+          onJumpHoldChange={handleTouchJumpHold}
+          sprintActive={sprintLocked}
+          onToggleSprint={() => {
+            setSprintLocked((s) => !s)
+            sfx.playClick()
+          }}
+          activeEmote={activeEmote}
+          onEmote={triggerEmote}
+          onRecenterCamera={() => recenterCamRef.current()}
+          compactHeight={vp.isCompactHeight}
+          labels={{
+            jumpBtn: t.jumpBtn,
+            sprintBtn: t.sprintBtn,
+            emotesLabel: t.emotesLabel,
+            recenterBtn: lang === 'pl' ? 'Centruj kamerę' : 'Center camera',
+            emotes: t.emotes,
+          }}
+        />
+      )}
+    </div>
+  )
+}
