@@ -6,7 +6,7 @@ import { cloneFreshTexturesWithRepeat, FreshSurfaceKind } from './freshTextures'
 import { createFreshBloxMonument } from './freshLogo3D'
 import { generateTestObbyCourse, OBBY_ZONES } from './obbyCourse'
 
-export type WorldPreviewKey = 'lobby' | 'obby' | 'arena' | 'frisbee'
+export type WorldPreviewKey = 'lobby' | 'obby' | 'arena' | 'frisbee' | 'racing'
 
 export type WorldThumbnailMap = Partial<Record<WorldPreviewKey, string>>
 

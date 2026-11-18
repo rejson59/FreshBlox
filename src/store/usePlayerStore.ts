@@ -102,6 +102,7 @@ export interface PlayerProfile {
   clanId: string | null
   clanTag: string | null
   freshGems: number
+  freshCoins: number
   xp: number
   avatar: R6AvatarConfig
   unlockedOutfits: OutfitId[]
@@ -182,6 +183,7 @@ function createDefaultProfile(): PlayerProfile {
     clanId: null,
     clanTag: null,
     freshGems: 0,
+    freshCoins: 0,
     xp: 0,
     avatar: {
       outfitId: 'fresh-creator',
@@ -311,6 +313,7 @@ function loadLocalProfile(): PlayerProfile {
       clanId: typeof parsed.clanId === 'string' ? parsed.clanId : null,
       clanTag: typeof parsed.clanTag === 'string' ? parsed.clanTag : null,
       freshGems: GEMS_SYSTEM_IN_PROGRESS ? 0 : (parsed.freshGems ?? 0),
+      freshCoins: parsed.freshCoins ?? 0,
       unlockedOutfits: unlockedOutfits as OutfitId[],
       unlockedHats,
       unlockedFaces,
@@ -514,6 +517,7 @@ export function usePlayerStore() {
             clanId: data.clan_id ?? null,
             clanTag: data.clan_tag ?? null,
             freshGems: GEMS_SYSTEM_IN_PROGRESS ? 0 : (data.fresh_gems ?? 0),
+            freshCoins: ((data as unknown as Record<string, unknown>).fresh_coins as number) ?? 0,
             xp: data.xp ?? 0,
             avatar: {
               outfitId: migrateOutfitId(data.avatar_config?.outfitId),
@@ -925,6 +929,15 @@ async function postRegisterApi(
     }))
   }, [])
 
+  const awardCoins = useCallback((coins: number, xp = 0) => {
+    if (coins <= 0 && xp <= 0) return
+    setProfile((p) => ({
+      ...p,
+      freshCoins: Math.max(0, (p.freshCoins ?? 0) + coins),
+      xp: p.xp + xp,
+    }))
+  }, [])
+
   const unlockBadge = useCallback((badgeId: string) => {
     setProfile((p) => (p.badges.includes(badgeId) ? p : { ...p, badges: [...p.badges, badgeId] }))
   }, [])
@@ -1028,7 +1041,12 @@ async function postRegisterApi(
   }, [])
 
   const buyAndEquip = useCallback(
-    (category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet', itemId: string, price: number): boolean => {
+    (
+      category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet',
+      itemId: string,
+      price: number,
+      currency: 'gems' | 'coins' = 'gems',
+    ): boolean => {
       let ok = false
       setProfile((p) => {
         const listKey =
@@ -1064,8 +1082,8 @@ async function postRegisterApi(
           return p
         }
 
-        // While FreshGems economy is under construction, only owned/free items can be equipped!
-        if (!alreadyOwned && (GEMS_SYSTEM_IN_PROGRESS || p.freshGems < price)) {
+        const balance = currency === 'coins' ? (p.freshCoins ?? 0) : p.freshGems
+        if (!alreadyOwned && (GEMS_SYSTEM_IN_PROGRESS || balance < price)) {
           return p
         }
 
@@ -1082,7 +1100,8 @@ async function postRegisterApi(
 
         return {
           ...p,
-          freshGems: alreadyOwned ? p.freshGems : p.freshGems - price,
+          freshGems: !alreadyOwned && currency === 'gems' ? p.freshGems - price : p.freshGems,
+          freshCoins: !alreadyOwned && currency === 'coins' ? (p.freshCoins ?? 0) - price : (p.freshCoins ?? 0),
           avatar: nextAvatar,
           [listKey]: currentList.includes(itemId) ? currentList : [...currentList, itemId],
         }
@@ -1396,6 +1415,7 @@ async function postRegisterApi(
     setUsername,
     updateAvatar,
     awardGemsAndXp,
+    awardCoins,
     unlockBadge,
     setPinnedBadge,
     saveOutfitSlot,

@@ -34,6 +34,7 @@ import { MainLobbyWorld } from './engine/MainLobbyWorld'
 import { TestObbyWorld } from './engine/TestObbyWorld'
 import { PortalArenaWorld } from './engine/PortalArenaWorld'
 import { FrisbeeKingWorld } from './engine/FrisbeeKingWorld'
+import { RacingWorld } from './engine/RacingWorld'
 import { AvatarEditorView } from './components/avatar/AvatarEditorView'
 import { SocialProfileView } from './components/social/SocialProfileView'
 import { AdminPanelView } from './components/admin/AdminPanelView'
@@ -59,7 +60,7 @@ import {
   isTouchMobileDevice,
 } from './lib/mobileFullscreen'
 
-type AppView = 'home' | 'world' | 'obby' | 'arena' | 'frisbee' | 'avatar' | 'social' | 'admin' | 'inbox' | 'tests'
+type AppView = 'home' | 'world' | 'obby' | 'arena' | 'frisbee' | 'racing' | 'avatar' | 'social' | 'admin' | 'inbox' | 'tests'
 
 function getInitialLaunchFromUrl(): { view: AppView; roomId: string; hasInvite: boolean } {
   if (typeof window === 'undefined') return { view: 'home', roomId: 'PUBLIC-1', hasInvite: false }
@@ -68,6 +69,9 @@ function getInitialLaunchFromUrl(): { view: AppView; roomId: string; hasInvite: 
   const room = params.get('room')?.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 12)
   if (worldParam === 'frisbee') {
     return { view: 'frisbee', roomId: room || 'FRISBEE-1', hasInvite: true }
+  }
+  if (worldParam === 'racing') {
+    return { view: 'racing', roomId: room || 'KART-1', hasInvite: true }
   }
   if (worldParam === 'arena') {
     return { view: 'arena', roomId: room || 'ARENA-1', hasInvite: true }
@@ -152,6 +156,7 @@ export function App() {
     setUsername,
     updateAvatar,
     awardGemsAndXp,
+    awardCoins,
     setPinnedBadge,
     saveOutfitSlot,
     deleteOutfitSlot,
@@ -372,7 +377,7 @@ export function App() {
     )
   }
 
-  const isIn3DGame = view === 'world' || view === 'obby' || view === 'arena' || view === 'frisbee'
+  const isIn3DGame = view === 'world' || view === 'obby' || view === 'arena' || view === 'frisbee' || view === 'racing'
 
   const navigateView = (nextView: AppView, roomId?: string) => {
     const nextIs3D = nextView === 'world' || nextView === 'obby' || nextView === 'arena' || nextView === 'frisbee'
@@ -398,7 +403,15 @@ export function App() {
 
   const handleEnterWorld = (world: WorldKind, roomId: string) => {
     navigateView(
-      world === 'frisbee' ? 'frisbee' : world === 'arena' ? 'arena' : world === 'obby' ? 'obby' : 'world',
+      world === 'frisbee'
+        ? 'frisbee'
+        : world === 'racing'
+          ? 'racing'
+          : world === 'arena'
+            ? 'arena'
+            : world === 'obby'
+              ? 'obby'
+              : 'world',
       roomId,
     )
   }
@@ -445,6 +458,8 @@ export function App() {
       ? `PTY-${partyCode.replace(/[^A-Z0-9]/g, '').slice(-4)}`
       : world === 'frisbee'
         ? 'FRISBEE-1'
+        : world === 'racing'
+          ? 'KART-1'
         : world === 'arena'
           ? 'ARENA-1'
           : world === 'obby'
@@ -662,6 +677,24 @@ export function App() {
             onSwitchToObby={() => handleEnterWorld('obby', 'OBBY-1')}
             onSwitchToFrisbee={() => handleEnterWorld('frisbee', 'FRISBEE-1')}
             onOpenFeedback={() => openFeedback(`Portal Arena (${activeRoomId})`)}
+          />
+        )}
+        {view === 'racing' && (
+          <RacingWorld
+            profile={profile}
+            lang={lang}
+            roomId={activeRoomId}
+            onExit={() => navigateView('home')}
+            onSwitchWorld={(w) =>
+              handleEnterWorld(
+                w,
+                w === 'lobby' ? 'PUBLIC-1' : w === 'obby' ? 'OBBY-1' : w === 'arena' ? 'ARENA-1' : w === 'frisbee' ? 'FRISBEE-1' : 'KART-1',
+              )
+            }
+            onAwardCoins={awardCoins}
+            onBuyAndEquip={buyAndEquip}
+            onSkinChange={(hex) => updateAvatar({ skinColor: hex })}
+            onOpenReport={() => openFeedback(`Turbo Kart (${activeRoomId})`)}
           />
         )}
 

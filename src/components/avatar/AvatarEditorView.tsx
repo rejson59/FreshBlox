@@ -31,6 +31,7 @@ import {
   CatalogItem,
   FACE_CATALOG,
   GEMS_SYSTEM_IN_PROGRESS,
+  getCoinPrice,
   HAT_CATALOG,
   OUTFIT_CATALOG,
   OutfitId,
@@ -56,6 +57,7 @@ interface AvatarEditorViewProps {
     category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet',
     itemId: string,
     price: number,
+    currency?: 'gems' | 'coins',
   ) => boolean
   onBuyBundle: (items: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; price: number }>) => boolean
   onSkinChange: (hex: string) => void
@@ -569,10 +571,12 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
     category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet',
     itemId: string,
     price: number,
+    currency: 'gems' | 'coins' = 'gems',
   ) => {
     e.stopPropagation()
-    if (profile.freshGems < price) return
-    const ok = onBuyAndEquip(category, itemId, price)
+    const balance = currency === 'coins' ? (profile.freshCoins ?? 0) : profile.freshGems
+    if (balance < price) return
+    const ok = onBuyAndEquip(category, itemId, price, currency)
     if (ok) {
       sfx.playGemCollect()
       if (category === 'outfit') setPreviewAvatar((p) => ({ ...p, outfitId: itemId as OutfitId }))
@@ -725,21 +729,44 @@ export const AvatarEditorView: React.FC<AvatarEditorViewProps> = ({
                       <Lock className="h-3 w-3" />
                     </span>
                   ) : (
-                    <button
-                      type="button"
-                      disabled={!canAfford}
-                      onClick={(e) => handleBuyItem(e, category, item.id, item.price)}
-                      className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-extrabold transition cursor-pointer ${
-                        canAfford ? 'text-white hover:brightness-110' : 'opacity-60 cursor-not-allowed'
-                      }`}
-                      style={{
-                        background: canAfford ? tokens.buttonGradient : 'rgba(244,63,94,0.14)',
-                        color: canAfford ? '#FFFFFF' : '#FB7185',
-                      }}
-                    >
-                      <FreshGemShard size={12} />
-                      {item.price}
-                    </button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={!canAfford}
+                        title={lang === 'pl' ? 'Kup za FreshGems (taniej)' : 'Buy with FreshGems (cheaper)'}
+                        onClick={(e) => handleBuyItem(e, category, item.id, item.price, 'gems')}
+                        className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-extrabold transition cursor-pointer ${
+                          canAfford ? 'text-white hover:brightness-110' : 'opacity-60 cursor-not-allowed'
+                        }`}
+                        style={{
+                          background: canAfford ? tokens.buttonGradient : 'rgba(244,63,94,0.14)',
+                          color: canAfford ? '#FFFFFF' : '#FB7185',
+                        }}
+                      >
+                        <FreshGemShard size={12} />
+                        {item.price}
+                      </button>
+                      {(() => {
+                        const cPrice = getCoinPrice(item)
+                        const canAffordCoins = (profile.freshCoins ?? 0) >= cPrice
+                        return (
+                          <button
+                            type="button"
+                            disabled={!canAffordCoins}
+                            title={lang === 'pl' ? 'Kup za FreshCoins (zdobywane w grach)' : 'Buy with FreshCoins (earned in games)'}
+                            onClick={(e) => handleBuyItem(e, category, item.id, cPrice, 'coins')}
+                            className={`inline-flex shrink-0 items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] font-extrabold transition cursor-pointer ${
+                              canAffordCoins
+                                ? 'border-amber-400/50 bg-amber-500/25 text-amber-200 hover:bg-amber-500/40'
+                                : 'border-amber-400/20 bg-amber-500/10 text-amber-300/60 opacity-65 cursor-not-allowed'
+                            }`}
+                          >
+                            <span>🪙</span>
+                            {cPrice}
+                          </button>
+                        )
+                      })()}
+                    </div>
                   )}
                 </div>
               </div>

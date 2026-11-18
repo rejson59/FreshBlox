@@ -16,7 +16,7 @@ interface WorldTransitionOverlayProps {
   onlineCount?: number | null
 }
 
-const TIPS_PL: Record<WorldKind, string[]> = {
+const TIPS_PL: Partial<Record<WorldKind, string[]>> = {
   lobby: [
     'Wciśnij G, aby otworzyć koło emotek na środku ekranu.',
     'Wciśnij I w trakcie gry, żeby błyskawicznie zmienić strój w Szatni.',
@@ -47,7 +47,7 @@ const TIPS_PL: Record<WorldKind, string[]> = {
   ],
 }
 
-const TIPS_EN: Record<WorldKind, string[]> = {
+const TIPS_EN: Partial<Record<WorldKind, string[]>> = {
   lobby: [
     'Press G to open the radial Emote Wheel right on screen.',
     'Press I anytime in-game to swap outfits in the live Wardrobe.',
@@ -112,7 +112,7 @@ export const WorldTransitionOverlay: React.FC<WorldTransitionOverlayProps> = ({
 
   const tip = useMemo(() => {
     const list = isPl ? TIPS_PL[world] : TIPS_EN[world]
-    return list[Math.floor(Math.random() * list.length)]
+    return list?.[Math.floor(Math.random() * list.length)] ?? 'FreshBlox 3D'
   }, [world, isPl])
 
   const steps = useMemo(

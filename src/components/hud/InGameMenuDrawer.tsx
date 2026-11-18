@@ -55,7 +55,7 @@ export interface InGameMenuDrawerProps {
   activeTab?: MenuDrawerTab
   onTabChange?: (tab: MenuDrawerTab) => void
   onOpenShortcuts?: () => void
-  worldKind: 'lobby' | 'obby' | 'arena' | 'frisbee'
+  worldKind: 'lobby' | 'obby' | 'arena' | 'frisbee' | 'racing'
   lang: Lang
   roomCode: string
   username: string
@@ -232,6 +232,13 @@ const WORLD_THEME = {
     tabActive: 'bg-orange-500/30 text-white ring-1 ring-orange-300/50',
     cta: 'from-orange-500 to-rose-500 shadow-orange-500/30',
     accentText: 'text-orange-300',
+  },
+  racing: {
+    bar: 'from-cyan-400 via-blue-500 to-amber-400',
+    badgeBorder: 'border-cyan-400/40 bg-cyan-500/15',
+    tabActive: 'bg-cyan-500/30 text-white ring-1 ring-cyan-300/50',
+    cta: 'from-cyan-500 to-blue-600 shadow-cyan-500/30',
+    accentText: 'text-cyan-300',
   },
 } as const
 

@@ -1,4 +1,4 @@
-export const GEMS_SYSTEM_IN_PROGRESS = true
+export const GEMS_SYSTEM_IN_PROGRESS = false
 
 export type OutfitId =
   | 'fresh-creator'
@@ -43,7 +43,7 @@ export type PetId =
   | 'star-owl'
   | 'plasma-orb'
 
-export type WorldKind = 'lobby' | 'obby' | 'arena' | 'frisbee'
+export type WorldKind = 'lobby' | 'obby' | 'arena' | 'frisbee' | 'racing'
 
 export interface R6AvatarConfig {
   outfitId: OutfitId
@@ -61,12 +61,22 @@ export interface CatalogItem<T extends string> {
   nameEn: string
   descPl: string
   descEn: string
+  /** Price in FreshGems (cheaper premium currency) */
   price: number
+  /** Optional explicit price in FreshCoins (earned by playing; defaults to ~4.5x FreshGems price) */
+  coinPrice?: number
   accent: string
   /** Optional milestone-only unlock (cannot be purchased with FreshGems) */
   rewardOnly?: 'obby100' | 'arenaWin' | 'arenaMeteor' | 'frisbeeWin'
   rewardLabelPl?: string
   rewardLabelEn?: string
+}
+
+/** Returns the FreshCoins price for a catalog item (higher than FreshGems so players earn it by playing). */
+export function getCoinPrice(item: { price: number; coinPrice?: number }): number {
+  if (item.price <= 0) return 0
+  if (typeof item.coinPrice === 'number') return item.coinPrice
+  return Math.round((item.price * 4.5) / 10) * 10
 }
 
 export const OUTFIT_CATALOG: CatalogItem<OutfitId>[] = [

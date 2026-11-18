@@ -103,6 +103,18 @@ const WORLD_CARDS: WorldCardSpec[] = [
     accent: '#F97316',
     fallbackBg: 'linear-gradient(135deg, #1E1B4B 0%, #C2410C 55%, #FACC15 100%)',
   },
+  {
+    id: 'racing',
+    worldKind: 'racing',
+    roomId: 'KART-1',
+    titlePl: 'Turbo Kart',
+    titleEn: 'Turbo Kart',
+    tagPl: 'Wyścigi 3D · Neon Circuit',
+    tagEn: '3D Racing · Neon Circuit',
+    live: true,
+    accent: '#06B6D4',
+    fallbackBg: 'linear-gradient(135deg, #060B19 0%, #0284C7 55%, #F59E0B 100%)',
+  },
 ]
 
 export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
