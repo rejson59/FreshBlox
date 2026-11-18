@@ -109,11 +109,11 @@ const WORLD_CARDS: WorldCardSpec[] = [
     roomId: 'KART-1',
     titlePl: 'Turbo Kart',
     titleEn: 'Turbo Kart',
-    tagPl: 'Wyścigi 3D · Neon Circuit',
-    tagEn: '3D Racing · Neon Circuit',
+    tagPl: 'Wyścigi 3D · Grand Prix',
+    tagEn: '3D Racing · Grand Prix',
     live: true,
-    accent: '#06B6D4',
-    fallbackBg: 'linear-gradient(135deg, #060B19 0%, #0284C7 55%, #F59E0B 100%)',
+    accent: '#0284C7',
+    fallbackBg: 'linear-gradient(135deg, #38BDF8 0%, #0284C7 55%, #F59E0B 100%)',
   },
 ]
 

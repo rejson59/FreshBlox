@@ -217,8 +217,8 @@ export function RacingWorld({
     if (!container) return
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color('#060B19')
-    scene.fog = new THREE.FogExp2('#060B19', 0.0042)
+    scene.background = new THREE.Color('#7DD3FC')
+    scene.fog = new THREE.Fog('#BAE6FD', 110, 320)
 
     const camera = new THREE.PerspectiveCamera(fov, container.clientWidth / container.clientHeight, 0.2, 420)
     const renderer = new THREE.WebGLRenderer({ antialias: quality !== 'low', powerPreference: 'high-performance' })
@@ -295,14 +295,14 @@ export function RacingWorld({
     trackMesh.receiveShadow = true
     scene.add(trackMesh)
 
-    // Neon guardrails
+    // Clean racing curbs (red & white / slate) instead of neon tubes
     const leftRail = new THREE.Mesh(
-      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(leftBorderPts, true), 180, 0.22, 6, true),
-      new THREE.MeshStandardMaterial({ color: '#06B6D4', emissive: '#06B6D4', emissiveIntensity: 1.1 }),
+      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(leftBorderPts, true), 180, 0.28, 6, true),
+      new THREE.MeshStandardMaterial({ color: '#EF4444', roughness: 0.55, metalness: 0.1 }),
     )
     const rightRail = new THREE.Mesh(
-      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rightBorderPts, true), 180, 0.22, 6, true),
-      new THREE.MeshStandardMaterial({ color: '#F97316', emissive: '#F97316', emissiveIntensity: 1.1 }),
+      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rightBorderPts, true), 180, 0.28, 6, true),
+      new THREE.MeshStandardMaterial({ color: '#F8FAFC', roughness: 0.55, metalness: 0.1 }),
     )
     scene.add(leftRail, rightRail)
 
