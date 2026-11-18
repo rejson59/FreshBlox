@@ -95,7 +95,7 @@ export const OUTFIT_CATALOG: CatalogItem<OutfitId>[] = [
     nameEn: 'Classic Remastered',
     descPl: 'Kultowe kolory klockowego klasyka odświeżone w połysku Fresh Glossy.',
     descEn: 'Iconic classic block colors refreshed in modern Fresh Glossy finish.',
-    price: 0,
+    price: 75,
     accent: '#FACC15',
   },
   {
@@ -143,7 +143,7 @@ export const HAT_CATALOG: CatalogItem<HatId>[] = [
     nameEn: 'No Hat',
     descPl: 'Czysta klasyczna głowa awatara.',
     descEn: 'Clean classic avatar head silhouette.',
-    price: 0,
+    price: 80,
     accent: '#94A3B8',
   },
   {
@@ -197,7 +197,7 @@ export const HAT_CATALOG: CatalogItem<HatId>[] = [
     nameEn: 'Obby 100 Champion Crown',
     descPl: 'Ekskluzywna królewska korona ze szczytu Stage 100. Nie do kupienia — tylko za przejście Test Obby 100!',
     descEn: 'Exclusive royal crown from Stage 100. Cannot be bought — earned only by completing Test Obby 100!',
-    price: 0,
+    price: 80,
     accent: '#F59E0B',
     rewardOnly: 'obby100',
     rewardLabelPl: 'Nagroda: Obby 100',
@@ -221,7 +221,7 @@ export const FACE_CATALOG: CatalogItem<FaceId>[] = [
     nameEn: 'Confident Wink',
     descPl: 'Stylowe mrugnięcie z lekkim uśmiechem twórcy.',
     descEn: 'Playful creator wink with confident grin.',
-    price: 0,
+    price: 80,
     accent: '#7DD3FC',
   },
   {
@@ -269,7 +269,7 @@ export const TRAIL_CATALOG: CatalogItem<TrailId>[] = [
     nameEn: 'No Trail',
     descPl: 'Czysty krok bez efektów cząsteczkowych.',
     descEn: 'Clean footsteps without particle trails.',
-    price: 0,
+    price: 80,
     accent: '#94A3B8',
   },
   {
@@ -278,7 +278,7 @@ export const TRAIL_CATALOG: CatalogItem<TrailId>[] = [
     nameEn: 'Arctic Sparks',
     descPl: 'Błękitne kryształki lodu unoszące się za Twoimi krokami.',
     descEn: 'Sky-blue frost sparks drifting behind your steps.',
-    price: 0,
+    price: 80,
     accent: '#38BDF8',
   },
   {
@@ -287,7 +287,7 @@ export const TRAIL_CATALOG: CatalogItem<TrailId>[] = [
     nameEn: 'Portal Duality',
     descPl: 'Naprzemienny ślad energetyczny Błękit ↔ Pomarańcz z Portal Arena.',
     descEn: 'Alternating Cyan ↔ Orange portal energy ribbon.',
-    price: 0,
+    price: 80,
     accent: '#F97316',
   },
   {
@@ -296,7 +296,7 @@ export const TRAIL_CATALOG: CatalogItem<TrailId>[] = [
     nameEn: 'Neon Comet',
     descPl: 'Fioletowo-różowa smuga kwantowa jak w hyper-speed!',
     descEn: 'Violet-magenta quantum trail built for hyper-speed!',
-    price: 0,
+    price: 80,
     accent: '#C084FC',
   },
   {
@@ -305,7 +305,7 @@ export const TRAIL_CATALOG: CatalogItem<TrailId>[] = [
     nameEn: 'Emerald Pulse',
     descPl: 'Świecący szmaragdowy szlak energetyczny w 3D.',
     descEn: 'Glowing 3D emerald kinetic particles.',
-    price: 0,
+    price: 80,
     accent: '#10B981',
   },
   {
@@ -314,7 +314,7 @@ export const TRAIL_CATALOG: CatalogItem<TrailId>[] = [
     nameEn: 'Golden Meteor',
     descPl: 'Płonący złoty szlak za osiągnięcie 100 km/h lub wygraną w Portal Arena.',
     descEn: 'Blazing golden meteor trail earned by hitting 100 km/h or winning in Portal Arena.',
-    price: 0,
+    price: 80,
     accent: '#FACC15',
     rewardOnly: 'arenaMeteor',
     rewardLabelPl: 'Nagroda: Meteoryt 100 km/h',
@@ -326,7 +326,7 @@ export const TRAIL_CATALOG: CatalogItem<TrailId>[] = [
     nameEn: 'Blaze Frisbee',
     descPl: 'Płonący czerwono-złoty ślad ognia za zwycięstwo w 3-rundowym meczu Frisbee King!',
     descEn: 'Blazing fire trail unlocked by winning a 3-round Frisbee King match!',
-    price: 0,
+    price: 80,
     accent: '#EF4444',
     rewardOnly: 'frisbeeWin',
     rewardLabelPl: 'Nagroda: Król Frisbee',
@@ -350,7 +350,7 @@ export const BACK_CATALOG: CatalogItem<BackId>[] = [
     nameEn: 'Crystal Wings',
     descPl: 'Animowane półprzezroczyste skrzydła z błękitnego kryształu.',
     descEn: 'Animated translucent sky-crystal wings.',
-    price: 0,
+    price: 80,
     accent: '#38BDF8',
   },
   {
@@ -359,7 +359,7 @@ export const BACK_CATALOG: CatalogItem<BackId>[] = [
     nameEn: 'Portal Jetpack',
     descPl: 'Podwójny reaktor grawitacyjny (Cyan + Orange) z Portal Arena.',
     descEn: 'Dual Cyan + Orange gravity thruster pack from Portal Arena.',
-    price: 0,
+    price: 80,
     accent: '#FB923C',
   },
   {
@@ -368,7 +368,7 @@ export const BACK_CATALOG: CatalogItem<BackId>[] = [
     nameEn: 'Arctic Explorer Pack',
     descPl: 'Lekki sportowy plecak z kryształową klamrą FreshBlox.',
     descEn: 'Sleek explorer backpack with crystal FreshBlox clasp.',
-    price: 0,
+    price: 80,
     accent: '#0EA5E9',
   },
   {
@@ -377,7 +377,7 @@ export const BACK_CATALOG: CatalogItem<BackId>[] = [
     nameEn: 'Quantum Cape',
     descPl: 'Nowoczesna wielosegmentowa peleryna reagująca na bieg.',
     descEn: 'Segmented futuristic cape that reacts to your sprint.',
-    price: 0,
+    price: 80,
     accent: '#818CF8',
   },
   {
@@ -386,7 +386,7 @@ export const BACK_CATALOG: CatalogItem<BackId>[] = [
     nameEn: 'Arena Champion Wings',
     descPl: 'Złoto-platynowe skrzydła odblokowywane za zwycięstwo w Portal Arena!',
     descEn: 'Gold-platinum wings unlocked by winning a round in Portal Arena!',
-    price: 0,
+    price: 80,
     accent: '#F59E0B',
     rewardOnly: 'arenaWin',
     rewardLabelPl: 'Nagroda: Wygrana Areny',
@@ -410,7 +410,7 @@ export const PET_CATALOG: CatalogItem<PetId>[] = [
     nameEn: 'Frosty Cube',
     descPl: 'Urocza lewitująca kostka lodu z wielkimi błyszczącymi oczami!',
     descEn: 'Adorable levitating ice-cube buddy with bright glossy eyes!',
-    price: 0,
+    price: 80,
     accent: '#38BDF8',
   },
   {
@@ -419,7 +419,7 @@ export const PET_CATALOG: CatalogItem<PetId>[] = [
     nameEn: 'Portal Drone',
     descPl: 'Miniaturowa sfera z pierścieniem Cyan/Orange krążąca przy ramieniu.',
     descEn: 'Miniature Cyan/Orange portal sphere hovering beside your shoulder.',
-    price: 0,
+    price: 80,
     accent: '#F97316',
   },
   {
@@ -428,7 +428,7 @@ export const PET_CATALOG: CatalogItem<PetId>[] = [
     nameEn: 'Starlight Owl',
     descPl: 'Klockowa sówka z machającymi skrzydełkami i złotymi oczkami.',
     descEn: 'Blocky owl companion with flapping wings and golden eyes.',
-    price: 0,
+    price: 80,
     accent: '#FACC15',
   },
   {
@@ -437,7 +437,7 @@ export const PET_CATALOG: CatalogItem<PetId>[] = [
     nameEn: 'Plasma Comet',
     descPl: 'Orbitujący kryształ plazmy z dwoma pierścieniami grawitacji.',
     descEn: 'Orbiting plasma crystal surrounded by twin gravity rings.',
-    price: 0,
+    price: 80,
     accent: '#C084FC',
   },
 ]

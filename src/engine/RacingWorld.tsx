@@ -306,6 +306,51 @@ export function RacingWorld({
     )
     scene.add(leftRail, rightRail)
 
+    // Trackside Grand Prix Scenery: Trees, Grandstands & Tire Barriers
+    const trunkMat = new THREE.MeshStandardMaterial({ color: '#78350F', roughness: 0.9 })
+    const leafMat1 = new THREE.MeshStandardMaterial({ color: '#15803D', roughness: 0.85 })
+    const leafMat2 = new THREE.MeshStandardMaterial({ color: '#16A34A', roughness: 0.85 })
+    const treePositions = [
+      [-28, -22], [28, -32], [65, -18], [112, -55], [105, -115],
+      [45, -155], [-20, -145], [-75, -115], [-105, -60], [-95, 5],
+      [15, -58], [-15, -72], [45, -82], [-45, -45],
+    ]
+    for (let i = 0; i < treePositions.length; i++) {
+      const [tx, tz] = treePositions[i]
+      const tree = new THREE.Group()
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.65, 2.8, 7), trunkMat)
+      trunk.position.y = 1.4
+      trunk.castShadow = true
+      const c1 = new THREE.Mesh(new THREE.ConeGeometry(2.8, 4.4, 7), i % 2 === 0 ? leafMat1 : leafMat2)
+      c1.position.y = 4.2
+      c1.castShadow = true
+      const c2 = new THREE.Mesh(new THREE.ConeGeometry(2.0, 3.4, 7), i % 2 === 0 ? leafMat2 : leafMat1)
+      c2.position.y = 6.2
+      c2.castShadow = true
+      tree.add(trunk, c1, c2)
+      tree.position.set(tx, 0, tz)
+      scene.add(tree)
+    }
+
+    // Grandstand near Start/Finish
+    const standGroup = new THREE.Group()
+    const standBase = new THREE.Mesh(
+      new THREE.BoxGeometry(24, 4.5, 7),
+      new THREE.MeshStandardMaterial({ color: '#E2E8F0', roughness: 0.6 }),
+    )
+    standBase.position.y = 2.25
+    standBase.castShadow = true
+    standBase.receiveShadow = true
+    const standRoof = new THREE.Mesh(
+      new THREE.BoxGeometry(25, 0.5, 8.5),
+      new THREE.MeshStandardMaterial({ color: '#0284C7', roughness: 0.4 }),
+    )
+    standRoof.position.set(0, 7.2, 0.4)
+    standRoof.castShadow = true
+    standGroup.add(standBase, standRoof)
+    standGroup.position.set(0, 0, 14)
+    scene.add(standGroup)
+
     // Start/Finish Arch
     const startPt = trackCurve.getPointAt(0)
     const startTan = trackCurve.getTangentAt(0).normalize()

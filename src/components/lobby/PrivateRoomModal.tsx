@@ -205,7 +205,7 @@ export const PrivateRoomModal: React.FC<PrivateRoomModalProps> = ({
                     {isPl ? 'Świat 3D' : '3D World'}
                   </label>
                   <div className="grid grid-cols-2 gap-2">
-                    {(['lobby', 'obby', 'arena', 'frisbee'] as WorldKind[]).map((w) => (
+                    {(['lobby', 'obby', 'arena', 'frisbee', 'racing'] as WorldKind[]).map((w) => (
                       <button
                         key={w}
                         type="button"
