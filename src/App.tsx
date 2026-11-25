@@ -4,7 +4,6 @@ import {
   ArrowRight,
   Bell,
   Compass,
-  Gamepad2,
   Crown,
   FlaskConical,
   Hash,
@@ -27,7 +26,6 @@ import {
   ThemeMode,
   ThemePresetId,
 } from './data/brandTheme'
-import { ArcadeHub } from './platform/ArcadeHub'
 import { cleanRoom, defaultRoom, gameIds, roomWorld } from './data/worlds'
 import { isSupabaseConfigured } from './lib/supabase'
 import { readLocal, saveLocal } from './platform/local'
@@ -93,10 +91,11 @@ const AuthScreen = React.lazy(() =>
 const HomeBentoView = React.lazy(() =>
   import('./components/lobby/HomeBentoView').then((m) => ({ default: m.HomeBentoView })),
 )
+const BlokBrawl = React.lazy(() => import('./games/brawl/BlokBrawl'))
 
 type AppView =
-  | 'discover'
   | 'home'
+  | 'duel'
   | 'world'
   | 'obby'
   | 'arena'
@@ -114,10 +113,12 @@ const viewWorld = (view: AppView): WorldKind | null =>
 function getInitialLaunchFromUrl(): { view: AppView; roomId: string; hasInvite: boolean } {
   const params = new URLSearchParams(window.location.search)
   const slug = params.get('world')?.toLowerCase()
+  if (slug === 'duel' || window.location.hash === '#duel')
+    return { view: 'duel', roomId: 'BRAWL-1', hasInvite: false }
   const requested = (slug === 'parkour' ? 'obby' : slug) as WorldKind
   const room = cleanRoom(params.get('room') ?? '')
   if (!room && !gameIds.includes(requested))
-    return { view: 'discover', roomId: defaultRoom('lobby'), hasInvite: false }
+    return { view: 'home', roomId: 'PUBLIC-1', hasInvite: false }
   const world = gameIds.includes(requested) ? requested : roomWorld(room)
   return {
     view: room.startsWith('PVT-') ? 'home' : worldView(world),
@@ -378,34 +379,18 @@ export function App() {
     setPartyMembers([])
     setPartyIsLeader(false)
     exitGameFullscreen()
-    setView('discover')
+    setView('home')
     await signOut()
   }
 
-  const enterFromHub = (id: WorldKind, room: string) => {
-    if (isTouchMobileDevice() && (authUser || id === 'racing' || id==='obby')) enterGameFullscreenLandscape()
-    setActiveRoomId(room)
-    setView(worldView(id))
-  }
   const returnToHub = () => {
     exitGameFullscreen()
     // Drop stale invite parameters so refreshing the hub doesn't rejoin the old room.
-    history.replaceState(null, '', location.pathname + '#discover')
+    history.replaceState(null, '', location.pathname)
     setPrivateJoinCode('')
     setPrivateRoomOpen(false)
-    setView('discover')
+    setView('home')
   }
-  if (view === 'discover')
-    return (
-      <ArcadeHub
-        lang={lang}
-        toggleLang={toggleLang}
-        username={authUser ? profile.username : null}
-        accountsAvailable={isSupabaseConfigured}
-        onAccount={() => setView('home')}
-        onWorld={enterFromHub}
-      />
-    )
 
   // 1) Wait for Supabase session check before rendering anything (prevents Home flash)
   if (authLoading) {
@@ -429,6 +414,8 @@ export function App() {
   }
 
   // Guest practice never receives the account profile, network channels, purchases or rewards.
+  if (!authUser && view === 'duel')
+    return <BlokBrawl lang={lang} name={null} theme={mode} onBack={returnToHub} />
   if (!authUser && view === 'racing')
     return (
       <RacingWorld
@@ -450,44 +437,47 @@ export function App() {
       onSetCurrentStage={stage=>setPractice(p=>({...p,stage:Math.min(p.best,stage)}))} />
   if (!authUser && !isSupabaseConfigured)
     return (
-      <main className="grid min-h-dvh place-items-center bg-[#15161a] p-6 text-center text-white">
+      <main className="grid min-h-dvh place-items-center bg-[#050C1B] p-6 text-center text-white">
         <div className="max-w-sm">
           <h1 className="font-display text-2xl font-bold">
-            {lang === 'pl' ? 'Świat sieciowy' : 'Online world'}
+            {lang === 'pl' ? 'Podgląd bez kont' : 'Preview without accounts'}
           </h1>
           <p className="my-4 text-sm text-slate-300">
             {lang === 'pl'
-              ? 'W tym podglądzie usługa kont nie jest skonfigurowana. W katalogu znajdziesz gry solo i kreator bez logowania.'
-              : 'Accounts are not configured in this preview. Solo games and the creator studio are available in the catalog.'}
+              ? 'W tym podglądzie usługa kont nie jest skonfigurowana. Bez logowania pozostają gry solo.'
+              : 'Accounts are not configured in this preview. Solo games remain available without signing in.'}
           </p>
-          <button className="rounded-lg bg-sky-400 px-4 py-2 font-bold text-black" onClick={returnToHub}>
-            ← {lang === 'pl' ? 'Wróć do gier' : 'Back to games'}
-          </button>
+          <div className="flex flex-wrap justify-center gap-2">
+            <a className="rounded-lg bg-sky-400 px-4 py-2 font-bold text-black" href="/?room=KART-1">
+              Turbo Kart
+            </a>
+            <a className="rounded-lg bg-sky-400 px-4 py-2 font-bold text-black" href="/?room=OBBY-1">
+              Parkour
+            </a>
+            <button
+              type="button"
+              className="rounded-lg bg-sky-400 px-4 py-2 font-bold text-black"
+              onClick={() => setView('duel')}
+            >
+              Blok Brawl
+            </button>
+          </div>
         </div>
       </main>
     )
-  // Social play, direct invites and all account features retain the authentication gate.
+  // Home, social play, direct invites and all account features sit behind the authentication gate.
   if (!authUser) {
     return (
-      <>
-        <button
-          type="button"
-          onClick={returnToHub}
-          className="fixed bottom-4 left-4 z-40 rounded-xl border border-white/20 bg-slate-900 px-4 py-2 text-sm font-bold text-white"
-        >
-          ← {lang === 'pl' ? 'Odkrywaj' : 'Discover'}
-        </button>
-        <AuthScreen
-          mode={mode}
-          lang={lang}
-          pendingInviteRoom={privateJoinCode || (viewWorld(view) ? activeRoomId : null)}
-          onChangeMode={setMode}
-          onToggleLang={toggleLang}
-          onCheckDeviceAllowed={checkDeviceRegistrationAllowed}
-          onSignIn={signIn}
-          onSignUp={signUp}
-        />
-      </>
+      <AuthScreen
+        mode={mode}
+        lang={lang}
+        pendingInviteRoom={privateJoinCode || (viewWorld(view) ? activeRoomId : null)}
+        onChangeMode={setMode}
+        onToggleLang={toggleLang}
+        onCheckDeviceAllowed={checkDeviceRegistrationAllowed}
+        onSignIn={signIn}
+        onSignUp={signUp}
+      />
     )
   }
 
@@ -498,8 +488,7 @@ export function App() {
       setActiveRoomId(roomId || defaultRoom(world))
       if (isTouchMobileDevice()) enterGameFullscreenLandscape()
     } else if (isIn3DGame) exitGameFullscreen()
-    if (nextView === 'discover') returnToHub()
-    else setView(nextView)
+    setView(nextView)
   }
   const handleEnterWorld = (world: WorldKind, roomId: string) => {
     if (roomId.startsWith('PVT-')) {
@@ -621,8 +610,7 @@ export function App() {
     accent?: string
     badge?: number
   }> = [
-    { id: 'discover', label: lang === 'pl' ? 'Odkrywaj' : 'Discover', icon: Compass },
-    { id: 'home', label: lang === 'pl' ? 'Panel gracza' : 'Player hub', icon: Gamepad2 },
+    { id: 'home', label: lang === 'pl' ? 'Odkrywaj' : 'Discover', icon: Compass },
     { id: 'avatar', label: lang === 'pl' ? 'Szatnia awatarów' : 'Avatar Wardrobe', icon: Shirt },
     { id: 'social', label: lang === 'pl' ? 'Profil i Znajomi' : 'Profile', icon: Users },
   ]
@@ -655,6 +643,9 @@ export function App() {
   const allNavItems = [...navItems, ...staffNavItems]
 
   // Fullscreen 3D World Mode (zero shell chrome — 100% gameplay viewport)
+  if (view === 'duel')
+    return <BlokBrawl lang={lang} name={profile.username} theme={mode} onBack={returnToHub} />
+
   if (isIn3DGame) {
     return (
       <div className="min-h-dvh w-full max-w-full overflow-hidden" style={{ background: '#050C1B' }}>
@@ -1220,6 +1211,7 @@ export function App() {
               onOpenParty={() => setPartyModalOpen(true)}
               onOpenPrivateRoom={handleOpenPrivateRoom}
               onEnterWorld={handleEnterWorld}
+              onOpenDuel={() => navigateView('duel')}
               onOpenAvatar={() => navigateView('avatar')}
               onOpenProfile={() => navigateView('social')}
               onClaimQuest={claimQuest}

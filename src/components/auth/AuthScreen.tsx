@@ -226,7 +226,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       icon: Flag,
       title: t.featureObbyTitle,
       desc: t.featureObbyDesc,
-      tint: '#0EA5E9',
+      tint: '#F59E0B',
     },
     {
       icon: UserCircle2,

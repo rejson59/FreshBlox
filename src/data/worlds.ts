@@ -1,7 +1,7 @@
 import type { WorldKind } from './catalog'
 import type { Lang } from './locales'
 
-export type WorldId = WorldKind | 'skyline' | 'duel'
+export type WorldId = WorldKind | 'duel'
 export type Genre = 'parkour' | 'racing' | 'action' | 'social'
 type Text = Record<Lang, string>
 export interface World {
@@ -23,20 +23,6 @@ export const genres: Record<Genre, Text> = {
 }
 const name = (s: string) => ({ pl: s, en: s })
 export const worlds: Record<WorldId, World> = {
-  skyline: {
-    id: 'skyline',
-    name: name('Skyline Rush'),
-    genre: 'parkour',
-    cover: '/worlds/skyline.webp',
-    accent: '#38bdf8',
-    room: null,
-    multiplayer: false,
-    summary: {
-      pl: 'Przeskakuj między podniebnymi wyspami i złap własny rytm. Pierwszy skok należy do Ciebie.',
-      en: 'Leap between sky islands and find your rhythm. The first jump is yours.',
-    },
-    detail: { pl: 'Bez konta', en: 'Guest play' },
-  },
   obby: {
     id: 'obby',
     name: name('Parkour'),
@@ -122,7 +108,7 @@ export const worlds: Record<WorldId, World> = {
     detail: { pl: 'Strefa spotkań', en: 'Social hub' },
   },
 }
-export const worldOrder: WorldId[] = ['racing', 'arena', 'obby', 'frisbee', 'skyline', 'lobby', 'duel']
+export const worldOrder: WorldId[] = ['racing', 'arena', 'obby', 'frisbee', 'lobby', 'duel']
 export const gameIds: WorldKind[] = ['lobby', 'obby', 'arena', 'frisbee', 'racing']
 export const socialWorldIds = gameIds.filter((id) => worlds[id].multiplayer)
 export function cleanRoom(raw: string) {
