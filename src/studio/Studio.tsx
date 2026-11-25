@@ -32,7 +32,7 @@ function Block({ x, y, color, flag }: { x: number; y: number; color: string; fla
       {flag && (
         <g transform="translate(24 -2)">
           <path d="M0 0v-25" stroke="#f6eadb" strokeWidth="2.1" />
-          <path d="m1 -25 14 4 -14 4z" fill="#ff7444" />
+          <path d="m1 -25 14 4 -14 4z" fill="#38bdf8" />
         </g>
       )}
     </g>
@@ -133,7 +133,7 @@ export default function Studio({
                     flag={i === full.length - 1 || p.kind === 'checkpoint'}
                   />
                   {i === idx + 1 && (
-                    <path d={`m${i * 49 + 16},${51 - i * 2 - p.level * 8} 8 -4 8 4 -8 4z`} fill="#ff743d" />
+                    <path d={`m${i * 49 + 16},${51 - i * 2 - p.level * 8} 8 -4 8 4 -8 4z`} fill="#0ea5e9" />
                   )}
                 </g>
               ))}

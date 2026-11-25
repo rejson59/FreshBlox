@@ -5,12 +5,15 @@ export function WorldCard({
   world: w,
   lang,
   saved,
+  wide = false,
   onSave,
   onOpen,
 }: {
   world: World
   lang: Lang
   saved: boolean
+  /** Spans the whole grid row with the cover beside the text (used for Blok Brawl). */
+  wide?: boolean
   onSave: () => void
   onOpen: () => void
 }) {
@@ -18,7 +21,7 @@ export function WorldCard({
     pl = lang === 'pl',
     Icon = w.multiplayer ? UsersRound : UserRound
   return (
-    <article className="world-card">
+    <article className={`world-card${wide ? ' is-wide' : ''}`}>
       <button
         className="world-card-main"
         onClick={onOpen}
@@ -38,6 +41,7 @@ export function WorldCard({
               {genres[w.genre][lang]}
             </span>
             <h3>{title}</h3>
+            {wide && <p className="world-summary">{w.summary[lang]}</p>}
           </div>
           <ArrowUpRight size={17} />
         </div>

@@ -36,6 +36,7 @@ import { readLocal, saveLocal } from './local'
 import './hub.css'
 const Studio = lazy(() => import('../studio/Studio'))
 const MiniRun = lazy(() => import('../studio/MiniRun'))
+const BlokBrawl = lazy(() => import('../games/brawl/BlokBrawl'))
 type Page = 'discover' | 'library' | 'studio'
 const tabHash = (page: Page) => (page === 'discover' ? '#discover' : `#${page}`)
 const featureIds: WorldId[] = ['skyline', 'racing', 'arena']
@@ -99,7 +100,7 @@ export function ArcadeHub({ lang, toggleLang, username, accountsAvailable, onAcc
   const page: Page =
     hash === '#library' ? 'library' : hash === '#studio' || hash === '#test' ? 'studio' : 'discover'
   const isShared = hash.startsWith('#course='),
-    isRun = hash === '#skyline' || hash === '#test' || isShared
+    isRun = hash === '#skyline' || hash === '#duel' || hash === '#test' || isShared
   const course = useMemo(
     () => (hash === '#test' ? parseCourse(draft) : isShared ? decodeCourse(hash.slice(8)) : skyline),
     [hash, isShared, draft],
@@ -120,10 +121,10 @@ export function ArcadeHub({ lang, toggleLang, username, accountsAvailable, onAcc
   const title = pages.find((i) => i.id === page)!.name,
     spotWorld = worlds[featureIds[spot]]
   const play = (id: WorldId) => {
-    if (id === 'skyline') {
+    if (id === 'skyline' || id === 'duel') {
       setDetail(null)
       setInfo(null)
-      location.hash = 'skyline'
+      location.hash = id
       return
     }
     if (id === 'racing' || id==='obby' || username || accountsAvailable) {
@@ -163,7 +164,9 @@ export function ArcadeHub({ lang, toggleLang, username, accountsAvailable, onAcc
         .includes(query.trim().toLocaleLowerCase()),
   )
   const featureTitle = spot === 0 ? ['Skyline', 'Rush'] : spot === 1 ? ['Turbo', 'Kart'] : ['Portal', 'Arena']
-  const demo = detail !== null && (detail === 'skyline' || detail === 'racing' || detail==='obby'),
+  const demo =
+    detail !== null &&
+    (detail === 'skyline' || detail === 'racing' || detail === 'obby' || detail === 'duel'),
     canPlay = demo || !!username || accountsAvailable
   const close = pl ? 'Zamknij' : 'Close'
   return (
@@ -221,11 +224,11 @@ export function ArcadeHub({ lang, toggleLang, username, accountsAvailable, onAcc
         <button className="rail-user" onClick={account}>
           <span className="guest-icon">
             <svg viewBox="0 0 32 32" aria-hidden="true">
-              <path d="m4 10 10-6 14 4-10 7z" fill="#754e35" />
-              <path d="m4 10 14 5v14L4 23z" fill="#dc9a5a" />
-              <path d="m18 15 10-7v15l-10 6z" fill="#b87743" />
-              <path d="m4 10 14 5v4L4 14zm14 5 10-7v6l-10 6z" fill="#785339" />
-              <path d="m6 17 2 .7v2.5L6 19.5zm7 2.4 2 .7v2.4l-2-.7z" fill="#352d29" />
+              <path d="m4 10 10-6 14 4-10 7z" fill="#0f2f45" />
+              <path d="m4 10 14 5v14L4 23z" fill="#7dd3fc" />
+              <path d="m18 15 10-7v15l-10 6z" fill="#38bdf8" />
+              <path d="m4 10 14 5v4L4 14zm14 5 10-7v6l-10 6z" fill="#0284c7" />
+              <path d="m6 17 2 .7v2.5L6 19.5zm7 2.4 2 .7v2.4l-2-.7z" fill="#0a1b2e" />
             </svg>
           </span>
           <span>
@@ -244,7 +247,7 @@ export function ArcadeHub({ lang, toggleLang, username, accountsAvailable, onAcc
             <Box size={16} />
             <span>{pl ? 'Platforma' : 'Platform'}</span>
             <ChevronRight size={12} />
-            <b>{isRun ? 'Mini-Parkour' : title}</b>
+            <b>{isRun ? (hash === '#duel' ? 'Blok Brawl' : 'Mini-Parkour') : title}</b>
           </div>
           <button className="mobile-brand" onClick={() => nav('discover')}>
             <Brand />
@@ -303,7 +306,9 @@ export function ArcadeHub({ lang, toggleLang, username, accountsAvailable, onAcc
         <main id="hub-main" tabIndex={-1} className="hub-content">
           <Suspense fallback={<div className="fb-wait">{pl ? 'Wczytywanie…' : 'Loading…'}</div>}>
             {isRun ? (
-              course ? (
+              hash === '#duel' ? (
+                <BlokBrawl lang={lang} name={username} onBack={() => nav('discover')} />
+              ) : course ? (
                 <MiniRun
                   key={hash}
                   course={course}
@@ -456,6 +461,7 @@ export function ArcadeHub({ lang, toggleLang, username, accountsAvailable, onAcc
                         world={worlds[id]}
                         lang={lang}
                         saved={bookmarks.includes(id)}
+                        wide={id === 'duel'}
                         onSave={() => save(id)}
                         onOpen={() => setDetail(id)}
                       />
@@ -550,9 +556,13 @@ export function ArcadeHub({ lang, toggleLang, username, accountsAvailable, onAcc
               <Gamepad2 size={16} />
               {worlds[detail].detail[lang]} <b>·</b>{' '}
               {demo && !username
-                ? pl
-                  ? 'Trening bez nagród'
-                  : 'Unranked practice'
+                ? detail === 'duel'
+                  ? pl
+                    ? 'Pojedynek bez konta'
+                    : 'No account needed'
+                  : pl
+                    ? 'Trening bez nagród'
+                    : 'Unranked practice'
                 : pl
                   ? 'Konto gracza'
                   : 'Player account'}
@@ -560,8 +570,8 @@ export function ArcadeHub({ lang, toggleLang, username, accountsAvailable, onAcc
             {!canPlay && (
               <p className="modal-note">
                 {pl
-                  ? 'Ten świat sieciowy wymaga konta. W lokalnym podglądzie możesz od razu grać w Parkour, Skyline Rush i Turbo Kart.'
-                  : 'This online world requires an account. In local preview you can play Parkour, Skyline Rush and Turbo Kart right away.'}
+                  ? 'Ten świat sieciowy wymaga konta. W lokalnym podglądzie możesz od razu grać w Parkour, Skyline Rush, Turbo Kart i Blok Brawl.'
+                  : 'This online world requires an account. In local preview you can play Parkour, Skyline Rush, Turbo Kart and Blok Brawl right away.'}
               </p>
             )}
             <div className="fb-row">

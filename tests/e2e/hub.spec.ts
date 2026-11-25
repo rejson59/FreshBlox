@@ -20,7 +20,7 @@ test('discovery, filters, library persistence and language switch', async ({ pag
   await page.getByRole('textbox', { name: 'Search worlds' }).fill('xyzmissing')
   await expect(page.getByText('No matching worlds')).toBeVisible()
   await page.getByRole('button', { name: 'Clear search' }).click()
-  await expect(page.locator('.world-card')).toHaveCount(6)
+  await expect(page.locator('.world-card')).toHaveCount(7)
   await page.getByRole('button', { name: 'Next world' }).click()
   await expect(page.locator('.hero-content h2')).toHaveText('Turbo Kart')
   await page.getByRole('button', { name: 'Details', exact: true }).click()

@@ -460,7 +460,7 @@ export function App() {
               ? 'W tym podglądzie usługa kont nie jest skonfigurowana. W katalogu znajdziesz gry solo i kreator bez logowania.'
               : 'Accounts are not configured in this preview. Solo games and the creator studio are available in the catalog.'}
           </p>
-          <button className="rounded-lg bg-orange-400 px-4 py-2 font-bold text-black" onClick={returnToHub}>
+          <button className="rounded-lg bg-sky-400 px-4 py-2 font-bold text-black" onClick={returnToHub}>
             ← {lang === 'pl' ? 'Wróć do gier' : 'Back to games'}
           </button>
         </div>

@@ -653,7 +653,7 @@ export const LOBBY_ROOMS: LobbyRoomCard[] = [
     rating: 'NEW',
     pingMs: 12,
     status: 'live',
-    gradient: 'linear-gradient(135deg, #0369A1 0%, #0EA5E9 52%, #FDE047 100%)',
+    gradient: 'linear-gradient(135deg, #0369A1 0%, #0EA5E9 52%, #BAE6FD 100%)',
   },
   {
     id: 'CHILL-PL',
@@ -683,7 +683,7 @@ export const LOBBY_ROOMS: LobbyRoomCard[] = [
     rating: 'LIVE',
     pingMs: 11,
     status: 'live',
-    gradient: 'linear-gradient(135deg, #0E7490 0%, #22D3EE 48%, #F97316 100%)',
+    gradient: 'linear-gradient(135deg, #0E7490 0%, #22D3EE 48%, #BAE6FD 100%)',
   },
   {
     id: 'FRISBEE-1',
@@ -698,6 +698,6 @@ export const LOBBY_ROOMS: LobbyRoomCard[] = [
     rating: 'NEW',
     pingMs: 11,
     status: 'live',
-    gradient: 'linear-gradient(135deg, #991B1B 0%, #F97316 52%, #FACC15 100%)',
+    gradient: 'linear-gradient(135deg, #0C4A6E 0%, #38BDF8 52%, #E0F2FE 100%)',
   },
 ]
