@@ -4,7 +4,7 @@
   --muted: #a4a6b0;
   --line: #2b2c32;
   --panel: #191a1e;
-  --hot: #ff7949;
+  --hot: #38bdf8;
   --rail: 212px;
   min-height: 100dvh;
   background: #101114;
@@ -31,7 +31,7 @@
 }
 .fb-hub :focus-visible,
 .fb-dialog :focus-visible {
-  outline: 2px solid #ff985c;
+  outline: 2px solid #38bdf8;
   outline-offset: 3px;
 }
 .fb-hub h1,
@@ -143,9 +143,9 @@
   font-size: 13px;
 }
 .rail-nav button.active {
-  background: #34231f;
-  border-color: #543228;
-  color: #ff8a58;
+  background: #0f2a3d;
+  border-color: #1e4a66;
+  color: #7dd3fc;
 }
 .rail-nav button:hover:not(.active),
 .rail-shortcuts button:hover,
@@ -166,8 +166,8 @@
   font-style: normal;
 }
 .rail-nav small {
-  color: #f5a786;
-  background: #362922;
+  color: #7dd3fc;
+  background: #0f2f45;
 }
 .rail-rule {
   margin: 25px 10px;
@@ -216,8 +216,8 @@
   width: 37px;
   height: 37px;
   border-radius: 9px;
-  background: linear-gradient(140deg, #4d3830, #282226);
-  border: 1px solid #56403a;
+  background: linear-gradient(140deg, #10304a, #1a2230);
+  border: 1px solid #1f4a63;
   padding: 3px;
 }
 .rail-user strong,
@@ -309,7 +309,7 @@
   color: #a1a3ac;
 }
 .hub-search:focus-within {
-  border-color: #986248;
+  border-color: #2d6f94;
 }
 .hub-search input {
   min-width: 0;
@@ -376,7 +376,7 @@
   line-height: 1.3;
   letter-spacing: 1.7px;
   text-transform: uppercase;
-  color: #f79062;
+  color: #7dd3fc;
 }
 .fb-kicker > span {
   width: 17px;
@@ -464,9 +464,9 @@
 }
 .hero-label {
   gap: 6px;
-  color: #ffe0bd;
-  background: #332c22bb;
-  border: 1px solid #a888586b;
+  color: #e0f2fe;
+  background: #0c2a3dbb;
+  border: 1px solid #5b9bc46b;
   border-radius: 5px;
   padding: 3px 8px;
   font-size: 9px;
@@ -474,7 +474,7 @@
   letter-spacing: 1.2px;
 }
 .hero-label svg {
-  color: #ffae71;
+  color: #7dd3fc;
 }
 .hero-content h2 {
   font:
@@ -490,7 +490,7 @@
   display: block;
   font-style: italic;
   font-synthesis: style;
-  color: #ffad71;
+  color: #7dd3fc;
   letter-spacing: -0.055em;
 }
 .hero-content p {
@@ -525,13 +525,13 @@
   transform: translateY(1px);
 }
 .fb-btn.primary {
-  background: #ff804e;
-  color: #1b110e;
-  border: 1px solid #ff9868;
+  background: #0284c7;
+  color: #ffffff;
+  border: 1px solid #38bdf8;
   box-shadow: inset 0 1px 0 #ffffff26;
 }
 .fb-btn.primary:hover {
-  background: #ff9669;
+  background: #0369a1;
 }
 .fb-btn.ghost {
   color: #eeeef2;
@@ -599,7 +599,7 @@
   gap: 10px;
 }
 .catalog-icon {
-  color: #ff8754;
+  color: #7dd3fc;
 }
 .fb-hub .catalog-head h2 {
   font-size: clamp(23px, 1.8vw, 30px);
@@ -714,9 +714,9 @@
   border-radius: 6px;
 }
 .world-save.is-saved {
-  background: #f8b086;
-  color: #35241e;
-  border-color: #ffccac;
+  background: #38bdf8;
+  color: #06283a;
+  border-color: #7dd3fc;
 }
 .world-info {
   padding: 13px 15px 6px;
@@ -761,12 +761,48 @@
   background: currentColor;
   border-radius: 50%;
 }
+/* Blok Brawl: the newest world gets the full row, cover beside the blurb. */
+.world-card.is-wide {
+  grid-column: 1 / -1;
+}
+.world-card.is-wide .world-card-main {
+  display: grid;
+  grid-template-columns: minmax(200px, 330px) minmax(0, 1fr);
+  grid-template-rows: 1fr auto;
+}
+.world-card.is-wide .world-cover {
+  aspect-ratio: auto;
+  height: 100%;
+  min-height: 172px;
+  grid-row: 1 / span 2;
+}
+.world-card.is-wide .world-info {
+  padding: 18px 20px 8px;
+  align-items: flex-start;
+}
+.world-card.is-wide .world-info > svg {
+  margin-top: 6px;
+}
+.world-card.is-wide .world-info h3 {
+  font-size: 26px;
+  margin-top: 7px;
+}
+.world-card.is-wide .world-summary {
+  margin: 8px 0 0;
+  max-width: 560px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.world-card.is-wide .world-meta {
+  padding: 10px 20px 16px;
+}
 .studio-promo {
   margin-top: 24px;
   padding: 20px 22px;
-  border: 1px solid #3f322e;
+  border: 1px solid #2b4053;
   border-radius: 11px;
-  background: linear-gradient(100deg, #29211f, #1b1c20 80%);
+  background: linear-gradient(100deg, #142635, #1b1c20 80%);
   display: flex;
   align-items: center;
   gap: 16px;
@@ -777,9 +813,9 @@
   display: grid;
   place-content: center;
   border-radius: 9px;
-  color: #ff9865;
-  background: linear-gradient(145deg, #56362c, #342923);
-  border: 1px solid #694432;
+  color: #7dd3fc;
+  background: linear-gradient(145deg, #123a52, #0f2636);
+  border: 1px solid #1d5576;
 }
 .studio-promo h3 {
   margin: 6px 0 4px;
@@ -825,7 +861,7 @@
 .fb-empty > svg {
   display: block;
   margin: 0 auto 12px;
-  color: #f39166;
+  color: #7dd3fc;
 }
 .fb-empty h3,
 .fb-empty h2 {
@@ -916,11 +952,11 @@
 }
 .modal-fact svg,
 .modal-fact b {
-  color: #ff9668;
+  color: #7dd3fc;
 }
 .modal-body .modal-note {
   font-size: 12px;
-  color: #edc6ac;
+  color: #a9d6ef;
 }
 /* Creator bench and playable course */
 .fb-intro {
@@ -1042,7 +1078,7 @@
 .piece-sequence button.selected,
 .piece-palette button.selected {
   border-color: var(--hot);
-  background: #342720;
+  background: #0f2a3d;
 }
 .piece-palette {
   display: grid;
@@ -1140,9 +1176,9 @@
   border: 1px solid #44464d;
 }
 .run-key:last-child {
-  background: #ff804e;
-  color: #26150c;
-  border-color: #ff9b73;
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #38bdf8;
 }
 .run-key:active {
   filter: brightness(1.3);
@@ -1257,8 +1293,8 @@
     font-size: 12px;
   }
   .hub-mobile-nav .active {
-    color: #ff976c;
-    background: #382720;
+    color: #7dd3fc;
+    background: #0f2a3d;
   }
   .hub-content {
     padding-bottom: 69px;
@@ -1379,6 +1415,25 @@
   .world-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
+  }
+  .world-card.is-wide .world-card-main {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+  }
+  .world-card.is-wide .world-cover {
+    aspect-ratio: 1.96;
+    height: auto;
+    min-height: 0;
+    grid-row: auto;
+  }
+  .world-card.is-wide .world-info {
+    padding: 12px 12px 4px;
+  }
+  .world-card.is-wide .world-info h3 {
+    font-size: 20px;
+  }
+  .world-card.is-wide .world-meta {
+    padding: 0 12px 12px;
   }
   .world-info {
     padding: 10px 10px 4px;

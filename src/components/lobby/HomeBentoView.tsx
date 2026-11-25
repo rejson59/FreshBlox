@@ -153,18 +153,18 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
           className="group relative overflow-hidden rounded-2xl border select-none"
           style={{
             borderColor: isFeaturedFrisbee
-              ? 'rgba(249, 115, 22, 0.5)'
+              ? 'rgba(56, 189, 248, 0.5)'
               : isFeaturedArena
                 ? 'rgba(34, 211, 238, 0.45)'
                 : isFeaturedObby
-                  ? 'rgba(245, 158, 11, 0.38)'
+                  ? 'rgba(56, 189, 248, 0.38)'
                   : 'rgba(56, 189, 248, 0.36)',
             background: isFeaturedFrisbee
-              ? 'linear-gradient(135deg, #1E1B4B 0%, #9A3412 52%, #EA580C 100%)'
+              ? 'linear-gradient(135deg, #1E1B4B 0%, #0369A1 52%, #0284C7 100%)'
               : isFeaturedArena
-                ? 'linear-gradient(135deg, #051326 0%, #0E7490 55%, #C2410C 100%)'
+                ? 'linear-gradient(135deg, #051326 0%, #0E7490 55%, #0284C7 100%)'
                 : isFeaturedObby
-                  ? 'linear-gradient(135deg, #271605 0%, #92400E 100%)'
+                  ? 'linear-gradient(135deg, #07192E 0%, #0284C7 100%)'
                   : 'linear-gradient(135deg, #07192E 0%, #0369A1 100%)',
           }}
         >
@@ -208,10 +208,10 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                 </span>
                 {isFeaturedObby && (
                   <span
-                    className="hidden md:inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-500/20 px-2 py-1 text-[11px] font-extrabold text-amber-200 backdrop-blur-md border border-amber-400/30"
+                    className="hidden md:inline-flex shrink-0 items-center gap-1 rounded-lg bg-sky-500/20 px-2 py-1 text-[11px] font-extrabold text-sky-200 backdrop-blur-md border border-sky-400/30"
                     title={lang === 'pl' ? 'Nagroda: Korona Parkour' : 'Reward: Parkour Crown'}
                   >
-                    <Crown className="h-3.5 w-3.5 text-amber-300" />
+                    <Crown className="h-3.5 w-3.5 text-sky-300" />
                     100
                   </span>
                 )}
@@ -224,7 +224,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                   onClick={() => setFeatured('frisbee')}
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1 sm:px-2.5 text-[11px] font-extrabold transition cursor-pointer"
                   style={{
-                    background: featured === 'frisbee' ? 'linear-gradient(135deg, #F97316, #FACC15)' : 'transparent',
+                    background: featured === 'frisbee' ? 'linear-gradient(135deg, #0284C7, #BAE6FD)' : 'transparent',
                     color: featured === 'frisbee' ? '#09111F' : '#CBD5E1',
                   }}
                   title="Frisbee King"
@@ -237,7 +237,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                   onClick={() => setFeatured('arena')}
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1 sm:px-2.5 text-[11px] font-extrabold transition cursor-pointer"
                   style={{
-                    background: featured === 'arena' ? 'linear-gradient(135deg, #22D3EE, #F97316)' : 'transparent',
+                    background: featured === 'arena' ? 'linear-gradient(135deg, #22D3EE, #0284C7)' : 'transparent',
                     color: featured === 'arena' ? '#09111F' : '#CBD5E1',
                   }}
                   title="Portal Arena"
@@ -263,7 +263,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                   onClick={() => setFeatured('obby')}
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1 sm:px-2.5 text-[11px] font-extrabold transition cursor-pointer"
                   style={{
-                    background: featured === 'obby' ? '#F59E0B' : 'transparent',
+                    background: featured === 'obby' ? '#38BDF8' : 'transparent',
                     color: featured === 'obby' ? '#0F172A' : '#CBD5E1',
                   }}
                   title="Parkour"
@@ -290,18 +290,18 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                 </h1>
 
                 {isFeaturedFrisbee ? (
-                  <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs font-bold text-orange-100/95">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs font-bold text-sky-100/95">
                     <span className="inline-flex items-center gap-1.5">
                       <span
                         className={`h-1.5 w-1.5 rounded-full ${frisbeeOnline > 0 ? 'bg-emerald-400' : 'bg-slate-400'}`}
                       />
                       {frisbeeOnline} online
                     </span>
-                    <span className="inline-flex items-center gap-1 text-amber-300">
+                    <span className="inline-flex items-center gap-1 text-sky-300">
                       <Flame className="h-3.5 w-3.5" />
                       {frisbeeTotalSlices} {lang === 'pl' ? 'przecięć' : 'slices'}
                     </span>
-                    <span className="hidden sm:inline text-orange-200/90 font-semibold">
+                    <span className="hidden sm:inline text-sky-200/90 font-semibold">
                       {lang === 'pl'
                         ? '3 Rundy · Kręta hala z rampami · Ogniste cięcie · Łapanie [PPM/E]'
                         : '3 Rounds · Winding ramp box · Fiery slice · Mid-air Catch [RMB/E]'}
@@ -315,7 +315,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                       />
                       {arenaOnline} online
                     </span>
-                    <span className="inline-flex items-center gap-1 text-orange-300">
+                    <span className="inline-flex items-center gap-1 text-sky-300">
                       <Flame className="h-3.5 w-3.5" />
                       {arenaTotalElims} {lang === 'pl' ? 'eliminacji' : 'elims'}
                     </span>
@@ -326,14 +326,14 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                     </span>
                   </div>
                 ) : isFeaturedObby ? (
-                  <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs font-bold text-amber-100/90">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs font-bold text-sky-100/90">
                     <span className="inline-flex items-center gap-1.5">
                       <span
                         className={`h-1.5 w-1.5 rounded-full ${obbyOnline > 0 ? 'bg-emerald-400' : 'bg-slate-400'}`}
                       />
                       {obbyOnline} online
                     </span>
-                    <span className="inline-flex items-center gap-1 text-amber-300">
+                    <span className="inline-flex items-center gap-1 text-sky-300">
                       <Trophy className="h-3.5 w-3.5" />
                       {obbyClears} {lang === 'pl' ? 'ukończyło' : 'cleared'}
                     </span>
@@ -343,11 +343,11 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                           className="h-full rounded-full transition-all"
                           style={{
                             width: `${obbyPct}%`,
-                            background: 'linear-gradient(90deg, #F59E0B 0%, #FDE047 100%)',
+                            background: 'linear-gradient(90deg, #38BDF8 0%, #BAE6FD 100%)',
                           }}
                         />
                       </div>
-                      <span className="font-mono text-[11px] font-extrabold text-amber-300">
+                      <span className="font-mono text-[11px] font-extrabold text-sky-300">
                         {profile.obbyBestStage}/100
                       </span>
                     </div>
@@ -381,11 +381,11 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                 className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-extrabold shadow-xl transition hover:brightness-110 active:scale-[0.98] cursor-pointer"
                 style={{
                   background: isFeaturedFrisbee
-                    ? 'linear-gradient(135deg, #F97316 0%, #FACC15 100%)'
+                    ? 'linear-gradient(135deg, #0284C7 0%, #BAE6FD 100%)'
                     : isFeaturedArena
-                      ? 'linear-gradient(135deg, #22D3EE 0%, #F97316 100%)'
+                      ? 'linear-gradient(135deg, #22D3EE 0%, #0284C7 100%)'
                       : isFeaturedObby
-                        ? 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)'
+                        ? 'linear-gradient(135deg, #38BDF8 0%, #0284C7 100%)'
                         : 'linear-gradient(135deg, #0EA5E9 0%, #0284C7 100%)',
                   color: isFeaturedFrisbee || isFeaturedArena || isFeaturedObby ? '#0F172A' : '#FFFFFF',
                 }}
@@ -552,11 +552,11 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                         style={{
                           background:
                             world.id === 'frisbee'
-                              ? 'linear-gradient(135deg, #F97316, #FACC15)'
+                              ? 'linear-gradient(135deg, #0284C7, #BAE6FD)'
                               : world.id === 'arena'
-                                ? 'linear-gradient(135deg, #22D3EE, #F97316)'
+                                ? 'linear-gradient(135deg, #22D3EE, #0284C7)'
                                 : world.id === 'obby'
-                                  ? '#F59E0B'
+                                  ? '#38BDF8'
                                   : '#0EA5E9',
                           color: world.id === 'obby' || world.id === 'arena' || world.id === 'frisbee' ? '#0F172A' : '#FFFFFF',
                         }}
@@ -603,7 +603,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                           {world.id === 'obby' ? (
                             <span className="inline-flex items-center gap-2">
                               <span
-                                className="inline-flex items-center gap-0.5 text-amber-400"
+                                className="inline-flex items-center gap-0.5 text-sky-400"
                                 title={lang === 'pl' ? 'Twój rekord' : 'Your best stage'}
                               >
                                 <Flag className="h-3 w-3" />
@@ -620,7 +620,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                           ) : world.id === 'arena' ? (
                             <span className="inline-flex items-center gap-2">
                               <span
-                                className="inline-flex items-center gap-0.5 text-orange-400"
+                                className="inline-flex items-center gap-0.5 text-sky-400"
                                 title={lang === 'pl' ? 'Twoje eliminacje' : 'Your eliminations'}
                               >
                                 <Flame className="h-3 w-3" />
@@ -637,14 +637,14 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                           ) : world.id === 'frisbee' ? (
                             <span className="inline-flex items-center gap-2">
                               <span
-                                className="inline-flex items-center gap-0.5 text-orange-400"
+                                className="inline-flex items-center gap-0.5 text-sky-400"
                                 title={lang === 'pl' ? 'Twoje przecięcia' : 'Your slices'}
                               >
                                 <Flame className="h-3 w-3" />
                                 {profile.frisbeeSlices}
                               </span>
                               <span
-                                className="inline-flex items-center gap-0.5 text-amber-300"
+                                className="inline-flex items-center gap-0.5 text-sky-300"
                                 title={lang === 'pl' ? 'Wygrane mecze Frisbee King' : 'Frisbee King wins'}
                               >
                                 <Crown className="h-3 w-3" />
@@ -692,7 +692,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
               style={{
                 background:
                   profile.role === 'owner'
-                    ? 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)'
+                    ? 'linear-gradient(135deg, #38BDF8 0%, #0284C7 100%)'
                     : 'linear-gradient(135deg, #0EA5E9 0%, #2563EB 100%)',
               }}
               title={profile.username}
@@ -766,7 +766,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
         >
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5">
-              <Trophy className="h-3.5 w-3.5 text-amber-400" />
+              <Trophy className="h-3.5 w-3.5 text-sky-400" />
               <span className="text-[11px] font-extrabold uppercase tracking-wider" style={{ color: tokens.textPrimary }}>
                 TOP Parkour
               </span>
@@ -804,7 +804,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                       {entry.username}
                     </span>
                   </div>
-                  <span className="shrink-0 font-mono text-[11px] font-extrabold text-amber-400">
+                  <span className="shrink-0 font-mono text-[11px] font-extrabold text-sky-400">
                     {entry.obbyBestStage}/100
                   </span>
                 </div>
@@ -903,8 +903,8 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
             </span>
           </div>
           <span
-            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold text-amber-400"
-            style={{ background: 'rgba(245, 158, 11, 0.12)' }}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold text-sky-400"
+            style={{ background: 'rgba(56, 189, 248, 0.12)' }}
           >
             <Clock className="h-2.5 w-2.5" />
             {lang === 'pl' ? 'Wkrótce' : 'Soon'}

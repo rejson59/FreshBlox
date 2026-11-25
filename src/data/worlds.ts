@@ -1,7 +1,7 @@
 import type { WorldKind } from './catalog'
 import type { Lang } from './locales'
 
-export type WorldId = WorldKind | 'skyline'
+export type WorldId = WorldKind | 'skyline' | 'duel'
 export type Genre = 'parkour' | 'racing' | 'action' | 'social'
 type Text = Record<Lang, string>
 export interface World {
@@ -28,7 +28,7 @@ export const worlds: Record<WorldId, World> = {
     name: name('Skyline Rush'),
     genre: 'parkour',
     cover: '/worlds/skyline.webp',
-    accent: '#ff7d41',
+    accent: '#38bdf8',
     room: null,
     multiplayer: false,
     summary: {
@@ -42,7 +42,7 @@ export const worlds: Record<WorldId, World> = {
     name: name('Parkour'),
     genre: 'parkour',
     cover: '/worlds/obby.webp',
-    accent: '#ffbc52',
+    accent: '#7dd3fc',
     room: 'OBBY-1',
     multiplayer: true,
     summary: {
@@ -84,7 +84,7 @@ export const worlds: Record<WorldId, World> = {
     name: name('Frisbee King'),
     genre: 'action',
     cover: '/worlds/frisbee.webp',
-    accent: '#fa8650',
+    accent: '#0ea5e9',
     room: 'FRISBEE-1',
     multiplayer: true,
     summary: {
@@ -92,6 +92,20 @@ export const worlds: Record<WorldId, World> = {
       en: 'Curve the disc, bank it off the wall and win a three-round showdown.',
     },
     detail: { pl: '3 rundy', en: '3 rounds' },
+  },
+  duel: {
+    id: 'duel',
+    name: name('Blok Brawl'),
+    genre: 'action',
+    cover: '/worlds/duel.webp',
+    accent: '#38bdf8',
+    room: 'BRAWL-1',
+    multiplayer: true,
+    summary: {
+      pl: 'Zepchnij rywala z kurczącej się platformy. Dash, wyczekaj rykoszet i wypchnij go w chmury — pierwszy do trzech knockoutów.',
+      en: 'Shove your rival off a shrinking platform. Dash, bait the recoil and send them into the clouds — first to three knockouts.',
+    },
+    detail: { pl: 'PvP 1 na 1', en: '1v1 PvP' },
   },
   lobby: {
     id: 'lobby',
@@ -108,7 +122,7 @@ export const worlds: Record<WorldId, World> = {
     detail: { pl: 'Strefa spotkań', en: 'Social hub' },
   },
 }
-export const worldOrder: WorldId[] = ['racing', 'arena', 'obby', 'frisbee', 'skyline', 'lobby']
+export const worldOrder: WorldId[] = ['racing', 'arena', 'obby', 'frisbee', 'skyline', 'lobby', 'duel']
 export const gameIds: WorldKind[] = ['lobby', 'obby', 'arena', 'frisbee', 'racing']
 export const socialWorldIds = gameIds.filter((id) => worlds[id].multiplayer)
 export function cleanRoom(raw: string) {
