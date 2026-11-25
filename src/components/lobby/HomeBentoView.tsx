@@ -22,7 +22,7 @@ import { Lang } from '../../data/locales'
 import { DAILY_QUESTS, getRankForXp, QuestDef, WorldKind } from '../../data/catalog'
 import { FreshGemShard } from '../brand/FreshBloxBrand'
 import { CloudPlayerSummary, getAccountRoleMeta, PlayerProfile } from '../../store/usePlayerStore'
-import { gameIds, worlds } from '../../data/worlds'
+import { useWorldThumbnails, WorldPreviewKey } from '../../engine/worldThumbnails'
 import { fetchWorldLiveStats, WorldLiveStats } from '../../lib/adminApi'
 
 interface HomeBentoViewProps {
@@ -35,19 +35,102 @@ interface HomeBentoViewProps {
   onOpenParty?: () => void
   onOpenPrivateRoom?: (world?: WorldKind) => void
   onEnterWorld: (world: WorldKind, roomId: string) => void
+  /** Launches Blok Brawl (the 2D PvP duel that lives outside the 3D world registry). */
+  onOpenDuel?: () => void
   onOpenAvatar: () => void
   onOpenProfile?: () => void
   onClaimQuest: (questId: QuestDef['id']) => void
   onFetchLeaderboard: () => Promise<CloudPlayerSummary[]>
 }
 
-const WORLD_CARDS = gameIds.map(id => {
-  const w = worlds[id]
-  return { id, worldKind: id, roomId: w.room!, titlePl: w.name.pl, titleEn: w.name.en,
-    tagPl: id === 'racing' ? 'Trening solo · 3 boty' : w.detail.pl,
-    tagEn: id === 'racing' ? 'Solo practice · 3 AI rivals' : w.detail.en,
-    live: true, accent: w.accent, fallbackBg: '#18202c' }
-})
+interface WorldCardSpec {
+  id: WorldPreviewKey | 'duel'
+  worldKind?: WorldKind
+  roomId?: string
+  /** Static cover for cards without a live 3D thumbnail (Blok Brawl). */
+  cover?: string
+  titlePl: string
+  titleEn: string
+  tagPl: string
+  tagEn: string
+  live: boolean
+  accent: string
+  fallbackBg: string
+}
+
+const WORLD_CARDS: WorldCardSpec[] = [
+  {
+    id: 'lobby',
+    worldKind: 'lobby',
+    roomId: 'PUBLIC-1',
+    titlePl: 'Lobby Główne',
+    titleEn: 'Main Lobby',
+    tagPl: 'Hub 3D',
+    tagEn: '3D Hub',
+    live: true,
+    accent: '#38BDF8',
+    fallbackBg: 'linear-gradient(135deg, #0C2544 0%, #0EA5E9 100%)',
+  },
+  {
+    id: 'obby',
+    worldKind: 'obby',
+    roomId: 'OBBY-1',
+    titlePl: 'Parkour',
+    titleEn: 'Parkour',
+    tagPl: '500 Etapów',
+    tagEn: '500 Stages',
+    live: true,
+    accent: '#F59E0B',
+    fallbackBg: 'linear-gradient(135deg, #3B2308 0%, #F59E0B 100%)',
+  },
+  {
+    id: 'arena',
+    worldKind: 'arena',
+    roomId: 'ARENA-1',
+    titlePl: 'Portal Arena 2.0',
+    titleEn: 'Portal Arena 2.0',
+    tagPl: 'Portale Live + Solo',
+    tagEn: 'Live Portals + Solo',
+    live: true,
+    accent: '#22D3EE',
+    fallbackBg: 'linear-gradient(135deg, #06182A 0%, #0E7490 50%, #F97316 100%)',
+  },
+  {
+    id: 'frisbee',
+    worldKind: 'frisbee',
+    roomId: 'FRISBEE-1',
+    titlePl: 'Frisbee King',
+    titleEn: 'Frisbee King',
+    tagPl: '3 Rundy · Ogniste Cięcie',
+    tagEn: '3 Rounds · Blazing Slice',
+    live: true,
+    accent: '#F97316',
+    fallbackBg: 'linear-gradient(135deg, #1E1B4B 0%, #C2410C 55%, #FACC15 100%)',
+  },
+  {
+    id: 'racing',
+    worldKind: 'racing',
+    roomId: 'KART-1',
+    titlePl: 'Turbo Kart',
+    titleEn: 'Turbo Kart',
+    tagPl: 'Trening solo · 3 boty',
+    tagEn: 'Solo practice · 3 AI rivals',
+    live: true,
+    accent: '#0284C7',
+    fallbackBg: 'linear-gradient(135deg, #38BDF8 0%, #0284C7 55%, #F59E0B 100%)',
+  },
+  {
+    id: 'duel',
+    titlePl: 'Blok Brawl',
+    titleEn: 'Blok Brawl',
+    tagPl: 'PvP 1 na 1',
+    tagEn: '1v1 PvP',
+    live: true,
+    accent: '#38BDF8',
+    fallbackBg: 'linear-gradient(135deg, #0B2540 0%, #38BDF8 100%)',
+    cover: '/worlds/duel.webp',
+  },
+]
 
 export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
   profile,
@@ -59,6 +142,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
   onOpenParty,
   onOpenPrivateRoom,
   onEnterWorld,
+  onOpenDuel,
   onOpenAvatar,
   onOpenProfile,
   onClaimQuest,
@@ -69,7 +153,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
   const [loadingBoard, setLoadingBoard] = useState(false)
   const [liveStats, setLiveStats] = useState<WorldLiveStats | null>(null)
 
-  const thumbs = Object.fromEntries(gameIds.map(id => [id, worlds[id].cover]))
+  const thumbs = useWorldThumbnails()
   const tokens = getThemeTokens(mode)
   const isDark = mode === 'dark'
   const rank = getRankForXp(profile.xp)
@@ -116,7 +200,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
     )
   }, [searchQuery])
 
-  const obbyPct = Math.min(100, Math.round((profile.obbyBestStage / 100) * 100))
+  const obbyPct = Math.min(100, Math.round((profile.obbyBestStage / 500) * 100))
   const completedQuestsCount = DAILY_QUESTS.filter((q) => profile.quests.claimed[q.id]).length
   const nextRankXp = rank.nextXp
   const xpPct = Math.min(
@@ -153,18 +237,18 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
           className="group relative overflow-hidden rounded-2xl border select-none"
           style={{
             borderColor: isFeaturedFrisbee
-              ? 'rgba(56, 189, 248, 0.5)'
+              ? 'rgba(249, 115, 22, 0.5)'
               : isFeaturedArena
                 ? 'rgba(34, 211, 238, 0.45)'
                 : isFeaturedObby
-                  ? 'rgba(56, 189, 248, 0.38)'
+                  ? 'rgba(245, 158, 11, 0.38)'
                   : 'rgba(56, 189, 248, 0.36)',
             background: isFeaturedFrisbee
-              ? 'linear-gradient(135deg, #1E1B4B 0%, #0369A1 52%, #0284C7 100%)'
+              ? 'linear-gradient(135deg, #1E1B4B 0%, #9A3412 52%, #EA580C 100%)'
               : isFeaturedArena
-                ? 'linear-gradient(135deg, #051326 0%, #0E7490 55%, #0284C7 100%)'
+                ? 'linear-gradient(135deg, #051326 0%, #0E7490 55%, #C2410C 100%)'
                 : isFeaturedObby
-                  ? 'linear-gradient(135deg, #07192E 0%, #0284C7 100%)'
+                  ? 'linear-gradient(135deg, #271605 0%, #92400E 100%)'
                   : 'linear-gradient(135deg, #07192E 0%, #0369A1 100%)',
           }}
         >
@@ -203,15 +287,15 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                     : isFeaturedArena
                       ? '#ARENA-1'
                       : isFeaturedObby
-                        ? `${profile.obbyStage}/100`
+                        ? `${profile.obbyStage}/500`
                         : '#PUBLIC-1'}
                 </span>
                 {isFeaturedObby && (
                   <span
-                    className="hidden md:inline-flex shrink-0 items-center gap-1 rounded-lg bg-sky-500/20 px-2 py-1 text-[11px] font-extrabold text-sky-200 backdrop-blur-md border border-sky-400/30"
+                    className="hidden md:inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-500/20 px-2 py-1 text-[11px] font-extrabold text-amber-200 backdrop-blur-md border border-amber-400/30"
                     title={lang === 'pl' ? 'Nagroda: Korona Parkour' : 'Reward: Parkour Crown'}
                   >
-                    <Crown className="h-3.5 w-3.5 text-sky-300" />
+                    <Crown className="h-3.5 w-3.5 text-amber-300" />
                     100
                   </span>
                 )}
@@ -224,7 +308,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                   onClick={() => setFeatured('frisbee')}
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1 sm:px-2.5 text-[11px] font-extrabold transition cursor-pointer"
                   style={{
-                    background: featured === 'frisbee' ? 'linear-gradient(135deg, #0284C7, #BAE6FD)' : 'transparent',
+                    background: featured === 'frisbee' ? 'linear-gradient(135deg, #F97316, #FACC15)' : 'transparent',
                     color: featured === 'frisbee' ? '#09111F' : '#CBD5E1',
                   }}
                   title="Frisbee King"
@@ -237,7 +321,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                   onClick={() => setFeatured('arena')}
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1 sm:px-2.5 text-[11px] font-extrabold transition cursor-pointer"
                   style={{
-                    background: featured === 'arena' ? 'linear-gradient(135deg, #22D3EE, #0284C7)' : 'transparent',
+                    background: featured === 'arena' ? 'linear-gradient(135deg, #22D3EE, #F97316)' : 'transparent',
                     color: featured === 'arena' ? '#09111F' : '#CBD5E1',
                   }}
                   title="Portal Arena"
@@ -263,7 +347,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                   onClick={() => setFeatured('obby')}
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1 sm:px-2.5 text-[11px] font-extrabold transition cursor-pointer"
                   style={{
-                    background: featured === 'obby' ? '#38BDF8' : 'transparent',
+                    background: featured === 'obby' ? '#F59E0B' : 'transparent',
                     color: featured === 'obby' ? '#0F172A' : '#CBD5E1',
                   }}
                   title="Parkour"
@@ -290,18 +374,18 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                 </h1>
 
                 {isFeaturedFrisbee ? (
-                  <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs font-bold text-sky-100/95">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs font-bold text-orange-100/95">
                     <span className="inline-flex items-center gap-1.5">
                       <span
                         className={`h-1.5 w-1.5 rounded-full ${frisbeeOnline > 0 ? 'bg-emerald-400' : 'bg-slate-400'}`}
                       />
                       {frisbeeOnline} online
                     </span>
-                    <span className="inline-flex items-center gap-1 text-sky-300">
+                    <span className="inline-flex items-center gap-1 text-amber-300">
                       <Flame className="h-3.5 w-3.5" />
                       {frisbeeTotalSlices} {lang === 'pl' ? 'przecięć' : 'slices'}
                     </span>
-                    <span className="hidden sm:inline text-sky-200/90 font-semibold">
+                    <span className="hidden sm:inline text-orange-200/90 font-semibold">
                       {lang === 'pl'
                         ? '3 Rundy · Kręta hala z rampami · Ogniste cięcie · Łapanie [PPM/E]'
                         : '3 Rounds · Winding ramp box · Fiery slice · Mid-air Catch [RMB/E]'}
@@ -315,7 +399,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                       />
                       {arenaOnline} online
                     </span>
-                    <span className="inline-flex items-center gap-1 text-sky-300">
+                    <span className="inline-flex items-center gap-1 text-orange-300">
                       <Flame className="h-3.5 w-3.5" />
                       {arenaTotalElims} {lang === 'pl' ? 'eliminacji' : 'elims'}
                     </span>
@@ -326,14 +410,14 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                     </span>
                   </div>
                 ) : isFeaturedObby ? (
-                  <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs font-bold text-sky-100/90">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs font-bold text-amber-100/90">
                     <span className="inline-flex items-center gap-1.5">
                       <span
                         className={`h-1.5 w-1.5 rounded-full ${obbyOnline > 0 ? 'bg-emerald-400' : 'bg-slate-400'}`}
                       />
                       {obbyOnline} online
                     </span>
-                    <span className="inline-flex items-center gap-1 text-sky-300">
+                    <span className="inline-flex items-center gap-1 text-amber-300">
                       <Trophy className="h-3.5 w-3.5" />
                       {obbyClears} {lang === 'pl' ? 'ukończyło' : 'cleared'}
                     </span>
@@ -343,12 +427,12 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                           className="h-full rounded-full transition-all"
                           style={{
                             width: `${obbyPct}%`,
-                            background: 'linear-gradient(90deg, #38BDF8 0%, #BAE6FD 100%)',
+                            background: 'linear-gradient(90deg, #F59E0B 0%, #FDE047 100%)',
                           }}
                         />
                       </div>
-                      <span className="font-mono text-[11px] font-extrabold text-sky-300">
-                        {profile.obbyBestStage}/100
+                      <span className="font-mono text-[11px] font-extrabold text-amber-300">
+                        {profile.obbyBestStage}/500
                       </span>
                     </div>
                   </div>
@@ -381,11 +465,11 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                 className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-extrabold shadow-xl transition hover:brightness-110 active:scale-[0.98] cursor-pointer"
                 style={{
                   background: isFeaturedFrisbee
-                    ? 'linear-gradient(135deg, #0284C7 0%, #BAE6FD 100%)'
+                    ? 'linear-gradient(135deg, #F97316 0%, #FACC15 100%)'
                     : isFeaturedArena
-                      ? 'linear-gradient(135deg, #22D3EE 0%, #0284C7 100%)'
+                      ? 'linear-gradient(135deg, #22D3EE 0%, #F97316 100%)'
                       : isFeaturedObby
-                        ? 'linear-gradient(135deg, #38BDF8 0%, #0284C7 100%)'
+                        ? 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)'
                         : 'linear-gradient(135deg, #0EA5E9 0%, #0284C7 100%)',
                   color: isFeaturedFrisbee || isFeaturedArena || isFeaturedObby ? '#0F172A' : '#FFFFFF',
                 }}
@@ -472,7 +556,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
 
           <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             {filteredWorlds.map((world) => {
-              const thumb = thumbs[world.id]
+              const thumb = world.cover ?? thumbs[world.id as WorldPreviewKey]
               const title = lang === 'pl' ? world.titlePl : world.titleEn
               const tag = lang === 'pl' ? world.tagPl : world.tagEn
               const worldOnlineCount =
@@ -490,17 +574,17 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                 <div
                   key={world.id}
                   onClick={() => {
-                    if (world.live && world.worldKind && world.roomId) {
-                      launchWorld(world.worldKind, world.roomId)
-                    }
+                    if (!world.live) return
+                    if (world.id === 'duel') onOpenDuel?.()
+                    else if (world.worldKind && world.roomId) launchWorld(world.worldKind, world.roomId)
                   }}
                   role={world.live ? 'button' : undefined}
                   tabIndex={world.live ? 0 : undefined}
                   onKeyDown={(e) => {
-                    if (world.live && world.worldKind && world.roomId && (e.key === 'Enter' || e.key === ' ')) {
-                      e.preventDefault()
-                      launchWorld(world.worldKind, world.roomId)
-                    }
+                    if (!world.live || (e.key !== 'Enter' && e.key !== ' ')) return
+                    e.preventDefault()
+                    if (world.id === 'duel') onOpenDuel?.()
+                    else if (world.worldKind && world.roomId) launchWorld(world.worldKind, world.roomId)
                   }}
                   className={`group relative flex flex-col overflow-hidden rounded-xl border transition-all duration-200 ${
                     world.live
@@ -552,11 +636,11 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                         style={{
                           background:
                             world.id === 'frisbee'
-                              ? 'linear-gradient(135deg, #0284C7, #BAE6FD)'
+                              ? 'linear-gradient(135deg, #F97316, #FACC15)'
                               : world.id === 'arena'
-                                ? 'linear-gradient(135deg, #22D3EE, #0284C7)'
+                                ? 'linear-gradient(135deg, #22D3EE, #F97316)'
                                 : world.id === 'obby'
-                                  ? '#38BDF8'
+                                  ? '#F59E0B'
                                   : '#0EA5E9',
                           color: world.id === 'obby' || world.id === 'arena' || world.id === 'frisbee' ? '#0F172A' : '#FFFFFF',
                         }}
@@ -586,7 +670,14 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
 
                     {/* Real live stats row */}
                     <div className="flex items-center justify-between gap-2 font-mono text-[11px] font-bold" style={{ color: tokens.textSecondary }}>
-                      {world.id === 'racing' ? <span>{lang === 'pl' ? 'Solo · 3 okrążenia' : 'Solo · 3 laps'}</span> : world.live ? (
+                      {world.id === 'duel' ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] opacity-80">
+                          <Users className="h-3 w-3 text-sky-400" />
+                          {lang === 'pl' ? 'Pojedynek na kod pokoju' : 'Room-code duel'}
+                        </span>
+                      ) : world.id === 'racing' ? (
+                        <span>{lang === 'pl' ? 'Solo · 3 okrążenia' : 'Solo · 3 laps'}</span>
+                      ) : world.live ? (
                         <>
                           <span className="inline-flex items-center gap-1.5">
                             <span
@@ -603,11 +694,11 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                           {world.id === 'obby' ? (
                             <span className="inline-flex items-center gap-2">
                               <span
-                                className="inline-flex items-center gap-0.5 text-sky-400"
+                                className="inline-flex items-center gap-0.5 text-amber-400"
                                 title={lang === 'pl' ? 'Twój rekord' : 'Your best stage'}
                               >
                                 <Flag className="h-3 w-3" />
-                                {profile.obbyBestStage}/100
+                                {profile.obbyBestStage}/500
                               </span>
                               <span
                                 className="inline-flex items-center gap-0.5 text-sky-400"
@@ -620,7 +711,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                           ) : world.id === 'arena' ? (
                             <span className="inline-flex items-center gap-2">
                               <span
-                                className="inline-flex items-center gap-0.5 text-sky-400"
+                                className="inline-flex items-center gap-0.5 text-orange-400"
                                 title={lang === 'pl' ? 'Twoje eliminacje' : 'Your eliminations'}
                               >
                                 <Flame className="h-3 w-3" />
@@ -637,14 +728,14 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                           ) : world.id === 'frisbee' ? (
                             <span className="inline-flex items-center gap-2">
                               <span
-                                className="inline-flex items-center gap-0.5 text-sky-400"
+                                className="inline-flex items-center gap-0.5 text-orange-400"
                                 title={lang === 'pl' ? 'Twoje przecięcia' : 'Your slices'}
                               >
                                 <Flame className="h-3 w-3" />
                                 {profile.frisbeeSlices}
                               </span>
                               <span
-                                className="inline-flex items-center gap-0.5 text-sky-300"
+                                className="inline-flex items-center gap-0.5 text-amber-300"
                                 title={lang === 'pl' ? 'Wygrane mecze Frisbee King' : 'Frisbee King wins'}
                               >
                                 <Crown className="h-3 w-3" />
@@ -692,7 +783,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
               style={{
                 background:
                   profile.role === 'owner'
-                    ? 'linear-gradient(135deg, #38BDF8 0%, #0284C7 100%)'
+                    ? 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)'
                     : 'linear-gradient(135deg, #0EA5E9 0%, #2563EB 100%)',
               }}
               title={profile.username}
@@ -766,7 +857,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
         >
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5">
-              <Trophy className="h-3.5 w-3.5 text-sky-400" />
+              <Trophy className="h-3.5 w-3.5 text-amber-400" />
               <span className="text-[11px] font-extrabold uppercase tracking-wider" style={{ color: tokens.textPrimary }}>
                 TOP Parkour
               </span>
@@ -804,8 +895,8 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
                       {entry.username}
                     </span>
                   </div>
-                  <span className="shrink-0 font-mono text-[11px] font-extrabold text-sky-400">
-                    {entry.obbyBestStage}/100
+                  <span className="shrink-0 font-mono text-[11px] font-extrabold text-amber-400">
+                    {entry.obbyBestStage}/500
                   </span>
                 </div>
               )
@@ -813,7 +904,7 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
 
             {leaderboard.length === 0 && !loadingBoard && (
               <div className="rounded-lg py-3 text-center text-[11px] font-bold" style={{ color: tokens.textSecondary }}>
-                {profile.username} · {profile.obbyBestStage}/100
+                {profile.username} · {profile.obbyBestStage}/500
               </div>
             )}
           </div>
@@ -903,8 +994,8 @@ export const HomeBentoView: React.FC<HomeBentoViewProps> = ({
             </span>
           </div>
           <span
-            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold text-sky-400"
-            style={{ background: 'rgba(56, 189, 248, 0.12)' }}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold text-amber-400"
+            style={{ background: 'rgba(245, 158, 11, 0.12)' }}
           >
             <Clock className="h-2.5 w-2.5" />
             {lang === 'pl' ? 'Wkrótce' : 'Soon'}

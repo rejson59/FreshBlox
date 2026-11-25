@@ -57,10 +57,13 @@ export default function BlokBrawl({
   lang,
   name,
   onBack,
+  theme = 'dark',
 }: {
   lang: Lang
   name: string | null
   onBack: () => void
+  /** FreshBlox theme mode; the arena carries its own dark/light palette for each. */
+  theme?: 'dark' | 'light'
 }) {
   const pl = lang === 'pl'
   const [stage, setStage] = useState<Stage>('pick')
@@ -103,12 +106,8 @@ export default function BlokBrawl({
   const names = useMemo<[string, string]>(() => [myName, rivalName], [myName, rivalName])
 
   const refreshPalette = useCallback(() => {
-    const root = document.querySelector('.fb-hub') as HTMLElement | null
-    if (!root) return
-    // The hub is dark unless it explicitly says otherwise.
-    const dark = root.dataset.mode ? root.dataset.mode === 'dark' : true
-    pal.current = dark ? DARK : LIGHT
-  }, [])
+    pal.current = theme === 'light' ? LIGHT : DARK
+  }, [theme])
 
   /* ------------------------------------------------------------------ input */
   useEffect(() => {
@@ -416,7 +415,7 @@ export default function BlokBrawl({
           : ''
 
   return (
-    <div className="brawl">
+    <div className="brawl" data-mode={theme}>
       <header className="brawl-top">
         <button className="brawl-back" onClick={stage === 'fight' ? leave : onBack}>
           <ArrowLeft size={15} />

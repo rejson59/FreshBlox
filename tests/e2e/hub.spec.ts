@@ -1,97 +1,39 @@
 import { expect, test } from '@playwright/test'
 
-test('discovery, filters, library persistence and language switch', async ({ page }) => {
+// The launcher (HomeBentoView) sits behind the account gate, so without Supabase credentials the
+// guest surface is: the preview notice, the solo deep links and the Blok Brawl arena.
+
+test('guest landing without accounts lists the solo games and nothing from the retired catalog', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Odkrywaj.' })).toBeVisible()
-  await page.getByRole('button', { name: 'Wyścigi', exact: true }).click()
-  await expect(page.locator('.world-card')).toHaveCount(1)
-  await page.getByRole('button', { name: 'Zapisz w bibliotece: Turbo Kart' }).click()
-  await page
-    .locator('.rail-nav')
-    .getByRole('button', { name: /Biblioteka/ })
-    .click()
+  await expect(page.getByRole('heading', { name: 'Podgląd bez kont' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Turbo Kart' })).toHaveAttribute('href', '/?room=KART-1')
+  await expect(page.getByRole('link', { name: 'Parkour' })).toHaveAttribute('href', '/?room=OBBY-1')
+  await expect(page.getByRole('button', { name: 'Blok Brawl' })).toBeVisible()
+  await expect(page.getByText('Skyline Rush')).toHaveCount(0)
+  await expect(page.getByText('Studio Lite')).toHaveCount(0)
+  // language preference is remembered in Polish by default and can be switched to English
+  await expect(page.getByText('W tym podglądzie usługa kont nie jest skonfigurowana')).toBeVisible()
+  await page.addInitScript(() => localStorage.setItem('freshblox.hub.lang', JSON.stringify('en')))
   await page.reload()
-  await expect(page.locator('.world-card h3')).toHaveText('Turbo Kart')
-  await page.getByRole('button', { name: 'Switch to English' }).click()
-  await expect(page.getByRole('heading', { name: 'Library.' })).toBeVisible()
-  await page.locator('.rail-nav').getByRole('button', { name: 'Discover', exact: true }).click()
-  await page.getByRole('textbox', { name: 'Search worlds' }).fill('frisbee')
-  await expect(page.locator('.world-card h3')).toHaveText('Frisbee King')
-  await page.getByRole('textbox', { name: 'Search worlds' }).fill('xyzmissing')
-  await expect(page.getByText('No matching worlds')).toBeVisible()
-  await page.getByRole('button', { name: 'Clear search' }).click()
-  await expect(page.locator('.world-card')).toHaveCount(7)
-  await page.getByRole('button', { name: 'Next world' }).click()
-  await expect(page.locator('.hero-content h2')).toHaveText('Turbo Kart')
-  await page.getByRole('button', { name: 'Details', exact: true }).click()
-  await expect(page.getByRole('dialog')).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Preview without accounts' })).toBeVisible()
 })
 
-test('studio: edit, undo, restore draft, playtest and open the shared course as another guest', async ({
-  page,
-  browser,
-}) => {
-  test.setTimeout(90_000)
-  await page.clock.install()
-  await page.goto('/#studio')
-  await page.getByLabel('Nazwa toru').fill('Ścieżka testowa')
-  await page.getByRole('button', { name: 'Usuń klocek' }).click()
-  await page.getByRole('button', { name: 'Usuń klocek' }).click()
-  await page.getByRole('button', { name: 'Trawa', exact: true }).click()
-  await page.getByRole('button', { name: 'Obniż' }).click()
-  await page.getByRole('button', { name: 'Dodaj klocek' }).click()
-  await expect(page.locator('.piece-sequence button[aria-pressed]')).toHaveCount(2)
-  await page.getByRole('button', { name: 'Cofnij' }).click()
-  await expect(page.locator('.piece-sequence button[aria-pressed]')).toHaveCount(1)
-  await page.reload()
-  await expect(page.getByLabel('Nazwa toru')).toHaveValue('Ścieżka testowa')
-  await expect(page.getByRole('button', { name: 'Udostępnij' })).toBeDisabled()
-  await page.getByRole('button', { name: 'Testuj tor' }).click()
-  await page.locator('canvas').focus()
-  // Drive the real runner with keyboard input and advance only the browser's animation clock.
-  await page.clock.pauseAt(new Date((await page.evaluate(() => Date.now())) + 1000))
-  await page.keyboard.down('d')
-  await page.clock.runFor(300)
-  await page.keyboard.down('Space')
-  await page.clock.runFor(100)
-  await page.keyboard.up('Space')
-  await page.clock.runFor(890)
-  await page.keyboard.down('Space')
-  await page.clock.runFor(100)
-  await page.keyboard.up('Space')
-  await page.clock.runFor(850)
-  await page.keyboard.up('d')
-  await expect(page.getByRole('heading', { name: 'Meta!' })).toBeVisible()
-  await page.locator('.run-overlay').getByRole('button', { name: 'Studio', exact: true }).click()
-  await page.getByRole('button', { name: 'Udostępnij' }).click()
-  const url = await page.locator('#shared-url').inputValue()
-  expect(new URL(url).hash).toMatch(/^#course=/)
-  const friend = await browser.newContext()
-  try {
-    const p = await friend.newPage()
-    await p.goto(url)
-    await expect(p.getByRole('heading', { name: 'Ścieżka testowa' })).toBeVisible()
-    await expect(p.locator('.run-viewport canvas')).toBeVisible()
-  } finally {
-    await friend.close()
-  }
-  await page.getByRole('button', { name: 'Dodaj klocek' }).click()
-  await expect(page.getByRole('button', { name: 'Udostępnij' })).toBeDisabled()
+test('Blok Brawl button opens the duel arena for a guest and the back button returns to the landing', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Blok Brawl' }).click()
+  await expect(page.getByRole('heading', { name: /Zepchnij rywala z platformy/ })).toBeVisible()
+  await page.getByRole('button', { name: /Odkrywaj/ }).click()
+  await expect(page.getByRole('heading', { name: 'Podgląd bez kont' })).toBeVisible()
+  expect(page.url().endsWith('/')).toBeTruthy()
 })
-test('mobile navigation, invalid link recovery and no horizontal overflow', async ({ page }) => {
+
+test('mobile landing has no horizontal overflow', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
-  await page.goto('/#course=broken')
-  await expect(page.getByText('Nieprawidłowy link do toru')).toBeVisible()
-  await page.getByRole('button', { name: 'Wróć do gier' }).click()
-  await page.locator('.hub-mobile-nav').getByRole('button', { name: 'Studio Lite' }).click()
-  await expect(page.getByLabel('Nazwa toru')).toBeVisible()
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Podgląd bez kont' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy()
-  await page.locator('.hub-mobile-nav').getByRole('button', { name: 'Odkrywaj' }).click()
-  await page.getByRole('button', { name: 'Zagraj teraz' }).click()
-  await expect(page.getByRole('button', { name: 'Skok', exact: true })).toBeVisible()
 })
+
 test('KART-1 deep link launches solo practice without login', async ({ page }) => {
   await page.goto('/?room=KART-1')
   const menu = page.getByRole('button', { name: 'Menu', exact: true })
@@ -102,7 +44,7 @@ test('KART-1 deep link launches solo practice without login', async ({ page }) =
     await expect(page.getByRole('heading', { name: 'Trening z botami' })).toBeVisible()
   }
   await page.getByRole('button', { name: /Wróć do gier/ }).click()
-  await expect(page.locator('.hero-art')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Podgląd bez kont' })).toBeVisible()
 })
 
 test('KART-1 countdown ends and the race clock starts', async ({ page }) => {

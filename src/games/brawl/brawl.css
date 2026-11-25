@@ -1,7 +1,7 @@
-/* Blok Brawl — arena overlay. Carries its own palette so it never depends on the hub's design tokens. */
+/* Blok Brawl — arena overlay. Carries its own palette so it never depends on the app's design tokens. */
 
 .brawl {
-  /* dark hub (default) */
+  /* dark mode (default) */
   --paper: #071524;
   --paper-2: #0e2033;
   --paper-3: #0a1a2b;
@@ -22,7 +22,7 @@
   color-scheme: dark;
 }
 
-.fb-hub[data-mode='light'] .brawl {
+.brawl[data-mode='light'] {
   --paper: #eef6fd;
   --paper-2: #ffffff;
   --paper-3: #e3f1fc;

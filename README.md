@@ -4,18 +4,17 @@ Przeglądarkowy salon gier i kreator torów PL/EN. Ta gałąź rozwija kod wydan
 
 ## Start lokalny
 
-Node **22.18+**, npm. Do katalogu, biblioteki, Studio Lite, Skyline Rush, Parkour i treningowego Turbo Kart **nie potrzebujesz kluczy ani bazy**.
+Node **22.18+**, npm. Do Blok Brawl, Parkour i treningowego Turbo Kart **nie potrzebujesz kluczy ani bazy**; launcher, Lobby 3D, Arena, Frisbee i funkcje kont wymagają logowania (Supabase).
 
 ```sh
 npm ci
 npm run dev
 ```
 
-- `/` — Odkrywaj: katalog, filtry, wyszukiwanie (`/`), szczegóły i zakładki. Wybór języka, szkic oraz biblioteka pozostają w tej przeglądarce na urządzeniu (nie na koncie).
-- `/#studio` — od 1 do 10 elementów, cztery rodzaje klocków, wysokość, kolejność, cofanie/ponawianie. Zmiana toru wymaga nowego przejścia przed udostępnieniem. Link zawiera wersjonowany, walidowany opis mapy, nie skrypt. **Każdy, kto ma link, może grać**; to nie jest prywatny pokój ani publiczna publikacja. Nie ma czatu ani nagród za przejście.
-- `/#skyline` — lekki parkour z renderowaniem izometrycznym Canvas 2D. A/D lub strzałki do ruchu, spacja do skoku, Esc do pauzy, przyciski na ekranie dotykowym. Lód ma mniejsze tarcie, trampolina podnosi skok, fioletowa flaga wyznacza punkt powrotu.
+- `/` — ekran logowania, a po zalogowaniu launcher: hero z wybranym światem, karty światów (Lobby Główne, Parkour, Portal Arena, Frisbee King, Turbo Kart, Blok Brawl), zadania, ranking i karta gracza. Wyszukiwarka i kod pokoju w górnym pasku korzystają z rejestru `src/data/worlds.ts`. Wybór języka pozostaje w tej przeglądarce na urządzeniu.
+- `/#duel` — Blok Brawl: pojedynek 1 na 1 na kurczącej się platformie, z botem lub po kodzie pokoju (`BRAWL-XXXX`), dostępny także bez logowania. Strzałki/WASD do ruchu, spacja do dashu.
 - `/?world=parkour` lub starszy link `/?room=OBBY-1` — 500 różnych etapów w pięciu światach. Po każdym setnym etapie przejdź przez portal; piąty jest metą. Postęp gościa zapisuje się lokalnie, bez waluty i nagród konta. [ i ] wybierają odblokowane etapy, R przywraca punkt kontrolny; menu zawiera mapę światów.
-- `/?room=KART-1` — wyścig z trzema botami (WebGL 2); w sesji gościa bez waluty, XP i sieciowej obecności. Wyszukiwanie kodu w panelu gracza i linki korzystają z tego samego rejestru co katalog (`src/data/worlds.ts`). Lobby, Arena, Frisbee, wiadomości, drużyny, klany i narzędzia administracyjne nadal wymagają logowania.
+- `/?room=KART-1` — wyścig z trzema botami (WebGL 2); w sesji gościa bez waluty, XP i sieciowej obecności. Wyszukiwarka kodu w launcherze i linki korzystają z tego samego rejestru (`src/data/worlds.ts`). Lobby, Arena, Frisbee, wiadomości, drużyny, klany i narzędzia administracyjne nadal wymagają logowania.
 
 ## Konta i wydanie
 
@@ -36,7 +35,7 @@ Frontend to Vite/React; na Vercelu komenda budowania to `npm run build`, katalog
 npm test                         # modele toru, kody, uprawnienia i transakcje w tymczasowym PostgreSQL (PGlite)
 npm run build                    # TypeScript + bundlowanie produkcyjne
 npx playwright install chromium  # jednorazowo, dla testów przeglądarkowych
-npm run test:e2e                  # katalog, telefon, Studio, KART-1, Parkour i pierwszy portal
+npm run test:e2e                  # landing gościa, Blok Brawl, KART-1, Parkour
 ```
 
-Testy nie wymagają dostępu do produkcji. Główny katalog korzysta z lokalnych, przygotowanych ilustracji WebP (`public/worlds`); silniki gier 3D są ładowane na żądanie. Podgląd ani testy nie publikują nic na Vercelu ani w Supabase.
+Testy nie wymagają dostępu do produkcji. Launcher renderuje miniatury światów na żywo (WebGL; bez niego pokazuje gradienty), a silniki gier 3D są ładowane na żądanie. Kod kreatora torów i gry Skyline Rush z poprzedniego katalogu (`src/studio/`) nie ma już wejścia w menu. Podgląd ani testy nie publikują nic na Vercelu ani w Supabase.
