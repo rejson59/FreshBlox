@@ -17,6 +17,14 @@ const deviceLockSql = await readFile(
   new URL('../supabase/migrations/202611260002_device_lock_hardware_signal.sql', import.meta.url),
   'utf8',
 )
+const parkourSql = await readFile(
+  new URL('../supabase/migrations/202611180002_parkour_500.sql', import.meta.url),
+  'utf8',
+)
+const monotonicSql = await readFile(
+  new URL('../supabase/migrations/202611260003_monotonic_profile_counters.sql', import.meta.url),
+  'utf8',
+)
 
 /** A disposable Postgres with the Supabase-provided bits (roles, auth schema, publication). */
 async function freshDb() {
@@ -192,6 +200,74 @@ test('signup creates a profile row, and username helpers answer as the auth flow
       (await db.query('SELECT public.resolve_freshblox_login_email($1) AS email', [name])).rows[0].email
     assert.equal(await resolve('NowyGracz'), 'u_nowygracz_abcd1234@accounts.freshblox.app')
     assert.equal(await resolve('nieistnieje'), null)
+  } finally {
+    await db.close()
+  }
+})
+
+test('a stale client snapshot cannot roll progress backwards', async () => {
+  const db = await freshDb()
+  try {
+    await db.exec(schemaSql)
+    await db.exec(parkourSql)
+    await db.exec(monotonicSql)
+    await db.exec(monotonicSql) // idempotent, like the rest of the folder
+
+    const userId = '55555555-5555-5555-5555-555555555555'
+    await db.query('INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES ($1, $2, $3::jsonb)', [
+      userId,
+      'u_gracz_00000000@accounts.freshblox.app',
+      JSON.stringify({ username: 'Gracz' }),
+    ])
+
+    await db.query(
+      `UPDATE public.fb_profiles
+         SET xp = 500, obby_best_stage = 42, obby_completions = 2, arena_wins = 3,
+             frisbee_wins = 1, parkour_500_best_time_ms = 60000
+       WHERE id = $1`,
+      [userId],
+    )
+
+    // The stale snapshot from a second tab.
+    await db.query(
+      `UPDATE public.fb_profiles
+         SET xp = 10, obby_best_stage = 5, obby_completions = 0, arena_wins = 0,
+             frisbee_wins = 0, parkour_500_best_time_ms = 90000
+       WHERE id = $1`,
+      [userId],
+    )
+
+    const { rows } = await db.query(
+      `SELECT xp, obby_best_stage, obby_completions, arena_wins, frisbee_wins, parkour_500_best_time_ms
+         FROM public.fb_profiles WHERE id = $1`,
+      [userId],
+    )
+    assert.deepEqual(rows[0], {
+      xp: 500,
+      obby_best_stage: 42,
+      obby_completions: 2,
+      arena_wins: 3,
+      frisbee_wins: 1,
+      parkour_500_best_time_ms: 60000,
+    })
+
+    // Genuine progress still lands normally…
+    await db.query('UPDATE public.fb_profiles SET xp = 900, parkour_500_best_time_ms = 45000 WHERE id = $1', [
+      userId,
+    ])
+    const after = (
+      await db.query('SELECT xp, parkour_500_best_time_ms FROM public.fb_profiles WHERE id = $1', [userId])
+    ).rows[0]
+    assert.equal(after.xp, 900)
+    assert.equal(after.parkour_500_best_time_ms, 45000)
+
+    // …and the columns that must stay reversible still are.
+    await db.query('UPDATE public.fb_profiles SET fresh_gems = 100, obby_stage = 40 WHERE id = $1', [userId])
+    await db.query('UPDATE public.fb_profiles SET fresh_gems = 40, obby_stage = 12 WHERE id = $1', [userId])
+    const reversible = (
+      await db.query('SELECT fresh_gems, obby_stage FROM public.fb_profiles WHERE id = $1', [userId])
+    ).rows[0]
+    assert.deepEqual(reversible, { fresh_gems: 40, obby_stage: 12 })
   } finally {
     await db.close()
   }

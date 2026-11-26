@@ -81,6 +81,7 @@ Plik jest dziś aplikowalny i idempotentny (dwa razy pod rząd) — pilnuje tego
 | `202611180002_parkour_500.sql` | `parkour_500_best_time_ms` obok starszego `obby_best_time_ms`. |
 | `202611260001_social_schema_alignment.sql` | Uzgadnia `fb_private_rooms` / `fb_direct_messages` z `src/lib/socialApi.ts` (`room_code`, `world_kind`, `content`, `room_invite_*`) i dopuszcza światy `arena`/`frisbee`. Na bazie, która już ma te nazwy, jest pustą operacją. |
 | `202611260002_device_lock_hardware_signal.sql` | Zdejmuje `UNIQUE` z `core_hw_ip_hash`, żeby identyczne komputery w jednej sieci mogły założyć osobne konta. |
+| `202611260003_monotonic_profile_counters.sql` | Liczniki postępu (XP, etapy, wyniki Areny/Frisbee, najlepszy czas) mogą tylko rosnąć — nieaktualny zapis z drugiej karty nie cofa rekordów. Nie dotyczy `fresh_gems` (wydawanie) i `obby_stage` (cofanie do checkpointu). |
 
 ### Co jeszcze wymaga decyzji produktowej
 

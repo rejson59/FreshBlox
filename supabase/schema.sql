@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS public.fb_profiles (
   obby_best_stage INTEGER NOT NULL DEFAULT 1,
   obby_completions INTEGER NOT NULL DEFAULT 0,
   obby_best_time_ms INTEGER,
+  -- Added to the live database by migrations/202611180002_parkour_500.sql; the client reads
+  -- and writes it, so a database built from this file must have it too.
+  parkour_500_best_time_ms INTEGER,
   last_world TEXT NOT NULL DEFAULT 'lobby',
   last_room TEXT NOT NULL DEFAULT 'PUBLIC-1',
   last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
