@@ -4,7 +4,12 @@
  *  1. Self-healing persistent device token mirrored across localStorage, IndexedDB, cookie, and CacheStorage.
  *  2. Deterministic browser+GPU+Canvas+Audio hardware fingerprint (survives clearing storage & Incognito).
  *  3. Cross-browser core hardware signature (screen physical size, GPU core, CPU cores, timezone, OS family).
- * All proofs are verified & HMAC-hashed server-side inside the Supabase Edge Function `register-account`.
+ * The proofs are HMAC-hashed server-side in the Vercel function `api/register-account.js`.
+ *
+ * Only the mirrored device token is unique per device. The hardware signatures are
+ * coarse on purpose (they survive storage wipes), which means two identical machines on
+ * the same network produce the same value — the server therefore treats them as one
+ * signal among several, never as proof on their own.
  */
 
 const TOKEN_KEY = 'fb_dev_tok_v1'
@@ -19,15 +24,12 @@ export interface DeviceRegistrationProof {
   coreHw: string
 }
 
-async function sha256Hex(input: string): Promise<string> {
-  if (typeof crypto !== 'undefined' && crypto.subtle) {
-    const data = new TextEncoder().encode(input)
-    const digest = await crypto.subtle.digest('SHA-256', data)
-    return Array.from(new Uint8Array(digest))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
-  }
-  // Fallback deterministic FNV-1a 128-bit hex if WebCrypto subtle is unavailable (e.g. non-HTTPS LAN)
+/**
+ * Deterministic non-cryptographic hash used only when WebCrypto is unavailable
+ * (an insecure LAN origin). Exported so the degradation is visible and testable instead
+ * of silently changing what the server receives.
+ */
+export function fallbackFingerprintHash(input: string): string {
   let h1 = 0x811c9dc5
   let h2 = 0x9e3779b9
   for (let i = 0; i < input.length; i++) {
@@ -44,6 +46,17 @@ async function sha256Hex(input: string): Promise<string> {
       .replace('-', 'f')
       .padStart(8, '0')
   )
+}
+
+export async function sha256Hex(input: string): Promise<string> {
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const data = new TextEncoder().encode(input)
+    const digest = await crypto.subtle.digest('SHA-256', data)
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('')
+  }
+  return fallbackFingerprintHash(input)
 }
 
 function generateRandomToken(): string {
@@ -345,6 +358,77 @@ function detectOsFamily(): string {
   return 'other'
 }
 
+export interface FingerprintSources {
+  /** Physical screen size, already normalized so rotation cannot change it. */
+  screenWidth: number
+  screenHeight: number
+  devicePixelRatio: number
+  colorDepth: number
+  availHeight: number
+  hardwareConcurrency: number
+  deviceMemory: number
+  /** 'touch' or 'pointer' — kept as a string so the payload stays readable when debugging. */
+  pointerKind: 'touch' | 'pointer'
+  timeZone: string
+  language: string
+  osFamily: string
+  gpuVendor: string
+  gpuRenderer: string
+  gpuParams: string
+  /** A GPU family name that is stable across browser vendors on the same machine. */
+  gpuCore: string
+  audioSample: string
+  canvasSample: string
+}
+
+/**
+ * The two signed payloads, built without touching any browser API so the shape can be
+ * pinned by tests: the server compares these strings across sessions and they must not
+ * drift when nothing about the device changed.
+ */
+export function fingerprintPayloads(sources: FingerprintSources): {
+  browserRaw: string
+  coreHwRaw: string
+} {
+  // Largest dimension first: portrait/landscape rotation produces the same signature.
+  const physicalScreen = `${Math.max(sources.screenWidth, sources.screenHeight)}x${Math.min(
+    sources.screenWidth,
+    sources.screenHeight,
+  )}`
+
+  const browserRaw = [
+    physicalScreen,
+    Math.round(sources.devicePixelRatio * 100),
+    sources.colorDepth,
+    sources.hardwareConcurrency,
+    sources.deviceMemory,
+    sources.pointerKind,
+    sources.timeZone,
+    sources.osFamily,
+    sources.gpuVendor,
+    sources.gpuRenderer,
+    sources.gpuParams,
+    sources.audioSample,
+    sources.canvasSample,
+  ].join('|')
+
+  const coreHwRaw = [
+    physicalScreen,
+    sources.availHeight,
+    sources.colorDepth,
+    sources.hardwareConcurrency,
+    sources.deviceMemory,
+    sources.pointerKind,
+    sources.timeZone,
+    sources.language.toLowerCase(),
+    sources.osFamily,
+    sources.gpuCore,
+    sources.gpuParams,
+  ].join('|')
+
+  return { browserRaw, coreHwRaw }
+}
+
 let cachedProofPromise: Promise<DeviceRegistrationProof> | null = null
 
 export async function collectDeviceRegistrationProof(): Promise<DeviceRegistrationProof> {
@@ -360,12 +444,6 @@ export async function collectDeviceRegistrationProof(): Promise<DeviceRegistrati
       const dpr = window.devicePixelRatio || 1
       const physA = Math.round((window.screen?.width || 0) * dpr)
       const physB = Math.round((window.screen?.height || 0) * dpr)
-      // Sort dimensions so portrait/landscape rotation produces the exact same signature
-      const physScreen = `${Math.max(physA, physB)}x${Math.min(physA, physB)}`
-      const colorDepth = window.screen?.colorDepth || 24
-      const cores = navigator.hardwareConcurrency || 0
-      const mem = (navigator as unknown as { deviceMemory?: number }).deviceMemory || 0
-      const touch = (navigator.maxTouchPoints || 0) > 0 ? 'touch' : 'pointer'
       const tz = (() => {
         try {
           return Intl.DateTimeFormat().resolvedOptions().timeZone || 'utc'
@@ -373,47 +451,36 @@ export async function collectDeviceRegistrationProof(): Promise<DeviceRegistrati
           return 'utc'
         }
       })()
-      const osFamily = detectOsFamily()
 
-      const browserRaw = [
-        physScreen,
-        Math.round(dpr * 100),
-        colorDepth,
-        cores,
-        mem,
-        touch,
-        tz,
-        osFamily,
-        glInfo.vendor,
-        glInfo.renderer,
-        glInfo.params,
+      const { browserRaw, coreHwRaw } = fingerprintPayloads({
+        screenWidth: physA,
+        screenHeight: physB,
+        devicePixelRatio: dpr,
+        colorDepth: window.screen?.colorDepth || 24,
+        availHeight: window.screen?.availHeight || 0,
+        hardwareConcurrency: navigator.hardwareConcurrency || 0,
+        deviceMemory: (navigator as unknown as { deviceMemory?: number }).deviceMemory || 0,
+        pointerKind: (navigator.maxTouchPoints || 0) > 0 ? 'touch' : 'pointer',
+        timeZone: tz,
+        language: navigator.language || 'en',
+        osFamily: detectOsFamily(),
+        gpuVendor: glInfo.vendor,
+        gpuRenderer: glInfo.renderer,
+        gpuParams: glInfo.params,
+        gpuCore: glInfo.coreGpu,
         audioSample,
         canvasSample,
-      ].join('|')
+      })
 
-      const availHeight = window.screen?.availHeight || 0
-      const langSig = (navigator.language || 'en').toLowerCase()
-      const coreHwRaw = [
-        physScreen,
-        availHeight,
-        colorDepth,
-        cores,
-        mem,
-        touch,
-        tz,
-        langSig,
-        osFamily,
-        glInfo.coreGpu,
-        glInfo.params,
-      ].join('|')
-
-      const [browserFp, coreHw] = await Promise.all([
-        sha256Hex(browserRaw),
-        sha256Hex(coreHwRaw),
-      ])
+      const [browserFp, coreHw] = await Promise.all([sha256Hex(browserRaw), sha256Hex(coreHwRaw)])
 
       return { deviceToken, browserFp, coreHw }
-    })()
+    })().catch((err) => {
+      // Do not cache a failure: a transient WebGL/audio error would otherwise pin the
+      // broken proof for the rest of the session.
+      cachedProofPromise = null
+      throw err
+    })
   }
   return cachedProofPromise
 }

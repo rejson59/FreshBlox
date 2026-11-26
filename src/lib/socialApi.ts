@@ -23,7 +23,8 @@ export interface VerifyRoomAccessResult {
 }
 
 export interface DirectMessageRow {
-  id: number
+  /** uuid in the schema (`fb_direct_messages.id`); treated as an opaque key by the UI. */
+  id: number | string
   sender_id: string
   recipient_id: string
   sender_username: string

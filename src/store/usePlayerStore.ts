@@ -23,6 +23,16 @@ import {
 } from '../data/catalog'
 import { isSupabaseConfigured, supabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase'
 import {
+  claimQuestReward,
+  isGuestProfileId,
+  mergeGuestProgress,
+  purchaseBundleWithGems,
+  purchaseWithGems,
+  sanitizeSearchQuery,
+  type BundleCategory,
+  type CosmeticCategory,
+} from './profileProgress'
+import {
   collectDeviceRegistrationProof,
   hasLocalDeviceRegisteredFlag,
   markDeviceRegisteredLocally,
@@ -401,9 +411,21 @@ export function usePlayerStore() {
   )
 
   const syncTimerRef = useRef<number | null>(null)
+  const presenceRef = useRef<{ world: WorldKind | 'launcher'; roomCode: string } | null>(null)
+  const presenceTimerRef = useRef<number | null>(null)
   const hydratedFromCloudRef = useRef<boolean>(false)
   const authUserRef = useRef<AuthUserInfo | null>(null)
   authUserRef.current = authUser
+
+  // The profile also lives in a ref: pure helpers (purchases, quest claims) need the
+  // current value *now*, not one render later, and cloud code must not close over a stale one.
+  const profileRef = useRef<PlayerProfile>(profile)
+  profileRef.current = profile
+
+  const commitProfile = useCallback((next: PlayerProfile) => {
+    profileRef.current = next
+    setProfile(next)
+  }, [])
 
   // Save guest/cached profile locally
   useEffect(() => {
@@ -488,6 +510,9 @@ export function usePlayerStore() {
             })
             .select('*')
             .single<DbProfileRow>()
+          if (inserted.error) {
+            console.error('[freshblox] could not create the fallback profile row:', inserted.error.message)
+          }
           data = inserted.data
         }
 
@@ -500,16 +525,17 @@ export function usePlayerStore() {
           const frisbeeSlices = Math.max(0, data.frisbee_slices ?? 0)
           const frisbeeCatches = Math.max(0, data.frisbee_catches ?? 0)
           const [wallet, friends] = await Promise.all([readWallet(userId), loadFriendsFromCloud(userId)])
+          // A failed wallet read must not look like a zero balance: keep what the player already saw.
+          const coinBalance = wallet ? wallet.balance : profileRef.current.freshCoins
           const unlocked = normalizeUnlocked(
-            [...(data.unlocked_items ?? []), ...wallet.owned],
+            [...(data.unlocked_items ?? []), ...(wallet?.owned ?? [])],
             obbyCompleted,
             arenaWins,
             arenaBestSpeed,
             frisbeeWins,
           )
 
-          hydratedFromCloudRef.current = true
-          setProfile({
+          const cloudProfile: PlayerProfile = {
             playerId: data.id,
             username: data.username,
             freshTag: data.fresh_tag,
@@ -517,7 +543,7 @@ export function usePlayerStore() {
             clanId: data.clan_id ?? null,
             clanTag: data.clan_tag ?? null,
             freshGems: GEMS_SYSTEM_IN_PROGRESS ? 0 : (data.fresh_gems ?? 0),
-            freshCoins: wallet.balance,
+            freshCoins: coinBalance,
             xp: data.xp ?? 0,
             avatar: {
               outfitId: migrateOutfitId(data.avatar_config?.outfitId),
@@ -552,14 +578,29 @@ export function usePlayerStore() {
             frisbeeWins,
             frisbeeSlices,
             frisbeeCatches,
-          })
+          }
+
+          // Progress a player made before signing in must survive the first hydration.
+          // Only a pure guest profile (no playerId yet) is folded in, so a profile left
+          // behind by another account can never leak into this one.
+          const previous = profileRef.current
+          const merged = isGuestProfileId(previous.playerId)
+            ? mergeGuestProgress(cloudProfile, previous)
+            : cloudProfile
+          hydratedFromCloudRef.current = true
+          commitProfile(merged)
           setCloudStatus('synced')
+          return
         }
-      } catch {
+
+        console.error('[freshblox] profile row is missing after sign-in; cloud sync stays off until refresh')
+        setCloudStatus('offline')
+      } catch (err) {
+        console.error('[freshblox] cloud profile hydration failed:', err)
         setCloudStatus('offline')
       }
     },
-    [loadFriendsFromCloud],
+    [commitProfile, loadFriendsFromCloud],
   )
 
   // Listen to Supabase Auth session
@@ -634,6 +675,11 @@ export function usePlayerStore() {
         .from('fb_profiles')
         .update({
           xp: profile.xp,
+          // Gems were previously read from the profile but never written back, so every
+          // earned reward vanished on the next sign-in and every gem purchase was free
+          // after a refresh. They belong in a SECURITY DEFINER RPC long term; until then
+          // they must at least round-trip with the rest of the profile.
+          fresh_gems: profile.freshGems,
           avatar_config: profile.avatar,
           unlocked_items: unlockedItems,
           saved_outfits: profile.savedOutfits.slice(0, 5),
@@ -689,6 +735,13 @@ export function usePlayerStore() {
   ])
 
 const REGISTER_API_PATH = '/api/register-account'
+
+/**
+ * Presence is what feeds the "online now" counters and friend lists, both of which treat
+ * a player as gone after 3 minutes. A world change alone is not enough: someone who stays
+ * in the same room would silently disappear, so we re-stamp `last_seen` once a minute.
+ */
+const PRESENCE_HEARTBEAT_MS = 60_000
 
 async function postRegisterApi(
   payload: Record<string, unknown>,
@@ -785,6 +838,14 @@ async function postRegisterApi(
       if (networkError || !resp) {
         return { ok: false, error: 'NETWORK_ERROR' }
       }
+      // A static host or a bare `vite` dev server answers /api/* with index.html (HTTP 200),
+      // which used to surface as a confusing "invalid payload" failure. Say what is wrong.
+      if (!(resp.headers.get('content-type') ?? '').includes('application/json')) {
+        console.warn(
+          '[freshblox] /api/register-account returned a non-JSON response — deploy api/ or run `npm run dev:api`',
+        )
+        return { ok: false, error: 'SERVER_MISCONFIGURED' }
+      }
 
       const json = (await resp.json().catch(() => null)) as {
         ok?: boolean
@@ -800,17 +861,18 @@ async function postRegisterApi(
         return { ok: false, error: errCode }
       }
 
-      // Lock device locally across all 4 storage layers right after server confirmation
-      await markDeviceRegisteredLocally()
-
-      // Immediately sign into the newly created account
+      // Sign in first and only then mirror the lock locally. The server already holds it, so
+      // the local flag is just a fast path — writing it before a successful sign-in left the
+      // device permanently marked as "used" whenever the sign-in call itself failed.
       const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
         email: json.loginEmail,
         password,
       })
       if (signInErr) {
-        return { ok: false, error: signInErr.message }
+        console.warn('[freshblox] account created but the automatic sign-in failed:', signInErr.message)
+        return { ok: false, error: 'ACCOUNT_CREATED_SIGN_IN_FAILED' }
       }
+      await markDeviceRegisteredLocally()
       if (signInData.user) {
         await hydrateCloudProfile(signInData.user.id, signInData.user.email ?? null)
         setAuthUser({ id: signInData.user.id, email: signInData.user.email ?? null })
@@ -834,9 +896,15 @@ async function postRegisterApi(
           p_username: clean,
         })
         if (resolveErr) {
+          // The RPC is anon-callable, so its failures say nothing about the credentials:
+          // an outage used to look like a wrong password and sent players to re-register.
           const msg = (resolveErr.message || '').toLowerCase()
-          if (msg.includes('fetch') || msg.includes('network')) {
+          if (msg.includes('fetch') || msg.includes('network') || msg.includes('timeout')) {
             return { ok: false, error: 'NETWORK_ERROR' }
+          }
+          if (/\b5\d\d\b/.test(msg) || msg.includes('failed to fetch')) {
+            console.error('[freshblox] login lookup unavailable:', resolveErr.message)
+            return { ok: false, error: 'SERVER_BUSY' }
           }
           return { ok: false, error: 'INVALID_CREDENTIALS' }
         }
@@ -867,10 +935,50 @@ async function postRegisterApi(
     [hydrateCloudProfile],
   )
 
+  const writePresence = useCallback(() => {
+    const presence = presenceRef.current
+    const user = authUserRef.current
+    if (!supabase || !user || !presence) return
+    void supabase
+      .from('fb_profiles')
+      .update({
+        last_world: presence.world,
+        last_room: presence.roomCode,
+        last_seen: new Date().toISOString(),
+      })
+      .eq('id', user.id)
+      .then(
+        ({ error }) => {
+          if (error) console.warn('[freshblox] presence update failed:', error.message)
+        },
+        (err) => console.warn('[freshblox] presence update failed:', err),
+      )
+  }, [])
+
+  const updatePresenceLocation = useCallback(
+    (world: WorldKind | 'launcher', roomCode: string) => {
+      presenceRef.current = { world, roomCode }
+      if (!supabase || !authUserRef.current) return
+      writePresence()
+      if (presenceTimerRef.current) window.clearInterval(presenceTimerRef.current)
+      presenceTimerRef.current = window.setInterval(writePresence, PRESENCE_HEARTBEAT_MS)
+    },
+    [writePresence],
+  )
+
+  const stopPresenceHeartbeat = useCallback(() => {
+    if (presenceTimerRef.current) window.clearInterval(presenceTimerRef.current)
+    presenceTimerRef.current = null
+    presenceRef.current = null
+  }, [])
+
+  useEffect(() => () => stopPresenceHeartbeat(), [stopPresenceHeartbeat])
+
   const signOut = useCallback(async () => {
     if (!supabase) return
     await supabase.auth.signOut()
     hydratedFromCloudRef.current = false
+    stopPresenceHeartbeat()
     setAuthUser(null)
     setCloudStatus('guest')
     setProfile(createDefaultProfile())
@@ -879,20 +987,8 @@ async function postRegisterApi(
     } catch {
       // ignore
     }
-  }, [])
+  }, [stopPresenceHeartbeat])
 
-  const updatePresenceLocation = useCallback((world: WorldKind | 'launcher', roomCode: string) => {
-    if (!supabase || !authUserRef.current) return
-    void supabase
-      .from('fb_profiles')
-      .update({
-        last_world: world,
-        last_room: roomCode,
-        last_seen: new Date().toISOString(),
-      })
-      .eq('id', authUserRef.current.id)
-      .then(() => {})
-  }, [])
 
   const setUsername = useCallback(async (name: string): Promise<{ ok: boolean; error?: string }> => {
     const { valid, clean } = validateFreshBloxUsername(name)
@@ -972,25 +1068,11 @@ async function postRegisterApi(
   }, [])
 
   const claimQuest = useCallback((questId: QuestDef['id']): boolean => {
-    let claimedNow = false
-    setProfile((p) => {
-      const def = DAILY_QUESTS.find((q) => q.id === questId)
-      if (!def) return p
-      if (p.quests.claimed[questId]) return p
-      if ((p.quests.progress[questId] ?? 0) < def.target) return p
-      claimedNow = true
-      return {
-        ...p,
-        freshGems: GEMS_SYSTEM_IN_PROGRESS ? p.freshGems : p.freshGems + def.rewardGems,
-        xp: p.xp + def.rewardXp,
-        quests: {
-          ...p.quests,
-          claimed: { ...p.quests.claimed, [questId]: true },
-        },
-      }
-    })
-    return claimedNow
-  }, [])
+    const result = claimQuestReward(profileRef.current, questId)
+    if (!result.ok) return false
+    commitProfile(result.profile)
+    return true
+  }, [commitProfile])
 
   const recordObbyStage = useCallback((stage: number, completionElapsedMs?: number, fullRun = false) => {
     const clamped = Math.max(1, Math.min(500, Math.floor(stage)))
@@ -1049,132 +1131,28 @@ async function postRegisterApi(
 
   const buyAndEquip = useCallback(
     (
-      category: 'outfit' | 'hat' | 'face' | 'trail' | 'back' | 'pet',
+      category: CosmeticCategory,
       itemId: string,
       price: number,
       currency: 'gems' | 'coins' = 'gems',
     ): boolean => {
       if (currency === 'coins') return false // Requires the server-priced purchaseCoinItem transaction.
-      let ok = false
-      setProfile((p) => {
-        const listKey =
-          category === 'outfit'
-            ? 'unlockedOutfits'
-            : category === 'hat'
-              ? 'unlockedHats'
-              : category === 'face'
-                ? 'unlockedFaces'
-                : category === 'trail'
-                  ? 'unlockedTrails'
-                  : category === 'back'
-                    ? 'unlockedBacks'
-                    : 'unlockedPets'
-        const currentList = p[listKey] as string[]
-        const catalogDef =
-          category === 'outfit'
-            ? OUTFIT_CATALOG.find((x) => x.id === itemId)
-            : category === 'hat'
-              ? HAT_CATALOG.find((x) => x.id === itemId)
-              : category === 'face'
-                ? FACE_CATALOG.find((x) => x.id === itemId)
-                : category === 'trail'
-                  ? TRAIL_CATALOG.find((x) => x.id === itemId)
-                  : category === 'back'
-                    ? BACK_CATALOG.find((x) => x.id === itemId)
-                    : PET_CATALOG.find((x) => x.id === itemId)
-        const isRewardOnly = Boolean(catalogDef?.rewardOnly)
-        const alreadyOwned = currentList.includes(itemId) || (!isRewardOnly && price === 0)
-
-        // Milestone-only rewards (like Parkour Crown or Arena Wings) cannot be bought before unlocking!
-        if (isRewardOnly && !alreadyOwned) {
-          return p
-        }
-
-        const balance = p.freshGems
-        if (!alreadyOwned && (GEMS_SYSTEM_IN_PROGRESS || balance < price)) {
-          return p
-        }
-
-        ok = true
-        const nextAvatar: R6AvatarConfig = {
-          ...p.avatar,
-          ...(category === 'outfit' ? { outfitId: itemId as OutfitId } : {}),
-          ...(category === 'hat' ? { hatId: itemId as HatId } : {}),
-          ...(category === 'face' ? { faceId: itemId as FaceId } : {}),
-          ...(category === 'trail' ? { trailId: itemId as TrailId } : {}),
-          ...(category === 'back' ? { backId: itemId as BackId } : {}),
-          ...(category === 'pet' ? { petId: itemId as PetId } : {}),
-        }
-
-        return {
-          ...p,
-          freshGems: !alreadyOwned && currency === 'gems' ? p.freshGems - price : p.freshGems,
-          avatar: nextAvatar,
-          [listKey]: currentList.includes(itemId) ? currentList : [...currentList, itemId],
-        }
-      })
-      return ok
+      const result = purchaseWithGems(profileRef.current, category, itemId, price)
+      if (!result.ok) return false
+      commitProfile(result.profile)
+      return true
     },
-    [],
+    [commitProfile],
   )
 
   const buyBundle = useCallback(
-    (items: Array<{ category: 'outfit' | 'hat' | 'face'; id: string; price: number }>): boolean => {
-      if (items.length === 0 || GEMS_SYSTEM_IN_PROGRESS) return false
-      let ok = false
-      setProfile((p) => {
-        let totalCost = 0
-        const toBuy = items.filter((item) => {
-          const catalogDef =
-            item.category === 'outfit'
-              ? OUTFIT_CATALOG.find((x) => x.id === item.id)
-              : item.category === 'hat'
-                ? HAT_CATALOG.find((x) => x.id === item.id)
-                : FACE_CATALOG.find((x) => x.id === item.id)
-          if (catalogDef?.rewardOnly) return false
-          const listKey =
-            item.category === 'outfit'
-              ? 'unlockedOutfits'
-              : item.category === 'hat'
-                ? 'unlockedHats'
-                : 'unlockedFaces'
-          const owned = (p[listKey] as string[]).includes(item.id)
-          if (!owned) totalCost += item.price
-          return !owned
-        })
-        if (toBuy.length === 0 || p.freshGems < totalCost) return p
-
-        ok = true
-        let unlockedOutfits = [...p.unlockedOutfits]
-        let unlockedHats = [...p.unlockedHats]
-        let unlockedFaces = [...p.unlockedFaces]
-        const nextAvatar: R6AvatarConfig = { ...p.avatar }
-
-        for (const item of toBuy) {
-          if (item.category === 'outfit') {
-            unlockedOutfits = [...unlockedOutfits, item.id as OutfitId]
-            nextAvatar.outfitId = item.id as OutfitId
-          } else if (item.category === 'hat') {
-            unlockedHats = [...unlockedHats, item.id as HatId]
-            nextAvatar.hatId = item.id as HatId
-          } else if (item.category === 'face') {
-            unlockedFaces = [...unlockedFaces, item.id as FaceId]
-            nextAvatar.faceId = item.id as FaceId
-          }
-        }
-
-        return {
-          ...p,
-          freshGems: p.freshGems - totalCost,
-          avatar: nextAvatar,
-          unlockedOutfits,
-          unlockedHats,
-          unlockedFaces,
-        }
-      })
-      return ok
+    (items: Array<{ category: BundleCategory; id: string; price: number }>): boolean => {
+      const result = purchaseBundleWithGems(profileRef.current, items)
+      if (!result.ok) return false
+      commitProfile(result.profile)
+      return true
     },
-    [],
+    [commitProfile],
   )
 
   const addFriend = useCallback(
@@ -1196,20 +1174,28 @@ async function postRegisterApi(
               .ilike('username', clean)
               .maybeSingle<DbProfileRow>()
 
-        const targetName = found?.username ?? clean
-        if (found?.id === authUserRef.current.id) {
+        if (!found) {
+          return {
+            ok: false,
+            error: 'Nie znaleziono gracza o tym nicku ani tagu.',
+          }
+        }
+        if (found.id === authUserRef.current.id) {
           return { ok: false, error: 'Nie możesz dodać samego siebie!' }
         }
 
-        await supabase.from('fb_friendships').upsert(
+        // Store the canonical spelling from the profile row: friend lists are matched by
+        // username later, and a differently-cased entry would never resolve back to a player.
+        const { error: friendError } = await supabase.from('fb_friendships').upsert(
           {
             user_id: authUserRef.current.id,
-            friend_id: found?.id ?? null,
-            friend_username: targetName,
+            friend_id: found.id,
+            friend_username: found.username,
             status: 'accepted',
           },
           { onConflict: 'user_id,friend_username' },
         )
+        if (friendError) return { ok: false, error: friendError.message }
 
         const refreshed = await loadFriendsFromCloud(authUserRef.current.id)
         setProfile((p) => ({ ...p, friends: refreshed }))
@@ -1239,7 +1225,9 @@ async function postRegisterApi(
 
   const searchPlayers = useCallback(async (query: string): Promise<CloudPlayerSummary[]> => {
     if (!supabase) return []
-    const q = query.trim()
+    // The query goes into a PostgREST `ilike` filter: wildcards and filter punctuation
+    // would widen the match or break the whole request.
+    const q = sanitizeSearchQuery(query)
     let req = supabase
       .from('fb_profiles')
       .select('id, username, fresh_tag, xp, obby_best_stage, obby_completions, parkour_500_best_time_ms, last_world, last_room, last_seen')

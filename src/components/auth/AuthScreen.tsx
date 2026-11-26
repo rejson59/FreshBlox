@@ -48,6 +48,22 @@ function translateAuthError(code: string | undefined, lang: Lang): string {
       return lang === 'pl'
         ? 'Zbyt wiele nowych kont z tej sieci w ostatnich 24h — spróbuj ponownie później.'
         : 'Too many new accounts from this network in the last 24h — please try again later.'
+    case 'SERVER_BUSY':
+      return lang === 'pl'
+        ? 'Serwer rejestracji jest chwilowo zajęty — spróbuj ponownie za minutę.'
+        : 'The registration server is busy right now — please retry in a minute.'
+    case 'ORIGIN_NOT_ALLOWED':
+      return lang === 'pl'
+        ? 'Ta strona nie może tworzyć kont. Otwórz FreshBlox z właściwego adresu.'
+        : 'This page is not allowed to create accounts. Open FreshBlox from its own address.'
+    case 'PAYLOAD_TOO_LARGE':
+      return lang === 'pl'
+        ? 'Żądanie było zbyt duże. Odśwież stronę i spróbuj ponownie.'
+        : 'The request was too large. Refresh the page and try again.'
+    case 'ACCOUNT_CREATED_SIGN_IN_FAILED':
+      return lang === 'pl'
+        ? 'Konto powstało, ale nie udało się automatycznie zalogować. Zaloguj się w zakładce Logowanie tym samym hasłem.'
+        : 'Your account was created, but the automatic sign-in failed. Sign in from the Sign In tab with the same password.'
     case 'NETWORK_ERROR':
       return lang === 'pl'
         ? 'Nie udało się połączyć z serwerem. Spróbuj ponownie za chwilę.'

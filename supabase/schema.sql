@@ -177,7 +177,16 @@ CREATE TRIGGER on_auth_user_created_fb
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_fb_user();
 
-ALTER PUBLICATION supabase_realtime ADD TABLE public.fb_lobby_messages;
+-- Idempotent: re-running this file on an existing database must not fail here.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'fb_lobby_messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.fb_lobby_messages;
+  END IF;
+END $$;
 
 -- === FEEDBACK & UPDATE IDEAS SYSTEM ===
 CREATE TABLE IF NOT EXISTS public.fb_feedback (
@@ -572,11 +581,14 @@ ALTER TABLE public.fb_profiles
   ADD COLUMN IF NOT EXISTS saved_outfits jsonb NOT NULL DEFAULT '[]'::jsonb,
   ADD COLUMN IF NOT EXISTS pinned_badge text;
 
+-- Column names and the world list follow src/lib/socialApi.ts and the RPCs it calls
+-- (create_private_room / verify_private_room_access / listActivePrivateRooms).
 CREATE TABLE IF NOT EXISTS public.fb_private_rooms (
-  code text PRIMARY KEY,
+  room_code text PRIMARY KEY,
   host_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   host_username text NOT NULL,
-  world text NOT NULL DEFAULT 'lobby' CHECK (world IN ('lobby', 'obby')),
+  world_kind text NOT NULL DEFAULT 'lobby'
+    CHECK (world_kind IN ('lobby', 'obby', 'arena', 'frisbee')),
   access_mode text NOT NULL DEFAULT 'password' CHECK (access_mode IN ('password', 'friends')),
   pass_hash text,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -584,14 +596,17 @@ CREATE TABLE IF NOT EXISTS public.fb_private_rooms (
 );
 ALTER TABLE public.fb_private_rooms ENABLE ROW LEVEL SECURITY;
 
+-- `id` stays uuid: the client treats it as an opaque key, and changing the type of a live
+-- primary key is not something a schema description should pretend to do safely.
 CREATE TABLE IF NOT EXISTS public.fb_direct_messages (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   sender_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   sender_username text NOT NULL,
   recipient_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  body text NOT NULL CHECK (char_length(body) BETWEEN 1 AND 240),
-  invite_room text,
-  invite_world text CHECK (invite_world IS NULL OR invite_world IN ('lobby', 'obby')),
+  content text NOT NULL CHECK (char_length(content) BETWEEN 1 AND 240),
+  room_invite_code text,
+  room_invite_world text
+    CHECK (room_invite_world IS NULL OR room_invite_world IN ('lobby', 'obby', 'arena', 'frisbee')),
   read_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
