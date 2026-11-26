@@ -197,7 +197,7 @@ export function RacingWorld({
     setRewardCoins(0)
     setRewardStatus('practice')
     renderer.setSize(container.clientWidth, container.clientHeight)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 'high' ? 2 : 1.25))
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 'high' ? 1.5 : 1.25))
     renderer.shadowMap.enabled = quality !== 'low'
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.toneMapping = THREE.ACESFilmicToneMapping

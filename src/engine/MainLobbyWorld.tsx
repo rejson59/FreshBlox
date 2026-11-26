@@ -445,7 +445,7 @@ export const MainLobbyWorld: React.FC<MainLobbyWorldProps> = ({
       scene.fog = new THREE.Fog(skyHex, 54, 150)
       if (clouds) clouds.visible = !isNight
     } else {
-      renderer.setPixelRatio(Math.min(dpr, 1.85))
+      renderer.setPixelRatio(Math.min(dpr, 1.5))
       renderer.shadowMap.enabled = true
       if (sun) sun.castShadow = true
       scene.fog = new THREE.Fog(skyHex, 68, 178)

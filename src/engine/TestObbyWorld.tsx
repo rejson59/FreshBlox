@@ -521,9 +521,9 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       renderer.shadowMap.enabled = false
     } else if (quality === 'medium') {
       renderer.setPixelRatio(Math.min(dpr, 1.25))
-      renderer.shadowMap.enabled = true
+      renderer.shadowMap.enabled = false
     } else {
-      renderer.setPixelRatio(Math.min(dpr, 1.75))
+      renderer.setPixelRatio(Math.min(dpr, 1.5))
       renderer.shadowMap.enabled = true
     }
   }, [quality])
@@ -1929,11 +1929,26 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     ro.observe(container)
     window.addEventListener('resize', onResize)
 
+    let slowFrames = 0
+    let autoDowngraded = false
+
     const tick = (now: number) => {
       rafId = requestAnimationFrame(tick)
-      const dt = Math.min(0.05, (now - lastFrame) / 1000)
+      const rawDt = (now - lastFrame) / 1000
+      const dt = Math.min(0.05, rawDt)
       lastFrame = now
       simTime += dt
+
+      // Auto-downgrade to 'low' quality on weak GPUs if FPS stays below ~25 for ~1.5s
+      if (!autoDowngraded && qualityRef.current !== 'low' && rawDt > 0.04 && rawDt < 0.5) {
+        slowFrames++
+        if (slowFrames >= 35) {
+          autoDowngraded = true
+          setQuality('low')
+        }
+      } else if (rawDt <= 0.035) {
+        slowFrames = Math.max(0, slowFrames - 1)
+      }
 
       // Animate conveyor belt chevron texture smoothly!
       conveyorTexFwd.offset.y = (simTime * 1.8) % 1
@@ -2099,6 +2114,25 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       const moveX = camFwdX * inputFwd + camRightX * inputRight
       const moveZ = camFwdZ * inputFwd + camRightZ * inputRight
 
+      // Helper: activate a checkpoint stage once
+      const activateCheckpoint = (stg: number) => {
+        if (!nextCheckpoint(currentStageRef.current, stg)) return
+        currentStageRef.current = stg
+        setCurrentStage(stg)
+        if (stg > maxUnlockedRef.current) {
+          maxUnlockedRef.current = stg
+          setMaxUnlockedStage(stg)
+        }
+        updateZoneVisibility(stg)
+        const flagMesh = checkpointFlagMap.get(stg)
+        if (flagMesh) flagMesh.material = flagActiveMat
+
+        sfx.playGemCollect()
+        callbacksRef.current.onStageReached(stg)
+        showToast(`${lang === 'pl' ? 'Etap' : 'Stage'} ${stg} / 500 ✓`)
+        rebuildRoster()
+      }
+
       // Helper: trigger checkpoint / fade tile upon stepping or mantling onto a platform
       const handleLandedBlockEffects = (landedBlock: RuntimeBlock) => {
         if (landedBlock.def.kind === 'fade' && landedBlock.fadeState === 'solid') {
@@ -2106,23 +2140,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           landedBlock.fadeTimer = 0
         }
         if (landedBlock.def.kind === 'checkpoint' && landedBlock.def.checkpointStage) {
-          const stg = landedBlock.def.checkpointStage
-          if (nextCheckpoint(currentStageRef.current,stg)) {
-            currentStageRef.current = stg
-            setCurrentStage(stg)
-            if (stg > maxUnlockedRef.current) {
-              maxUnlockedRef.current = stg
-              setMaxUnlockedStage(stg)
-            }
-            updateZoneVisibility(stg)
-            const flagMesh = checkpointFlagMap.get(stg)
-            if (flagMesh) flagMesh.material = flagActiveMat
-
-            sfx.playGemCollect()
-            callbacksRef.current.onStageReached(stg)
-            showToast(`${lang==='pl'?'Etap':'Stage'} ${stg} / 500 ✓`)
-            rebuildRoster()
-          }
+          activateCheckpoint(landedBlock.def.checkpointStage)
         }
       }
 
@@ -2679,6 +2697,24 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           } else {
             player.grounded = false
             player.standingBlock = null
+          }
+        }
+
+        // Also trigger checkpoint when flying/speedrunning over a checkpoint pad without landing on it
+        for (const b of activeBlocks) {
+          if (b.def.kind !== 'checkpoint' || !b.def.checkpointStage) continue
+          if (!nextCheckpoint(currentStageRef.current, b.def.checkpointStage)) continue
+          const hw = b.def.w / 2 + PLAYER_R
+          const hd = b.def.d / 2 + PLAYER_R
+          const padTop = b.curY + b.def.h / 2
+          const padBot = b.curY - b.def.h / 2
+          if (
+            Math.abs(player.x - b.curX) <= hw &&
+            Math.abs(player.z - b.curZ) <= hd &&
+            player.y >= padBot - 0.25 &&
+            player.y <= padTop + 6.5
+          ) {
+            activateCheckpoint(b.def.checkpointStage)
           }
         }
 

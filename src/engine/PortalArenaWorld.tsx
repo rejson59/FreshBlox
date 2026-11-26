@@ -527,7 +527,7 @@ export const PortalArenaWorld: React.FC<PortalArenaWorldProps> = ({
       antialias: qualityRef.current !== 'low',
       powerPreference: 'high-performance',
     })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, qualityRef.current === 'high' ? 2 : 1.5))
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, qualityRef.current === 'high' ? 1.5 : 1.25))
     renderer.setSize(container.clientWidth, container.clientHeight)
     renderer.shadowMap.enabled = qualityRef.current !== 'low'
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
