@@ -521,9 +521,9 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       renderer.shadowMap.enabled = false
     } else if (quality === 'medium') {
       renderer.setPixelRatio(Math.min(dpr, 1.25))
-      renderer.shadowMap.enabled = true
+      renderer.shadowMap.enabled = false
     } else {
-      renderer.setPixelRatio(Math.min(dpr, 1.75))
+      renderer.setPixelRatio(Math.min(dpr, 1.5))
       renderer.shadowMap.enabled = true
     }
   }, [quality])
@@ -1929,11 +1929,26 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
     ro.observe(container)
     window.addEventListener('resize', onResize)
 
+    let slowFrames = 0
+    let autoDowngraded = false
+
     const tick = (now: number) => {
       rafId = requestAnimationFrame(tick)
-      const dt = Math.min(0.05, (now - lastFrame) / 1000)
+      const rawDt = (now - lastFrame) / 1000
+      const dt = Math.min(0.05, rawDt)
       lastFrame = now
       simTime += dt
+
+      // Auto-downgrade to 'low' quality on weak GPUs if FPS stays below ~25 for ~1.5s
+      if (!autoDowngraded && qualityRef.current !== 'low' && rawDt > 0.04 && rawDt < 0.5) {
+        slowFrames++
+        if (slowFrames >= 35) {
+          autoDowngraded = true
+          setQuality('low')
+        }
+      } else if (rawDt <= 0.035) {
+        slowFrames = Math.max(0, slowFrames - 1)
+      }
 
       // Animate conveyor belt chevron texture smoothly!
       conveyorTexFwd.offset.y = (simTime * 1.8) % 1
