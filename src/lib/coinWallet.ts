@@ -1,14 +1,25 @@
 import { supabase } from './supabase'
 export type Wallet = { balance: number; owned: string[] }
-const empty = (): Wallet => ({ balance: 0, owned: [] })
-export async function readWallet(userId: string): Promise<Wallet> {
-  if (!supabase) return empty()
-  const { data } = await supabase
+/**
+ * Reads the server-side wallet.
+ *
+ * Returns `null` when the read failed, which is deliberately different from "no wallet yet"
+ * (balance 0). Showing 0 after a flaky request told players their coins had disappeared and
+ * made the locker refuse purchases, so the caller keeps the last known balance instead.
+ */
+export async function readWallet(userId: string): Promise<Wallet | null> {
+  if (!supabase) return null
+  const { data, error } = await supabase
     .from('fb_coin_wallets')
     .select('balance,owned')
     .eq('user_id', userId)
     .maybeSingle<Wallet>()
-  return data ?? empty()
+  if (error) {
+    console.warn('[freshblox] wallet read failed:', error.message)
+    return null
+  }
+  // No row yet is a legitimate zero: the player has simply never earned a coin.
+  return data ?? { balance: 0, owned: [] }
 }
 export async function buyWithCoins(item: string): Promise<Wallet | null> {
   if (!supabase) return null
