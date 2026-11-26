@@ -44,6 +44,13 @@ Wygeneruj sól:
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
 
+**Uwaga przy pierwszym wdrożeniu soli.** Wcześniej endpoint używał `FRESHBLOX_FP_SALT`, a przy jego braku — klucza service-role, a w ostateczności stałej `'freshblox-default-salt'`. Hashe zapisane w `fb_device_registrations` powstały z tej właśnie wartości. Jeśli produkcja działała bez zmiennej, ustawienie nowej soli sprawi, że **istniejące blokady przestaną pasować** i każdy będzie mógł założyć drugie konto. Dwie opcje:
+
+- zachować ciągłość: ustaw `FRESHBLOX_FP_SALT` na wartość, której endpoint używał dotąd (np. dotychczasowy klucz service-role) — działa, ale jeden sekret ma wtedy dwie role;
+- zaakceptować jednorazowy reset blokad i od razu ustawić losową sól.
+
+W obu przypadkach brak soli po tej zmianie oznacza `500 SERVER_MISCONFIGURED` przy rejestracji — to celowe, ale trzeba o tym pamiętać przy deployu.
+
 ## Konta i wydanie
 
 Frontend to Vite/React; na Vercelu komenda budowania to `npm run build`, katalog wyjściowy `dist`. Do środowiska kont podaj **publiczne** `VITE_SUPABASE_URL` i `VITE_SUPABASE_ANON_KEY` podczas budowy. Rejestracja wymaga funkcji `api/register-account.js` na tym samym originie. `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_URL` i `FRESHBLOX_FP_SALT` należą do konfiguracji funkcji serwerowej, nie do kodu klienta. Nie umieszczaj sekretów w Git ani w zmiennych `VITE_*`.
