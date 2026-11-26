@@ -10,6 +10,7 @@ import {
   shove,
   stepMatch,
   type BotLevel,
+  type BrawlClass,
   type InputFrame,
   type Match,
   type Side,
@@ -69,6 +70,7 @@ export default function BlokBrawl({
   const [stage, setStage] = useState<Stage>('pick')
   const [mode, setMode] = useState<Mode>('bot')
   const [botLevel, setBotLevel] = useState<BotLevel>(1)
+  const [playerClass, setPlayerClass] = useState<BrawlClass>('brawler')
   const [room, setRoom] = useState('')
   const [joinCode, setJoinCode] = useState('')
   const [copied, setCopied] = useState(false)
@@ -493,6 +495,41 @@ export default function BlokBrawl({
                         onClick={() => setBotLevel(l)}
                       >
                         {pl ? ['Łatwy', 'Normalny', 'Trudny'][l] : ['Easy', 'Normal', 'Hard'][l]}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="brawl-levels" role="group" aria-label={pl ? 'Klasa postaci' : 'Fighter class'}>
+                    {(['brawler', 'ninja', 'mage'] as BrawlClass[]).map((c) => (
+                      <button
+                        key={c}
+                        className={playerClass === c ? 'on' : ''}
+                        aria-pressed={playerClass === c}
+                        onClick={() => setPlayerClass(c)}
+                        title={
+                          pl
+                            ? c === 'brawler'
+                              ? 'Mocniejszy cios i większa odporność na odrzut'
+                              : c === 'ninja'
+                                ? 'Szybszy bieg i krótszy czas odnowienia dasha'
+                                : 'Fala uderzeniowa przy dashu'
+                            : c === 'brawler'
+                              ? 'Heavier hits and knockback resistance'
+                              : c === 'ninja'
+                                ? 'Faster movement and shorter dash cooldown'
+                                : 'Shockwave pulse on dash'
+                        }
+                      >
+                        {pl
+                          ? c === 'brawler'
+                            ? 'Wojownik'
+                            : c === 'ninja'
+                              ? 'Ninja'
+                              : 'Mag'
+                          : c === 'brawler'
+                            ? 'Brawler'
+                            : c === 'ninja'
+                              ? 'Ninja'
+                              : 'Mage'}
                       </button>
                     ))}
                   </div>

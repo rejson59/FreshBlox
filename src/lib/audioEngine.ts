@@ -19,9 +19,9 @@ export interface AudioPrefs {
 const AUDIO_STORAGE_KEY = 'freshblox_audio_prefs_v2'
 
 const DEFAULT_AUDIO_PREFS: AudioPrefs = {
-  master: 0.72,
+  master: 0.75,
   sfx: 0.78,
-  music: 0.42,
+  music: 0.62,
   ui: 0.65,
   muted: false,
 }

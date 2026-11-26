@@ -10,6 +10,7 @@
 export type Side = 0 | 1
 export type Phase = 'countdown' | 'live' | 'ko' | 'over'
 export type BotLevel = 0 | 1 | 2
+export type BrawlClass = 'brawler' | 'ninja' | 'mage'
 
 export const RING_MAX = 1
 export const RING_MIN = 0.4
@@ -44,6 +45,7 @@ export interface Fighter {
   stun: number
   face: number
   flash: number
+  klass?: BrawlClass
 }
 
 export interface Particle {
@@ -172,16 +174,17 @@ function stepFighter(f: Fighter, input: InputFrame, dt: number) {
   }
   if (mag > 0.05) f.face = Math.atan2(dy, dx)
 
+  const speedMul = f.klass === 'ninja' ? 1.14 : 1
   if (f.stun <= 0 && mag > 0.05) {
-    f.vx += dx * ACCEL * dt
-    f.vy += dy * ACCEL * dt
+    f.vx += dx * ACCEL * speedMul * dt
+    f.vy += dy * ACCEL * speedMul * dt
   }
 
   if (input.dash && f.dashCd <= 0 && f.stun <= 0) {
     const len = Math.hypot(dx, dy) || 1
     f.vx = (dx / len) * DASH_SPEED
     f.vy = (dy / len) * DASH_SPEED
-    f.dashCd = DASH_CD
+    f.dashCd = f.klass === 'ninja' ? DASH_CD * 0.65 : DASH_CD
     f.dashT = DASH_TIME
     f.face = Math.atan2(dy / len, dx / len)
   }
@@ -192,9 +195,10 @@ function stepFighter(f: Fighter, input: InputFrame, dt: number) {
   // Only ordinary running is capped — a dash or a shove is meant to be a burst.
   if (f.dashT <= 0 && f.stun <= 0) {
     const sp = Math.hypot(f.vx, f.vy)
-    if (sp > VMAX) {
-      f.vx = (f.vx / sp) * VMAX
-      f.vy = (f.vy / sp) * VMAX
+    const maxSp = VMAX * speedMul
+    if (sp > maxSp) {
+      f.vx = (f.vx / sp) * maxSp
+      f.vy = (f.vy / sp) * maxSp
     }
   }
 
@@ -217,14 +221,15 @@ export function contactImpulse(a: Fighter, b: Fighter): { nx: number; ny: number
     closing = -(rvx * nx + rvy * ny)
   if (closing <= 0) return null
 
-  const heavy = a.dashT > 0 ? 1.9 : 1
+  const heavy = (a.dashT > 0 ? 1.9 : 1) * (a.klass === 'brawler' ? 1.22 : 1)
   return { nx, ny, j: Math.max(0.16, closing * 0.62), heavy }
 }
 
 /** Applies a shove to `f`, opposite to the normal when `sign` is negative. */
 export function shove(f: Fighter, nx: number, ny: number, j: number, heavy: number, sign: 1 | -1) {
-  f.vx += nx * j * heavy * sign
-  f.vy += ny * j * heavy * sign
+  const resist = f.klass === 'brawler' ? 0.85 : 1
+  f.vx += nx * j * heavy * sign * resist
+  f.vy += ny * j * heavy * sign * resist
   f.stun = Math.max(f.stun, HIT_STUN)
   f.flash = 0.18
 }
