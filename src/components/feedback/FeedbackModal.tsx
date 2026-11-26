@@ -238,16 +238,12 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
     setErrorMsg(null)
     setSuccessMsg(null)
 
-    const cleanTitle = title.trim()
     const cleanDesc = description.trim()
-    if (cleanTitle.length < 3) {
-      setErrorMsg(t.errTitleShort)
-      return
-    }
     if (cleanDesc.length < 5) {
       setErrorMsg(t.errDescShort)
       return
     }
+    const autoTitle = cleanDesc.split(/\s+/).slice(0, 8).join(' ').slice(0, 80)
     if (!supabase || !isSupabaseConfigured) {
       setErrorMsg(t.errNoCloud)
       return
@@ -259,7 +255,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
         user_id: userId,
         username,
         kind,
-        title: cleanTitle.slice(0, 120),
+        title: autoTitle,
         description: cleanDesc.slice(0, 1500),
         context: contextLabel.slice(0, 80),
         device_info: deviceInfo.slice(0, 60),
@@ -457,30 +453,6 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
                   <strong style={{ color: tokens.textPrimary }}>{contextLabel}</strong>
                 </span>
                 <span className="font-mono text-[10px] opacity-80">{deviceInfo}</span>
-              </div>
-
-              {/* Title Input */}
-              <div>
-                <div className="mb-1 flex items-center justify-between text-xs font-bold">
-                  <label htmlFor="fb-feedback-title">{t.titleLabel}</label>
-                  <span className="font-mono text-[10px]" style={{ color: tokens.textSecondary }}>
-                    {title.length}/120
-                  </span>
-                </div>
-                <input
-                  id="fb-feedback-title"
-                  type="text"
-                  maxLength={120}
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder={kind === 'bug' ? t.titlePlaceholderBug : t.titlePlaceholderIdea}
-                  className="w-full rounded-xl border px-3.5 py-2.5 text-sm font-medium outline-none transition focus:ring-2 focus:ring-sky-400/50"
-                  style={{
-                    background: tokens.mutedBg,
-                    borderColor: tokens.cardBorder,
-                    color: tokens.textPrimary,
-                  }}
-                />
               </div>
 
               {/* Description Textarea */}

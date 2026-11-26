@@ -2099,6 +2099,25 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
       const moveX = camFwdX * inputFwd + camRightX * inputRight
       const moveZ = camFwdZ * inputFwd + camRightZ * inputRight
 
+      // Helper: activate a checkpoint stage once
+      const activateCheckpoint = (stg: number) => {
+        if (!nextCheckpoint(currentStageRef.current, stg)) return
+        currentStageRef.current = stg
+        setCurrentStage(stg)
+        if (stg > maxUnlockedRef.current) {
+          maxUnlockedRef.current = stg
+          setMaxUnlockedStage(stg)
+        }
+        updateZoneVisibility(stg)
+        const flagMesh = checkpointFlagMap.get(stg)
+        if (flagMesh) flagMesh.material = flagActiveMat
+
+        sfx.playGemCollect()
+        callbacksRef.current.onStageReached(stg)
+        showToast(`${lang === 'pl' ? 'Etap' : 'Stage'} ${stg} / 500 ✓`)
+        rebuildRoster()
+      }
+
       // Helper: trigger checkpoint / fade tile upon stepping or mantling onto a platform
       const handleLandedBlockEffects = (landedBlock: RuntimeBlock) => {
         if (landedBlock.def.kind === 'fade' && landedBlock.fadeState === 'solid') {
@@ -2106,23 +2125,7 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           landedBlock.fadeTimer = 0
         }
         if (landedBlock.def.kind === 'checkpoint' && landedBlock.def.checkpointStage) {
-          const stg = landedBlock.def.checkpointStage
-          if (nextCheckpoint(currentStageRef.current,stg)) {
-            currentStageRef.current = stg
-            setCurrentStage(stg)
-            if (stg > maxUnlockedRef.current) {
-              maxUnlockedRef.current = stg
-              setMaxUnlockedStage(stg)
-            }
-            updateZoneVisibility(stg)
-            const flagMesh = checkpointFlagMap.get(stg)
-            if (flagMesh) flagMesh.material = flagActiveMat
-
-            sfx.playGemCollect()
-            callbacksRef.current.onStageReached(stg)
-            showToast(`${lang==='pl'?'Etap':'Stage'} ${stg} / 500 ✓`)
-            rebuildRoster()
-          }
+          activateCheckpoint(landedBlock.def.checkpointStage)
         }
       }
 
@@ -2679,6 +2682,24 @@ export const TestObbyWorld: React.FC<TestObbyWorldProps> = ({
           } else {
             player.grounded = false
             player.standingBlock = null
+          }
+        }
+
+        // Also trigger checkpoint when flying/speedrunning over a checkpoint pad without landing on it
+        for (const b of activeBlocks) {
+          if (b.def.kind !== 'checkpoint' || !b.def.checkpointStage) continue
+          if (!nextCheckpoint(currentStageRef.current, b.def.checkpointStage)) continue
+          const hw = b.def.w / 2 + PLAYER_R
+          const hd = b.def.d / 2 + PLAYER_R
+          const padTop = b.curY + b.def.h / 2
+          const padBot = b.curY - b.def.h / 2
+          if (
+            Math.abs(player.x - b.curX) <= hw &&
+            Math.abs(player.z - b.curZ) <= hd &&
+            player.y >= padBot - 0.25 &&
+            player.y <= padTop + 6.5
+          ) {
+            activateCheckpoint(b.def.checkpointStage)
           }
         }
 
