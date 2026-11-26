@@ -295,8 +295,19 @@ export function stepMatch(
 
   for (let s = 0; s < 2; s++) {
     const f = m.f[s as Side]
+    const prevDashT = f.dashT
     const before = { x: f.x, y: f.y }
     stepFighter(f, inputs[s], dt)
+    if (f.klass === 'mage' && prevDashT <= 0 && f.dashT > 0) {
+      burst(m, f.x, f.y, '#a855f7', 16, 1.3)
+      const other = m.f[(1 - s) as Side]
+      const dx = other.x - f.x
+      const dy = other.y - f.y
+      const dist = Math.hypot(dx, dy) || 1e-6
+      if (dist <= 0.34) {
+        shove(other, dx / dist, dy / dist, 0.42, 1.5, 1)
+      }
+    }
     if (f.dashT > 0 && Math.hypot(f.x - before.x, f.y - before.y) > 0.001) {
       m.ghosts.push({ x: f.x, y: f.y, life: 0.28, max: 0.28, color: s === 0 ? '#38bdf8' : '#8ed8b0' })
     }
