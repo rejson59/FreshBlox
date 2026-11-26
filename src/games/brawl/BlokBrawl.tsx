@@ -357,12 +357,18 @@ export default function BlokBrawl({
   const startBot = () => {
     setMode('bot')
     setStage('fight')
-    match.current = createMatch()
-    match.current.remoteSide = null
+    const m = createMatch()
+    m.f[0].klass = playerClass
+    m.f[1].klass = (['brawler', 'ninja', 'mage'] as BrawlClass[])[(botLevel + 1) % 3]
+    m.remoteSide = null
+    match.current = m
   }
 
   const restart = () => {
-    match.current = createMatch()
+    const m = createMatch()
+    m.f[0].klass = playerClass
+    m.f[1].klass = (['brawler', 'ninja', 'mage'] as BrawlClass[])[(botLevel + 1) % 3]
+    match.current = m
     if (mode === 'online') {
       match.current.remoteSide = 1
       net.current?.send({ t: 'rematch' })
